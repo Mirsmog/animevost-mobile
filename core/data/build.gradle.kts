@@ -46,4 +46,8 @@ dependencies {
 
     implementation(libs.okhttp)
     implementation(libs.retrofit.converter.gson)
+
+    implementation(libs.work.runtime)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.work.compiler)
 }
