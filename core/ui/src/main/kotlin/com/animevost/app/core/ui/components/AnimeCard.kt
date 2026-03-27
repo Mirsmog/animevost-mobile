@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.animevost.app.core.domain.model.AnimePreview
 
-// ── Grid card (2- or 3-column): poster with title overlay ─────
+// ── Grid card (2-column): poster with title + info overlay ─────
 @Composable
 fun AnimeCard(
     anime: AnimePreview,
@@ -48,30 +48,43 @@ fun AnimeCard(
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
         )
-        // Gradient overlay — bottom third
+        // Gradient overlay — bottom half for info
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(80.dp)
+                .height(110.dp)
                 .align(Alignment.BottomCenter)
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)),
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.92f)),
                     ),
                 ),
         )
-        // Title at bottom
-        Text(
-            text = anime.title,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.SemiBold,
-            color = Color.White,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
+        // Title + episodeInfo at bottom
+        Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(horizontal = 6.dp, vertical = 6.dp),
-        )
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+        ) {
+            Text(
+                text = anime.title,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (anime.episodeInfo.isNotBlank()) {
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = anime.episodeInfo,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.65f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 

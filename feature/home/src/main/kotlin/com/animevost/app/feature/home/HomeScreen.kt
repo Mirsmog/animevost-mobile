@@ -79,7 +79,7 @@ fun HomeScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     var isGridMode by rememberSaveable { mutableStateOf(true) }
-    val layoutColumns = if (isGridMode) 3 else 1
+    val layoutColumns = if (isGridMode) 2 else 1
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
