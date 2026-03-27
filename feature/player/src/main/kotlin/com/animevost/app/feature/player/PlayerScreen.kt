@@ -3,8 +3,12 @@ package com.animevost.app.feature.player
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import androidx.annotation.OptIn
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,6 +23,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
@@ -39,10 +45,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -51,6 +60,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.delay
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -77,10 +88,27 @@ fun PlayerScreen(
         ExoPlayer.Builder(context).build()
     }
 
-    // Track previous videoId to detect quality-only changes vs episode changes
     var previousVideoId by remember { mutableStateOf<String?>(null) }
+    var controlsVisible by remember { mutableStateOf(true) }
+    // -10 = rewind feedback, +10 = forward feedback, null = none
+    var seekFeedback by remember { mutableStateOf<Int?>(null) }
 
-    // Set media when URL changes, restoring position on quality switch
+    // Auto-hide controls after 3s
+    LaunchedEffect(controlsVisible) {
+        if (controlsVisible) {
+            delay(3000)
+            controlsVisible = false
+        }
+    }
+
+    // Clear seek feedback after 0.8s
+    LaunchedEffect(seekFeedback) {
+        if (seekFeedback != null) {
+            delay(800)
+            seekFeedback = null
+        }
+    }
+
     LaunchedEffect(state.currentVideoUrl, state.currentEpisode?.videoId) {
         val url = state.currentVideoUrl ?: return@LaunchedEffect
         val currentEpisodeId = state.currentEpisode?.videoId
@@ -95,7 +123,6 @@ fun PlayerScreen(
         previousVideoId = currentEpisodeId
     }
 
-    // Lifecycle handling
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -114,60 +141,149 @@ fun PlayerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black),
-    ) {
-        if (state.isLoading) {
-            CircularProgressIndicator(
-                modifier = Modifier.align(Alignment.Center),
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-
-        if (state.error != null) {
-            Column(
-                modifier = Modifier.align(Alignment.Center),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    text = state.error!!,
-                    color = Color.White,
-                    style = MaterialTheme.typography.bodyLarge,
+            .background(Color.Black)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onTap = {
+                        controlsVisible = !controlsVisible
+                    },
+                    onDoubleTap = { offset ->
+                        val isLeftSide = offset.x < size.width / 2f
+                        if (isLeftSide) {
+                            exoPlayer.seekTo(maxOf(0L, exoPlayer.currentPosition - 10_000L))
+                            seekFeedback = -10
+                        } else {
+                            exoPlayer.seekTo(exoPlayer.currentPosition + 10_000L)
+                            seekFeedback = 10
+                        }
+                        controlsVisible = true
+                    },
                 )
-            }
-        }
-
+            },
+    ) {
+        // Video surface — always visible, no controller (we draw our own)
         if (state.currentVideoUrl != null) {
             AndroidView(
                 factory = { ctx ->
                     PlayerView(ctx).apply {
                         player = exoPlayer
-                        useController = true
+                        useController = false
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
-                update = { view ->
-                    view.player = exoPlayer
-                },
+                update = { view -> view.player = exoPlayer },
             )
         }
 
-        // Top overlay
-        PlayerTopOverlay(
-            episodeName = state.currentEpisode?.name ?: "",
-            videoSources = state.videoSources.map { it.quality },
-            selectedQuality = state.selectedQuality,
-            onBack = onBack,
-            onSelectQuality = { viewModel.onEvent(PlayerEvent.SelectQuality(it)) },
+        // Loading spinner
+        if (state.isLoading) {
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center),
+                color = MaterialTheme.colorScheme.primary,
+                strokeWidth = 3.dp,
+            )
+        }
+
+        // Error message
+        if (state.error != null) {
+            Text(
+                text = state.error!!,
+                color = Color.White,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.align(Alignment.Center),
+            )
+        }
+
+        // Seek feedback indicators
+        SeekFeedbackOverlay(
+            seekFeedback = seekFeedback,
+            modifier = Modifier.fillMaxSize(),
         )
 
-        // Episode navigation
-        PlayerBottomOverlay(
-            hasPrevious = state.hasPrevious,
-            hasNext = state.hasNext,
-            onPrevious = { viewModel.onEvent(PlayerEvent.PreviousEpisode) },
-            onNext = { viewModel.onEvent(PlayerEvent.NextEpisode) },
-            modifier = Modifier.align(Alignment.BottomCenter),
-        )
+        // Top + Bottom overlays (auto-hide)
+        AnimatedVisibility(
+            visible = controlsVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                // Top gradient + controls
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Black.copy(alpha = 0.75f),
+                                    Color.Transparent,
+                                ),
+                            ),
+                        ),
+                ) {
+                    PlayerTopOverlay(
+                        episodeName = state.currentEpisode?.name ?: "",
+                        videoSources = state.videoSources.map { it.quality },
+                        selectedQuality = state.selectedQuality,
+                        onBack = onBack,
+                        onSelectQuality = { viewModel.onEvent(PlayerEvent.SelectQuality(it)) },
+                    )
+                }
+
+                // Bottom gradient + episode nav
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.75f),
+                                ),
+                            ),
+                        ),
+                ) {
+                    PlayerBottomOverlay(
+                        hasPrevious = state.hasPrevious,
+                        hasNext = state.hasNext,
+                        onPrevious = { viewModel.onEvent(PlayerEvent.PreviousEpisode) },
+                        onNext = { viewModel.onEvent(PlayerEvent.NextEpisode) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SeekFeedbackOverlay(
+    seekFeedback: Int?,
+    modifier: Modifier = Modifier,
+) {
+    if (seekFeedback == null) return
+    val isForward = seekFeedback > 0
+    Box(modifier = modifier) {
+        Column(
+            modifier = Modifier
+                .align(if (isForward) Alignment.CenterEnd else Alignment.CenterStart)
+                .padding(horizontal = 48.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                imageVector = if (isForward) Icons.Filled.FastForward else Icons.Filled.FastRewind,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(48.dp),
+            )
+            Text(
+                text = if (isForward) "+10 сек" else "-10 сек",
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
     }
 }
 
@@ -184,8 +300,7 @@ private fun PlayerTopOverlay(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.5f))
-            .padding(horizontal = 4.dp, vertical = 4.dp),
+            .padding(horizontal = 4.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBack) {
@@ -199,6 +314,7 @@ private fun PlayerTopOverlay(
         Text(
             text = episodeName,
             style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
             color = Color.White,
             modifier = Modifier.weight(1f),
         )
@@ -211,11 +327,12 @@ private fun PlayerTopOverlay(
                         indication = null,
                     ) { showQualityMenu = true }
                     .background(
-                        MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-                        RoundedCornerShape(4.dp),
+                        MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                        RoundedCornerShape(6.dp),
                     )
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Icon(
                     Icons.Filled.HighQuality,
@@ -223,11 +340,11 @@ private fun PlayerTopOverlay(
                     tint = Color.White,
                     modifier = Modifier.size(18.dp),
                 )
-                Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = selectedQuality,
                     color = Color.White,
                     style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
                 )
             }
 
@@ -237,7 +354,12 @@ private fun PlayerTopOverlay(
             ) {
                 videoSources.forEach { quality ->
                     DropdownMenuItem(
-                        text = { Text(quality) },
+                        text = {
+                            Text(
+                                quality,
+                                fontWeight = if (quality == selectedQuality) FontWeight.Bold else FontWeight.Normal,
+                            )
+                        },
                         onClick = {
                             onSelectQuality(quality)
                             showQualityMenu = false
@@ -246,6 +368,8 @@ private fun PlayerTopOverlay(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.width(8.dp))
     }
 }
 
@@ -255,10 +379,9 @@ private fun PlayerBottomOverlay(
     hasNext: Boolean,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 16.dp),
         horizontalArrangement = Arrangement.Center,
@@ -272,10 +395,10 @@ private fun PlayerBottomOverlay(
                 Icons.Filled.SkipPrevious,
                 contentDescription = "Предыдущая серия",
                 tint = if (hasPrevious) Color.White else Color.White.copy(alpha = 0.3f),
-                modifier = Modifier.size(36.dp),
+                modifier = Modifier.size(40.dp),
             )
         }
-        Spacer(modifier = Modifier.width(48.dp))
+        Spacer(modifier = Modifier.width(64.dp))
         IconButton(
             onClick = onNext,
             enabled = hasNext,
@@ -284,7 +407,7 @@ private fun PlayerBottomOverlay(
                 Icons.Filled.SkipNext,
                 contentDescription = "Следующая серия",
                 tint = if (hasNext) Color.White else Color.White.copy(alpha = 0.3f),
-                modifier = Modifier.size(36.dp),
+                modifier = Modifier.size(40.dp),
             )
         }
     }

@@ -1,5 +1,6 @@
 package com.animevost.app.feature.profile
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,22 +13,27 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -35,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -43,7 +50,9 @@ import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.ui.components.AnimeCard
 import com.animevost.app.core.ui.components.ErrorState
 import com.animevost.app.core.ui.components.LoadingState
+import com.animevost.app.core.ui.components.SectionHeader
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
     onNavigateToLogin: () -> Unit,
@@ -52,60 +61,93 @@ fun ProfileScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
 
-    when {
-        state.isLoading -> LoadingState()
-        state.error != null -> ErrorState(
-            message = state.error!!,
-            onRetry = { viewModel.onEvent(ProfileEvent.Refresh) },
-        )
-        !state.isLoggedIn -> LoginPrompt(onNavigateToLogin = onNavigateToLogin)
-        else -> ProfileContent(
-            state = state,
-            onTabSelected = { viewModel.onEvent(ProfileEvent.SelectTab(it)) },
-            onLogout = { viewModel.onEvent(ProfileEvent.Logout) },
-            onAnimeClick = onAnimeClick,
-        )
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        "Профиль",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                ),
+            )
+        },
+    ) { innerPadding ->
+        when {
+            state.isLoading -> LoadingState(modifier = Modifier.padding(innerPadding))
+            state.error != null -> ErrorState(
+                message = state.error!!,
+                onRetry = { viewModel.onEvent(ProfileEvent.Refresh) },
+                modifier = Modifier.padding(innerPadding),
+            )
+            !state.isLoggedIn -> GuestContent(
+                onNavigateToLogin = onNavigateToLogin,
+                modifier = Modifier.padding(innerPadding),
+            )
+            else -> LoggedInContent(
+                state = state,
+                onLogout = { viewModel.onEvent(ProfileEvent.Logout) },
+                onAnimeClick = onAnimeClick,
+                modifier = Modifier.padding(innerPadding),
+            )
+        }
     }
 }
 
 @Composable
-private fun LoginPrompt(onNavigateToLogin: () -> Unit) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
+private fun GuestContent(
+    onNavigateToLogin: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxSize(),
     ) {
-        Card(
+        // Auth CTA card
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(32.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                .padding(16.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(24.dp),
         ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
                     Icons.Filled.Person,
                     contentDescription = null,
-                    modifier = Modifier.size(64.dp),
+                    modifier = Modifier.size(56.dp),
                     tint = MaterialTheme.colorScheme.primary,
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Войдите для доступа к избранному",
-                    style = MaterialTheme.typography.titleMedium,
-                    textAlign = TextAlign.Center,
+                    text = "Войдите в аккаунт",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
                 )
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Сохраняйте любимые аниме и отслеживайте историю просмотра",
+                    text = "Сохраняйте избранное и\nотслеживайте историю просмотра",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                 )
-                Spacer(modifier = Modifier.height(24.dp))
-                Button(onClick = onNavigateToLogin) {
-                    Text("Войти")
+                Spacer(modifier = Modifier.height(20.dp))
+                Button(
+                    onClick = onNavigateToLogin,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    ),
+                ) {
+                    Text("Войти", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -113,85 +155,153 @@ private fun LoginPrompt(onNavigateToLogin: () -> Unit) {
 }
 
 @Composable
-private fun ProfileContent(
+private fun LoggedInContent(
     state: ProfileUiState,
-    onTabSelected: (ProfileTab) -> Unit,
     onLogout: () -> Unit,
     onAnimeClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 24.dp),
+    ) {
         // User header
         state.user?.let { user ->
-            UserHeader(user = user, onLogout = onLogout)
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(52.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (user.avatarUrl.isNotBlank()) {
+                            AsyncImage(
+                                model = user.avatarUrl,
+                                contentDescription = user.name,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop,
+                            )
+                        } else {
+                            Icon(
+                                Icons.Filled.Person,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(28.dp),
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = user.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                }
+            }
         }
 
-        // Tabs
-        TabRow(
-            selectedTabIndex = ProfileTab.entries.indexOf(state.selectedTab),
-        ) {
-            ProfileTab.entries.forEach { tab ->
-                Tab(
-                    selected = state.selectedTab == tab,
-                    onClick = { onTabSelected(tab) },
-                    text = { Text(tab.title) },
+        // History section
+        if (state.history.isNotEmpty()) {
+            item {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                SectionHeader(
+                    title = "Продолжить просмотр",
+                    actionLabel = "Все →",
+                    onAction = { /* TODO: full history screen */ },
+                )
+            }
+            item {
+                AnimeHorizontalRow(
+                    items = state.history.take(8),
+                    onAnimeClick = onAnimeClick,
                 )
             }
         }
 
-        // Content
-        val items = when (state.selectedTab) {
-            ProfileTab.FAVORITES -> state.favorites
-            ProfileTab.HISTORY -> state.history
+        // Favorites section
+        if (state.favorites.isNotEmpty()) {
+            item {
+                HorizontalDivider(
+                    modifier = Modifier.padding(top = 8.dp),
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                )
+                SectionHeader(
+                    title = "Избранное",
+                    actionLabel = "Все ${state.favorites.size} →",
+                    onAction = { /* TODO: full favorites screen */ },
+                )
+            }
+            item {
+                AnimeHorizontalRow(
+                    items = state.favorites.take(8),
+                    onAnimeClick = onAnimeClick,
+                )
+            }
         }
 
-        if (items.isEmpty()) {
-            EmptyTabContent(tab = state.selectedTab)
-        } else {
-            AnimeGrid(
-                items = items,
-                onAnimeClick = onAnimeClick,
+        // Empty favorites state
+        if (state.isLoggedIn && state.favorites.isEmpty() && state.history.isEmpty()) {
+            item {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(
+                        Icons.Filled.Favorite,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "Здесь пока пусто",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Добавляйте аниме в избранное ❤",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    )
+                }
+            }
+        }
+
+        // Logout
+        item {
+            HorizontalDivider(
+                modifier = Modifier.padding(top = 16.dp),
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
             )
-        }
-    }
-}
-
-@Composable
-private fun UserHeader(
-    user: com.animevost.app.core.domain.model.User,
-    onLogout: () -> Unit,
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            AsyncImage(
-                model = user.avatarUrl,
-                contentDescription = user.name,
+            TextButton(
+                onClick = onLogout,
                 modifier = Modifier
-                    .size(56.dp)
-                    .clip(CircleShape),
-                contentScale = ContentScale.Crop,
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = user.name,
-                    style = MaterialTheme.typography.titleLarge,
-                )
-            }
-            IconButton(onClick = onLogout) {
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
                 Icon(
                     Icons.AutoMirrored.Filled.Logout,
-                    contentDescription = "Выйти",
+                    contentDescription = null,
                     tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "Выйти",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyLarge,
                 )
             }
         }
@@ -199,48 +309,19 @@ private fun UserHeader(
 }
 
 @Composable
-private fun AnimeGrid(
+private fun AnimeHorizontalRow(
     items: List<AnimePreview>,
     onAnimeClick: (String) -> Unit,
 ) {
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 140.dp),
-        contentPadding = PaddingValues(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(items, key = { it.id }) { anime ->
             AnimeCard(
                 anime = anime,
                 onClick = { onAnimeClick(anime.url) },
-            )
-        }
-    }
-}
-
-@Composable
-private fun EmptyTabContent(tab: ProfileTab) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = when (tab) {
-                    ProfileTab.FAVORITES -> "Нет избранных аниме"
-                    ProfileTab.HISTORY -> "История пуста"
-                },
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = when (tab) {
-                    ProfileTab.FAVORITES -> "Добавляйте аниме в избранное ❤"
-                    ProfileTab.HISTORY -> "Начните смотреть аниме 🎬"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.width(110.dp),
             )
         }
     }

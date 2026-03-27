@@ -2,34 +2,41 @@ package com.animevost.app.core.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Primary orange palette (matching animevost.org site colors)
-val Orange80 = Color(0xFFFFB84D)
-val Orange40 = Color(0xFFFFA20F)
-val OrangeLight = Color(0xFFFFD180)
-val OrangeDark = Color(0xFFE68A00)
+// ── Brand: Orange ─────────────────────────────────────────────
+val OrangePrimary    = Color(0xFFFFA20F)
+val OrangeBright     = Color(0xFFFFB84D)
+val OrangeDim        = Color(0xFFE68A00)
+val OrangeMuted      = Color(0xFF3D2A00) // tinted surface/chip bg
 
-// Secondary
-val Blue80 = Color(0xFF90CAF9)
-val Blue40 = Color(0xFF42A5F5)
+// ── Brand: Accent ─────────────────────────────────────────────
+val AccentBlue       = Color(0xFF4DA6FF)
+val AccentPurple     = Color(0xFFC084FC)
+val AccentGreen      = Color(0xFF4ADE80)
 
-// Tertiary
-val Purple80 = Color(0xFFCE93D8)
-val Purple40 = Color(0xFFAB47BC)
+// ── Dark Backgrounds ──────────────────────────────────────────
+val Bg0              = Color(0xFF0A0A0A) // true black root bg
+val Bg1              = Color(0xFF111111) // main screen bg
+val Bg2              = Color(0xFF1A1A1A) // cards, bottom bar
+val Bg3              = Color(0xFF242424) // input fields, chips
+val Bg4              = Color(0xFF2E2E2E) // dividers, shimmer base
 
-// Background & Surface – Dark theme
-val DarkBackground = Color(0xFF121212)
-val DarkSurface = Color(0xFF1E1E1E)
-val DarkSurfaceVariant = Color(0xFF2C2C2C)
+// ── Text ──────────────────────────────────────────────────────
+val TextPrimary      = Color(0xFFF0F0F0)
+val TextSecondary    = Color(0xFFA0A0A0)
+val TextDisabled     = Color(0xFF555555)
+val TextOnOrange     = Color(0xFF000000)
 
-// Background & Surface – Light theme
-val LightBackground = Color(0xFFFFFBFE)
-val LightSurface = Color(0xFFFFFBFE)
-val LightSurfaceVariant = Color(0xFFE7E0EC)
+// ── Overlays ──────────────────────────────────────────────────
+val ModalScrim       = Color(0xCC000000) // 80 % black
 
-// Neutral
-val OnDarkBackground = Color(0xFFE6E1E5)
-val OnLightBackground = Color(0xFF1C1B1F)
+// ── Semantic ──────────────────────────────────────────────────
+val ErrorRed         = Color(0xFFEF4444)
+val WarningAmber     = Color(0xFFF59E0B)
+val SuccessGreen     = Color(0xFF22C55E)
+val OnError          = Color(0xFFFFFFFF)
 
-// Error
-val ErrorRed = Color(0xFFEF5350)
-val OnError = Color(0xFFFFFFFF)
+// ── Light theme (secondary, kept for completeness) ────────────
+val LightBackground  = Color(0xFFFFFBFE)
+val LightSurface     = Color(0xFFFFFBFE)
+val LightSurfaceVar  = Color(0xFFE7E0EC)
+val OnLightBg        = Color(0xFF1C1B1F)

@@ -99,7 +99,7 @@ class SearchViewModel @Inject constructor(
     }
 
     companion object {
-        private const val DEBOUNCE_MS = 500L
+        private const val DEBOUNCE_MS = 300L
         private const val MIN_QUERY_LENGTH = 4
     }
 }

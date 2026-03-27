@@ -10,6 +10,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
+// Generic fallback loading indicator. Prefer screen-specific skeleton
+// shimmer composables (HomeShimmer, ListShimmer, etc.) over this.
 @Composable
 fun LoadingState(
     modifier: Modifier = Modifier,
@@ -19,8 +21,9 @@ fun LoadingState(
         contentAlignment = Alignment.Center,
     ) {
         CircularProgressIndicator(
-            modifier = Modifier.size(48.dp),
+            modifier = Modifier.size(40.dp),
             color = MaterialTheme.colorScheme.primary,
+            strokeWidth = 3.dp,
         )
     }
 }
