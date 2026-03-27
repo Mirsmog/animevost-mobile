@@ -70,14 +70,6 @@ fun ShimmerBox(
 @Composable
 fun HomeShimmer(modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
-        // Featured hero placeholder
-        ShimmerBox(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(260.dp),
-            radius = 0,
-        )
-
         // Sort chips row + layout button placeholder
         Row(
             modifier = Modifier
