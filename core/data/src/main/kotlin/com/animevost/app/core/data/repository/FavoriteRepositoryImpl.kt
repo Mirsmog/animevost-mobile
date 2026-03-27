@@ -3,12 +3,14 @@ package com.animevost.app.core.data.repository
 import com.animevost.app.core.data.db.FavoriteDao
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.repository.FavoriteRepository
+import com.animevost.app.core.network.AnimeVostApi
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class FavoriteRepositoryImpl @Inject constructor(
     private val favoriteDao: FavoriteDao,
+    private val api: AnimeVostApi,
 ) : FavoriteRepository {
 
     override suspend fun getFavorites(page: Int): List<AnimePreview> {
@@ -27,6 +29,14 @@ class FavoriteRepositoryImpl @Inject constructor(
     }
 
     override suspend fun toggleFavorite(newsId: Int): Boolean {
-        TODO("Implement: call API to toggle, update local DB")
+        val isFav = favoriteDao.isFavorite(newsId)
+        if (isFav) {
+            api.toggleFavorite(newsId, "del")
+            favoriteDao.deleteByNewsId(newsId)
+            return false
+        } else {
+            api.toggleFavorite(newsId, "add")
+            return true
+        }
     }
 }

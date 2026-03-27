@@ -1,18 +1,36 @@
 package com.animevost.app.core.data.repository
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import com.animevost.app.core.domain.model.Comment
 import com.animevost.app.core.domain.repository.CommentRepository
+import com.animevost.app.core.network.AnimeVostApi
+import com.animevost.app.core.network.parser.CommentParser
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class CommentRepositoryImpl @Inject constructor() : CommentRepository {
+class CommentRepositoryImpl @Inject constructor(
+    private val api: AnimeVostApi,
+    private val commentParser: CommentParser,
+    private val dataStore: DataStore<Preferences>,
+) : CommentRepository {
 
     override suspend fun getComments(newsId: Int, page: Int): List<Comment> {
-        TODO("Implement: call AnimeVostApi.getComments, parse response")
+        val response = api.getComments(page, newsId)
+        return commentParser.parse(response)
     }
 
     override suspend fun addComment(newsId: Int, text: String): Comment {
-        TODO("Implement: call AnimeVostApi.addComment, parse response")
+        val username = dataStore.data
+            .map { it[AuthRepositoryImpl.KEY_USERNAME] }
+            .firstOrNull()
+            .orEmpty()
+        val response = api.addComment(newsId, text, username)
+        val comments = commentParser.parse(response)
+        return comments.firstOrNull()
+            ?: Comment(id = 0, author = username, date = "", text = text, avatar = "")
     }
 }
