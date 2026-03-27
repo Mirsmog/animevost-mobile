@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.Star
@@ -38,6 +39,9 @@ import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -46,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -71,32 +76,50 @@ fun DetailScreen(
     viewModel: DetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(animeUrl) {
         viewModel.onEvent(DetailEvent.LoadAnime(animeUrl))
     }
 
-    when {
-        state.isLoading -> LoadingState()
-        state.error != null -> ErrorState(
-            message = state.error!!,
-            onRetry = { viewModel.onEvent(DetailEvent.LoadAnime(animeUrl)) },
-        )
-        state.anime != null -> DetailContent(
-            anime = state.anime!!,
-            isFavorite = state.isFavorite,
-            userRating = state.userRating,
-            isDescriptionExpanded = state.isDescriptionExpanded,
-            onBack = onBack,
-            onToggleFavorite = { viewModel.onEvent(DetailEvent.ToggleFavorite) },
-            onRate = { viewModel.onEvent(DetailEvent.RateAnime(it)) },
-            onToggleDescription = { viewModel.onEvent(DetailEvent.ToggleDescription) },
-            onPlayEpisode = { episode, index ->
-                onPlayEpisode(episode, state.anime!!.episodes, index)
-            },
-            onGenreClick = onGenreClick,
-            onRelatedClick = onRelatedClick,
-        )
+    LaunchedEffect(Unit) {
+        viewModel.effect.collect { effect ->
+            when (effect) {
+                is DetailEffect.ShowSnackbar -> snackbarHostState.showSnackbar(effect.message)
+            }
+        }
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+    ) { paddingValues ->
+        Box(modifier = Modifier.padding(paddingValues)) {
+            when {
+                state.isLoading -> LoadingState()
+                state.error != null -> ErrorState(
+                    message = state.error!!,
+                    onRetry = { viewModel.onEvent(DetailEvent.LoadAnime(animeUrl)) },
+                )
+                state.anime != null -> DetailContent(
+                    anime = state.anime!!,
+                    isFavorite = state.isFavorite,
+                    userRating = state.userRating,
+                    isDescriptionExpanded = state.isDescriptionExpanded,
+                    onBack = onBack,
+                    onToggleFavorite = { viewModel.onEvent(DetailEvent.ToggleFavorite) },
+                    onRate = { viewModel.onEvent(DetailEvent.RateAnime(it)) },
+                    onToggleDescription = { viewModel.onEvent(DetailEvent.ToggleDescription) },
+                    onPlayEpisode = { episode, index ->
+                        onPlayEpisode(episode, state.anime!!.episodes, index)
+                    },
+                    onDownloadEpisode = { episode ->
+                        viewModel.onEvent(DetailEvent.DownloadEpisode(episode))
+                    },
+                    onGenreClick = onGenreClick,
+                    onRelatedClick = onRelatedClick,
+                )
+            }
+        }
     }
 }
 
@@ -112,6 +135,7 @@ private fun DetailContent(
     onRate: (Int) -> Unit,
     onToggleDescription: () -> Unit,
     onPlayEpisode: (Episode, Int) -> Unit,
+    onDownloadEpisode: (Episode) -> Unit,
     onGenreClick: (String) -> Unit,
     onRelatedClick: (String) -> Unit,
 ) {
@@ -299,17 +323,32 @@ private fun DetailContent(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 anime.episodes.forEachIndexed { index, episode ->
-                    AssistChip(
-                        onClick = { onPlayEpisode(episode, index) },
-                        label = { Text(episode.name) },
-                        leadingIcon = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AssistChip(
+                            onClick = { onPlayEpisode(episode, index) },
+                            label = { Text(episode.name) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Filled.PlayCircle,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(AssistChipDefaults.IconSize),
+                                )
+                            },
+                        )
+                        IconButton(
+                            onClick = { onDownloadEpisode(episode) },
+                            modifier = Modifier.size(32.dp),
+                        ) {
                             Icon(
-                                Icons.Filled.PlayCircle,
-                                contentDescription = null,
-                                modifier = Modifier.size(AssistChipDefaults.IconSize),
+                                Icons.Filled.Download,
+                                contentDescription = "Скачать ${episode.name}",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.primary,
                             )
-                        },
-                    )
+                        }
+                    }
                 }
             }
         }
