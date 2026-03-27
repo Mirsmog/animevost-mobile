@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,6 +37,10 @@ fun AnimeCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Parse episodeInfo e.g. "TV / 12 из 24" or "OVA" or "12 серий"
+    val animeType = remember(anime.episodeInfo) { extractAnimeType(anime.episodeInfo) }
+    val episodeCount = remember(anime.episodeInfo) { extractEpisodeCount(anime.episodeInfo) }
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
@@ -60,7 +65,24 @@ fun AnimeCard(
                     ),
                 ),
         )
-        // Title + episodeInfo at bottom
+        // Type badge — top right
+        if (animeType.isNotEmpty()) {
+            Text(
+                text = animeType,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                        shape = RoundedCornerShape(4.dp),
+                    )
+                    .padding(horizontal = 5.dp, vertical = 2.dp),
+            )
+        }
+        // Title + episode count at bottom
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
@@ -74,10 +96,10 @@ fun AnimeCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (anime.episodeInfo.isNotBlank()) {
+            if (episodeCount.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(3.dp))
                 Text(
-                    text = anime.episodeInfo,
+                    text = episodeCount,
                     style = MaterialTheme.typography.labelSmall,
                     color = Color.White.copy(alpha = 0.65f),
                     maxLines = 1,
@@ -85,6 +107,27 @@ fun AnimeCard(
                 )
             }
         }
+    }
+}
+
+// Extract type token: TV, OVA, ONA, Movie, etc.
+private fun extractAnimeType(info: String): String {
+    if (info.isBlank()) return ""
+    val types = listOf("TV", "OVA", "ONA", "Movie", "Special", "Фильм", "Спэшл")
+    for (type in types) {
+        if (info.contains(type, ignoreCase = true)) return type.uppercase()
+    }
+    return ""
+}
+
+// Extract episode info: "12 из 24" or "12 серий" etc.
+private fun extractEpisodeCount(info: String): String {
+    if (info.isBlank()) return ""
+    // Remove type prefix: "TV / 12 из 24" → "12 из 24"
+    val stripped = info.replace(Regex("^(TV|OVA|ONA|Movie|Special|Фильм|Спэшл)\\s*/\\s*", RegexOption.IGNORE_CASE), "").trim()
+    return if (stripped.isNotEmpty() && stripped != info.trim()) stripped else {
+        // If no type prefix, return full info as fallback
+        info
     }
 }
 
