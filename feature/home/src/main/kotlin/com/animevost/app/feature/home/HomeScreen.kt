@@ -54,6 +54,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -219,51 +220,66 @@ private fun SortAndLayoutRow(
     isGridMode: Boolean,
     onToggleLayout: () -> Unit,
 ) {
+    val bgColor = MaterialTheme.colorScheme.background
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
+            .background(bgColor)
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Sort chips — scrollable
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .horizontalScroll(rememberScrollState())
-                .padding(start = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            SortOption.entries.forEach { option ->
-                val isSelected = selectedSort == option
-                FilterChip(
-                    selected = isSelected,
-                    onClick = { onSortSelected(option) },
-                    label = {
-                        Text(
-                            text = if (isSelected) {
-                                "${option.displayName} ${if (sortAscending) "↑" else "↓"}"
-                            } else {
-                                option.displayName
-                            },
-                            style = MaterialTheme.typography.labelLarge,
-                        )
-                    },
-                    shape = RoundedCornerShape(16.dp),
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.primary,
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-                    border = FilterChipDefaults.filterChipBorder(
-                        enabled = true,
+        // Sort chips — scrollable, takes remaining space
+        Box(modifier = Modifier.weight(1f)) {
+            Row(
+                modifier = Modifier
+                    .horizontalScroll(rememberScrollState())
+                    .padding(start = 12.dp, end = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SortOption.entries.forEach { option ->
+                    val isSelected = selectedSort == option
+                    FilterChip(
                         selected = isSelected,
-                        borderColor = Color.Transparent,
-                        selectedBorderColor = Color.Transparent,
-                    ),
-                )
+                        onClick = { onSortSelected(option) },
+                        label = {
+                            Text(
+                                text = if (isSelected) {
+                                    "${option.displayName} ${if (sortAscending) "↑" else "↓"}"
+                                } else {
+                                    option.displayName
+                                },
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.primary,
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = isSelected,
+                            borderColor = Color.Transparent,
+                            selectedBorderColor = Color.Transparent,
+                        ),
+                    )
+                }
             }
+
+            // Soft fade shadow on the right edge of chip row
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .width(40.dp)
+                    .height(48.dp)
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(Color.Transparent, bgColor),
+                        ),
+                    ),
+            )
         }
 
         // List / Grid toggle icon button
