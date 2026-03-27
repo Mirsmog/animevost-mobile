@@ -28,10 +28,16 @@ sealed class Screen(
 object NavRoutes {
     const val FILTERED_LIST = "filtered_list/{filterType}/{filterValue}/{filterLabel}"
     const val ANIME_DETAIL = "anime_detail/{url}"
+    const val PLAYER = "player/{videoId}/{episodeName}/{animeUrl}"
+    const val LOGIN = "login"
+    const val REGISTER = "register"
 
     fun filteredList(filterType: String, filterValue: String, filterLabel: String): String =
         "filtered_list/$filterType/${Uri.encode(filterValue)}/${Uri.encode(filterLabel)}"
 
     fun animeDetail(url: String): String =
         "anime_detail/${Uri.encode(url)}"
+
+    fun player(videoId: String, episodeName: String, animeUrl: String): String =
+        "player/${Uri.encode(videoId)}/${Uri.encode(episodeName)}/${Uri.encode(animeUrl)}"
 }
