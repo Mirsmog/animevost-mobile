@@ -27,7 +27,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -75,7 +77,8 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
-    var layoutColumns by rememberSaveable { mutableStateOf(3) }
+    var isGridMode by rememberSaveable { mutableStateOf(true) }
+    val layoutColumns = if (isGridMode) 3 else 1
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -167,8 +170,8 @@ fun HomeScreen(
                                 selectedSort = state.sort,
                                 sortAscending = state.sortAscending,
                                 onSortSelected = { viewModel.onEvent(HomeEvent.SelectSort(it)) },
-                                columns = layoutColumns,
-                                onColumnsChange = { layoutColumns = it },
+                                isGridMode = isGridMode,
+                                onToggleLayout = { isGridMode = !isGridMode },
                             )
                         }
 
@@ -213,8 +216,8 @@ private fun SortAndLayoutRow(
     selectedSort: SortOption,
     sortAscending: Boolean,
     onSortSelected: (SortOption) -> Unit,
-    columns: Int,
-    onColumnsChange: (Int) -> Unit,
+    isGridMode: Boolean,
+    onToggleLayout: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -223,7 +226,7 @@ private fun SortAndLayoutRow(
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Sort chips — scrollable, takes remaining space
+        // Sort chips — scrollable
         Row(
             modifier = Modifier
                 .weight(1f)
@@ -263,62 +266,16 @@ private fun SortAndLayoutRow(
             }
         }
 
-        // Layout icons — fixed, right side
-        Row(
-            modifier = Modifier
-                .padding(horizontal = 10.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .padding(3.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        // List / Grid toggle icon button
+        IconButton(
+            onClick = onToggleLayout,
+            modifier = Modifier.padding(end = 4.dp),
         ) {
-            listOf(1, 2, 3).forEach { cols ->
-                val isActive = columns == cols
-                Box(
-                    modifier = Modifier
-                        .size(30.dp)
-                        .clip(RoundedCornerShape(6.dp))
-                        .background(
-                            if (isActive) MaterialTheme.colorScheme.primary
-                            else Color.Transparent,
-                        )
-                        .clickable { onColumnsChange(cols) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    ColumnLayoutIcon(
-                        cols = cols,
-                        color = if (isActive) MaterialTheme.colorScheme.onPrimary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-    }
-}
-
-// Visual icon showing column layout (mini rectangles)
-@Composable
-private fun ColumnLayoutIcon(cols: Int, color: Color) {
-    val gap = 2.dp
-    val iconSize = 16.dp
-    val barWidth = when (cols) {
-        1 -> iconSize
-        2 -> (iconSize - gap) / 2
-        else -> (iconSize - gap * 2) / 3
-    }
-    Row(
-        modifier = Modifier.size(iconSize),
-        horizontalArrangement = Arrangement.spacedBy(gap),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        repeat(cols) {
-            Box(
-                modifier = Modifier
-                    .width(barWidth)
-                    .fillMaxHeight()
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(color),
+            Icon(
+                imageVector = if (isGridMode) Icons.Default.ViewList else Icons.Default.GridView,
+                contentDescription = if (isGridMode) "Список" else "Сетка",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp),
             )
         }
     }
