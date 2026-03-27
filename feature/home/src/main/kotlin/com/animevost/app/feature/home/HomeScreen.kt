@@ -1,5 +1,6 @@
 package com.animevost.app.feature.home
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -10,17 +11,16 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -54,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.animevost.app.core.domain.model.AnimePreview
@@ -67,7 +68,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     onAnimeClick: (String) -> Unit,
@@ -78,7 +79,6 @@ fun HomeScreen(
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        // Prevent double window inset consumption (outer Scaffold already handles it)
         contentWindowInsets = WindowInsets(0),
         topBar = {
             TopAppBar(
@@ -91,11 +91,6 @@ fun HomeScreen(
                     )
                 },
                 actions = {
-                    LayoutSelector(
-                        columns = layoutColumns,
-                        onSelect = { layoutColumns = it },
-                    )
-                    Spacer(Modifier.width(4.dp))
                     IconButton(onClick = { /* profile */ }) {
                         Icon(
                             Icons.Default.Person,
@@ -110,110 +105,96 @@ fun HomeScreen(
             )
         },
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-        ) {
-            when {
-                state.isLoading && state.animeList.isEmpty() -> {
-                    HomeShimmer()
-                }
-                state.error != null && state.animeList.isEmpty() -> {
-                    ErrorState(
-                        message = state.error!!,
-                        onRetry = { viewModel.onEvent(HomeEvent.Refresh) },
-                    )
-                }
-                else -> {
-                    // Sticky sort chips — outside the grid, always visible at top
-                    SortChipsRow(
-                        selectedSort = state.sort,
-                        sortAscending = state.sortAscending,
-                        onSortSelected = { viewModel.onEvent(HomeEvent.SelectSort(it)) },
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    )
+        when {
+            state.isLoading && state.animeList.isEmpty() -> {
+                HomeShimmer(modifier = Modifier.padding(innerPadding))
+            }
+            state.error != null && state.animeList.isEmpty() -> {
+                ErrorState(
+                    message = state.error!!,
+                    onRetry = { viewModel.onEvent(HomeEvent.Refresh) },
+                    modifier = Modifier.padding(innerPadding),
+                )
+            }
+            else -> {
+                val listState = rememberLazyListState()
 
-                    val gridState = rememberLazyGridState()
-
-                    // Reliable infinite scroll: restart when list grows, emit only on false→true edge
-                    LaunchedEffect(gridState, state.animeList.size) {
-                        snapshotFlow {
-                            val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                            val total = gridState.layoutInfo.totalItemsCount
-                            total > 0 && last >= total - 8
-                        }
-                            .distinctUntilChanged()
-                            .filter { it }
-                            .collect {
-                                if (state.canLoadMore && !state.isLoadingMore) {
-                                    viewModel.onEvent(HomeEvent.LoadMore)
-                                }
-                            }
+                // Reliable infinite scroll
+                LaunchedEffect(listState, state.animeList.size) {
+                    snapshotFlow {
+                        val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                        val total = listState.layoutInfo.totalItemsCount
+                        total > 0 && last >= total - 4
                     }
+                        .distinctUntilChanged()
+                        .filter { it }
+                        .collect {
+                            if (state.canLoadMore && !state.isLoadingMore) {
+                                viewModel.onEvent(HomeEvent.LoadMore)
+                            }
+                        }
+                }
 
-                    PullToRefreshBox(
-                        isRefreshing = state.isLoading && state.animeList.isNotEmpty(),
-                        onRefresh = { viewModel.onEvent(HomeEvent.Refresh) },
+                val rows = remember(state.animeList, layoutColumns) {
+                    state.animeList.chunked(layoutColumns)
+                }
+
+                PullToRefreshBox(
+                    isRefreshing = state.isLoading && state.animeList.isNotEmpty(),
+                    onRefresh = { viewModel.onEvent(HomeEvent.Refresh) },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(innerPadding),
+                ) {
+                    LazyColumn(
+                        state = listState,
+                        contentPadding = PaddingValues(bottom = 16.dp),
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(layoutColumns),
-                            state = gridState,
-                            contentPadding = PaddingValues(
-                                start = 12.dp,
-                                end = 12.dp,
-                                bottom = 16.dp,
-                            ),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.fillMaxSize(),
-                        ) {
-                            // Featured carousel spans full width
-                            if (state.animeList.isNotEmpty()) {
-                                item(span = { GridItemSpan(layoutColumns) }) {
-                                    FeaturedCarousel(
-                                        items = state.animeList.take(3),
-                                        onAnimeClick = onAnimeClick,
-                                    )
-                                }
+                        // Hero carousel
+                        if (state.animeList.isNotEmpty()) {
+                            item(key = "carousel") {
+                                FeaturedCarousel(
+                                    items = state.animeList.take(3),
+                                    onAnimeClick = onAnimeClick,
+                                )
                             }
+                        }
 
-                            // Anime cards — horizontal for 1-col, grid card for 2/3-col
-                            items(
-                                items = state.animeList,
-                                key = { it.id },
-                            ) { anime ->
-                                if (layoutColumns == 1) {
-                                    AnimeCardHorizontal(
-                                        anime = anime,
-                                        onClick = { onAnimeClick(anime.url) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                } else {
-                                    AnimeCard(
-                                        anime = anime,
-                                        onClick = { onAnimeClick(anime.url) },
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                }
-                            }
+                        // Sticky sort + layout row
+                        stickyHeader(key = "sort_header") {
+                            SortAndLayoutRow(
+                                selectedSort = state.sort,
+                                sortAscending = state.sortAscending,
+                                onSortSelected = { viewModel.onEvent(HomeEvent.SelectSort(it)) },
+                                columns = layoutColumns,
+                                onColumnsChange = { layoutColumns = it },
+                            )
+                        }
 
-                            // Load-more spinner
-                            if (state.isLoadingMore) {
-                                item(span = { GridItemSpan(layoutColumns) }) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(vertical = 16.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(28.dp),
-                                            color = MaterialTheme.colorScheme.primary,
-                                            strokeWidth = 2.dp,
-                                        )
-                                    }
+                        // Card rows
+                        items(rows, key = { it.first().id }) { row ->
+                            AnimeRow(
+                                items = row,
+                                columns = layoutColumns,
+                                onAnimeClick = onAnimeClick,
+                            )
+                        }
+
+                        // Load-more spinner
+                        if (state.isLoadingMore) {
+                            item(key = "loading_more") {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 20.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(28.dp),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        strokeWidth = 2.dp,
+                                    )
                                 }
                             }
                         }
@@ -224,43 +205,162 @@ fun HomeScreen(
     }
 }
 
+// ─── Sort chips + layout icons in one sticky row ──────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LayoutSelector(
+private fun SortAndLayoutRow(
+    selectedSort: SortOption,
+    sortAscending: Boolean,
+    onSortSelected: (SortOption) -> Unit,
     columns: Int,
-    onSelect: (Int) -> Unit,
+    onColumnsChange: (Int) -> Unit,
 ) {
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
-            .padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        listOf(1, 2, 3).forEach { cols ->
-            val isActive = columns == cols
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(
-                        if (isActive) MaterialTheme.colorScheme.primary
-                        else Color.Transparent,
-                    )
-                    .clickable { onSelect(cols) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = cols.toString(),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isActive) MaterialTheme.colorScheme.onPrimary
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+        // Sort chips — scrollable, takes remaining space
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .horizontalScroll(rememberScrollState())
+                .padding(start = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            SortOption.entries.forEach { option ->
+                val isSelected = selectedSort == option
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { onSortSelected(option) },
+                    label = {
+                        Text(
+                            text = if (isSelected) {
+                                "${option.displayName} ${if (sortAscending) "↑" else "↓"}"
+                            } else {
+                                option.displayName
+                            },
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.primary,
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = isSelected,
+                        borderColor = Color.Transparent,
+                        selectedBorderColor = Color.Transparent,
+                    ),
                 )
+            }
+        }
+
+        // Layout icons — fixed, right side
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 10.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(3.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            listOf(1, 2, 3).forEach { cols ->
+                val isActive = columns == cols
+                Box(
+                    modifier = Modifier
+                        .size(30.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(
+                            if (isActive) MaterialTheme.colorScheme.primary
+                            else Color.Transparent,
+                        )
+                        .clickable { onColumnsChange(cols) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ColumnLayoutIcon(
+                        cols = cols,
+                        color = if (isActive) MaterialTheme.colorScheme.onPrimary
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
 }
+
+// Visual icon showing column layout (mini rectangles)
+@Composable
+private fun ColumnLayoutIcon(cols: Int, color: Color) {
+    val gap = 2.dp
+    val iconSize = 16.dp
+    val barWidth = when (cols) {
+        1 -> iconSize
+        2 -> (iconSize - gap) / 2
+        else -> (iconSize - gap * 2) / 3
+    }
+    Row(
+        modifier = Modifier.size(iconSize),
+        horizontalArrangement = Arrangement.spacedBy(gap),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        repeat(cols) {
+            Box(
+                modifier = Modifier
+                    .width(barWidth)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(color),
+            )
+        }
+    }
+}
+
+// ─── Card row (replaces LazyVerticalGrid rows) ────────────────────────────────
+
+@Composable
+private fun AnimeRow(
+    items: List<AnimePreview>,
+    columns: Int,
+    onAnimeClick: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 3.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        items.forEach { anime ->
+            if (columns == 1) {
+                AnimeCardHorizontal(
+                    anime = anime,
+                    onClick = { onAnimeClick(anime.url) },
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                AnimeCard(
+                    anime = anime,
+                    onClick = { onAnimeClick(anime.url) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+        // Fill remaining slots in last row
+        repeat(columns - items.size) {
+            Spacer(modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+// ─── Carousel ────────────────────────────────────────────────────────────────
 
 @Composable
 private fun FeaturedCarousel(
@@ -311,49 +411,3 @@ private fun FeaturedCarousel(
         }
     }
 }
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SortChipsRow(
-    selectedSort: SortOption,
-    sortAscending: Boolean,
-    onSortSelected: (SortOption) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        SortOption.entries.forEach { option ->
-            val isSelected = selectedSort == option
-            FilterChip(
-                selected = isSelected,
-                onClick = { onSortSelected(option) },
-                label = {
-                    Text(
-                        text = if (isSelected) {
-                            "${option.displayName} ${if (sortAscending) "↑" else "↓"}"
-                        } else {
-                            option.displayName
-                        },
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                },
-                shape = RoundedCornerShape(16.dp),
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                    selectedLabelColor = MaterialTheme.colorScheme.primary,
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-                border = FilterChipDefaults.filterChipBorder(
-                    enabled = true,
-                    selected = isSelected,
-                    borderColor = Color.Transparent,
-                    selectedBorderColor = Color.Transparent,
-                ),
-            )
-        }
-    }
-}
-
