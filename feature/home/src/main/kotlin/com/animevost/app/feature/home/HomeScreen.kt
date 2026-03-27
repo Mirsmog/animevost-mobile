@@ -5,13 +5,17 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -24,6 +28,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -38,9 +43,12 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,10 +60,12 @@ import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.SortOption
 import com.animevost.app.core.ui.components.AnimeCard
 import com.animevost.app.core.ui.components.AnimeCardFeatured
+import com.animevost.app.core.ui.components.AnimeCardHorizontal
 import com.animevost.app.core.ui.components.ErrorState
 import com.animevost.app.core.ui.components.HomeShimmer
-import com.animevost.app.core.ui.components.SectionHeader
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,9 +74,12 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
+    var layoutColumns by rememberSaveable { mutableStateOf(3) }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        // Prevent double window inset consumption (outer Scaffold already handles it)
+        contentWindowInsets = WindowInsets(0),
         topBar = {
             TopAppBar(
                 title = {
@@ -78,6 +91,11 @@ fun HomeScreen(
                     )
                 },
                 actions = {
+                    LayoutSelector(
+                        columns = layoutColumns,
+                        onSelect = { layoutColumns = it },
+                    )
+                    Spacer(Modifier.width(4.dp))
                     IconButton(onClick = { /* profile */ }) {
                         Icon(
                             Icons.Default.Person,
@@ -92,109 +110,109 @@ fun HomeScreen(
             )
         },
     ) { innerPadding ->
-        when {
-            state.isLoading && state.animeList.isEmpty() -> {
-                HomeShimmer(modifier = Modifier.padding(innerPadding))
-            }
-            state.error != null && state.animeList.isEmpty() -> {
-                ErrorState(
-                    message = state.error!!,
-                    onRetry = { viewModel.onEvent(HomeEvent.Refresh) },
-                    modifier = Modifier.padding(innerPadding),
-                )
-            }
-            else -> {
-                val gridState = rememberLazyGridState()
-
-                val shouldLoadMore by remember {
-                    derivedStateOf {
-                        val info = gridState.layoutInfo
-                        val last = info.visibleItemsInfo.lastOrNull()?.index ?: 0
-                        last >= info.totalItemsCount - 6
-                    }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+        ) {
+            when {
+                state.isLoading && state.animeList.isEmpty() -> {
+                    HomeShimmer()
                 }
-
-                LaunchedEffect(shouldLoadMore) {
-                    if (shouldLoadMore && state.canLoadMore && !state.isLoadingMore) {
-                        viewModel.onEvent(HomeEvent.LoadMore)
-                    }
+                state.error != null && state.animeList.isEmpty() -> {
+                    ErrorState(
+                        message = state.error!!,
+                        onRetry = { viewModel.onEvent(HomeEvent.Refresh) },
+                    )
                 }
+                else -> {
+                    // Sticky sort chips — outside the grid, always visible at top
+                    SortChipsRow(
+                        selectedSort = state.sort,
+                        sortAscending = state.sortAscending,
+                        onSortSelected = { viewModel.onEvent(HomeEvent.SelectSort(it)) },
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    )
 
-                PullToRefreshBox(
-                    isRefreshing = state.isLoading && state.animeList.isNotEmpty(),
-                    onRefresh = { viewModel.onEvent(HomeEvent.Refresh) },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
-                ) {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(3),
-                        state = gridState,
-                        contentPadding = PaddingValues(bottom = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    val gridState = rememberLazyGridState()
+
+                    // Reliable infinite scroll: restart when list grows, emit only on false→true edge
+                    LaunchedEffect(gridState, state.animeList.size) {
+                        snapshotFlow {
+                            val last = gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+                            val total = gridState.layoutInfo.totalItemsCount
+                            total > 0 && last >= total - 8
+                        }
+                            .distinctUntilChanged()
+                            .filter { it }
+                            .collect {
+                                if (state.canLoadMore && !state.isLoadingMore) {
+                                    viewModel.onEvent(HomeEvent.LoadMore)
+                                }
+                            }
+                    }
+
+                    PullToRefreshBox(
+                        isRefreshing = state.isLoading && state.animeList.isNotEmpty(),
+                        onRefresh = { viewModel.onEvent(HomeEvent.Refresh) },
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        // Featured carousel — top 3 items
-                        if (state.animeList.isNotEmpty()) {
-                            item(span = { GridItemSpan(3) }) {
-                                FeaturedCarousel(
-                                    items = state.animeList.take(3),
-                                    onAnimeClick = onAnimeClick,
-                                )
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(layoutColumns),
+                            state = gridState,
+                            contentPadding = PaddingValues(
+                                start = 12.dp,
+                                end = 12.dp,
+                                bottom = 16.dp,
+                            ),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxSize(),
+                        ) {
+                            // Featured carousel spans full width
+                            if (state.animeList.isNotEmpty()) {
+                                item(span = { GridItemSpan(layoutColumns) }) {
+                                    FeaturedCarousel(
+                                        items = state.animeList.take(3),
+                                        onAnimeClick = onAnimeClick,
+                                    )
+                                }
                             }
-                        }
 
-                        // Sort chips
-                        item(span = { GridItemSpan(3) }) {
-                            SortChipsRow(
-                                selectedSort = state.sort,
-                                sortAscending = state.sortAscending,
-                                onSortSelected = { viewModel.onEvent(HomeEvent.SelectSort(it)) },
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                            )
-                        }
+                            // Anime cards — horizontal for 1-col, grid card for 2/3-col
+                            items(
+                                items = state.animeList,
+                                key = { it.id },
+                            ) { anime ->
+                                if (layoutColumns == 1) {
+                                    AnimeCardHorizontal(
+                                        anime = anime,
+                                        onClick = { onAnimeClick(anime.url) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                } else {
+                                    AnimeCard(
+                                        anime = anime,
+                                        onClick = { onAnimeClick(anime.url) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            }
 
-                        // Section header
-                        item(span = { GridItemSpan(3) }) {
-                            SectionHeader(title = "Все аниме")
-                        }
-
-                        // 3-column grid
-                        items(
-                            items = state.animeList,
-                            key = { it.id },
-                        ) { anime ->
-                            AnimeCard(
-                                anime = anime,
-                                onClick = { onAnimeClick(anime.url) },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(
-                                        start = if (state.animeList.indexOf(anime) % 3 == 0) 12.dp else 0.dp,
-                                        end = if (state.animeList.indexOf(anime) % 3 == 2) 12.dp else 0.dp,
-                                    ),
-                            )
-                        }
-
-                        // Load-more indicator
-                        if (state.isLoadingMore) {
-                            item(span = { GridItemSpan(3) }) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        repeat(3) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(8.dp)
-                                                    .clip(CircleShape)
-                                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
-                                            )
-                                        }
+                            // Load-more spinner
+                            if (state.isLoadingMore) {
+                                item(span = { GridItemSpan(layoutColumns) }) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 16.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(28.dp),
+                                            color = MaterialTheme.colorScheme.primary,
+                                            strokeWidth = 2.dp,
+                                        )
                                     }
                                 }
                             }
@@ -207,13 +225,50 @@ fun HomeScreen(
 }
 
 @Composable
+private fun LayoutSelector(
+    columns: Int,
+    onSelect: (Int) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        listOf(1, 2, 3).forEach { cols ->
+            val isActive = columns == cols
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(
+                        if (isActive) MaterialTheme.colorScheme.primary
+                        else Color.Transparent,
+                    )
+                    .clickable { onSelect(cols) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = cols.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isActive) MaterialTheme.colorScheme.onPrimary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun FeaturedCarousel(
     items: List<AnimePreview>,
     onAnimeClick: (String) -> Unit,
 ) {
     val pagerState = rememberPagerState { items.size }
 
-    // Auto-advance every 4 seconds
     LaunchedEffect(pagerState.pageCount) {
         while (true) {
             delay(4_000)
@@ -233,7 +288,6 @@ private fun FeaturedCarousel(
             )
         }
 
-        // Page indicator dots
         if (items.size > 1) {
             Row(
                 modifier = Modifier
@@ -302,3 +356,4 @@ private fun SortChipsRow(
         }
     }
 }
+

@@ -75,6 +75,7 @@ fun SearchScreen(
                         onValueChange = { viewModel.onEvent(SearchEvent.QueryChanged(it)) },
                         modifier = Modifier
                             .fillMaxWidth()
+                            .padding(end = 12.dp)
                             .focusRequester(focusRequester),
                         placeholder = {
                             Text(
