@@ -73,6 +73,10 @@ dependencies {
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
 
+    implementation(libs.work.runtime)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.work.compiler)
+
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
     implementation(libs.media3.exoplayer.hls)
