@@ -2,6 +2,7 @@ package com.animevost.app.feature.detail
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -330,6 +331,49 @@ private fun DetailContent(
                         onClick = { onRelatedClick(related.url) },
                         modifier = Modifier.width(130.dp),
                     )
+                }
+            }
+        }
+
+        // --- Это аниме состоит из ---
+        if (anime.relatedSeries.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Это аниме состоит из:",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                anime.relatedSeries.forEachIndexed { index, series ->
+                    Row(verticalAlignment = Alignment.Top) {
+                        Text(
+                            text = "${index + 1}. ",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Column {
+                            Text(
+                                text = series.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.clickable { onRelatedClick(series.url) },
+                            )
+                            if (series.description.isNotEmpty()) {
+                                Text(
+                                    text = series.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }

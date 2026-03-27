@@ -103,7 +103,7 @@ fun SearchScreen(
                     )
                 }
                 !state.hasSearched -> {
-                    EmptySearchPrompt()
+                    EmptySearchPrompt(tooShort = state.query.isNotBlank() && state.query.trim().length < 4)
                 }
                 state.hasSearched && state.results.isEmpty() -> {
                     NoResultsState(query = state.query)
@@ -167,7 +167,7 @@ fun SearchScreen(
 }
 
 @Composable
-private fun EmptySearchPrompt() {
+private fun EmptySearchPrompt(tooShort: Boolean = false) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
@@ -178,7 +178,7 @@ private fun EmptySearchPrompt() {
                 style = MaterialTheme.typography.headlineLarge,
             )
             Text(
-                text = "Введите название для поиска",
+                text = if (tooShort) "Введите минимум 4 символа" else "Введите название для поиска",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 8.dp),

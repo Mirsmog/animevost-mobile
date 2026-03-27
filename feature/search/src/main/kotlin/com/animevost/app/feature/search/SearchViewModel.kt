@@ -35,7 +35,7 @@ class SearchViewModel @Inject constructor(
         _uiState.update { it.copy(query = query) }
         searchJob?.cancel()
 
-        if (query.isBlank()) {
+        if (query.isBlank() || query.trim().length < MIN_QUERY_LENGTH) {
             _uiState.update {
                 it.copy(
                     results = emptyList(),
@@ -84,7 +84,7 @@ class SearchViewModel @Inject constructor(
                 val items = searchAnimeUseCase(state.query, nextPage)
                 _uiState.update {
                     it.copy(
-                        results = it.results + items,
+                        results = (it.results + items).distinctBy { anime -> anime.id },
                         isLoadingMore = false,
                         currentPage = nextPage,
                         canLoadMore = items.isNotEmpty(),
@@ -100,5 +100,6 @@ class SearchViewModel @Inject constructor(
 
     companion object {
         private const val DEBOUNCE_MS = 500L
+        private const val MIN_QUERY_LENGTH = 4
     }
 }

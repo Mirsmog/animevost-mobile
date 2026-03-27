@@ -12,21 +12,33 @@ class SessionCookieJar @Inject constructor(
 ) : CookieJar {
 
     private val memoryCache = mutableMapOf<String, MutableList<Cookie>>()
+    private val lock = Any()
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
         val domain = url.host
-        val existing = memoryCache.getOrPut(domain) { mutableListOf() }
-        cookies.forEach { newCookie ->
-            existing.removeAll { it.name == newCookie.name }
-            existing.add(newCookie)
+        val now = System.currentTimeMillis()
+        synchronized(lock) {
+            val existing = memoryCache.getOrPut(domain) { mutableListOf() }
+            cookies.forEach { newCookie ->
+                existing.removeAll { it.name == newCookie.name }
+                if (newCookie.expiresAt >= now) {
+                    existing.add(newCookie)
+                }
+            }
+            existing.removeAll { it.expiresAt < now }
+            storage.saveCookies(domain, existing.toList())
         }
-        storage.saveCookies(domain, existing)
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         val domain = url.host
-        return memoryCache.getOrPut(domain) {
-            storage.loadCookies(domain).toMutableList()
+        val now = System.currentTimeMillis()
+        synchronized(lock) {
+            val cookies = memoryCache.getOrPut(domain) {
+                storage.loadCookies(domain).toMutableList()
+            }
+            cookies.removeAll { it.expiresAt < now }
+            return cookies.toList()
         }
     }
 
