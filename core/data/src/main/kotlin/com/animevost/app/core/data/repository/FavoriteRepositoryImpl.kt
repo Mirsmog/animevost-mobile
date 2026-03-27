@@ -1,6 +1,7 @@
 package com.animevost.app.core.data.repository
 
 import com.animevost.app.core.data.db.FavoriteDao
+import com.animevost.app.core.data.db.FavoriteEntity
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.repository.FavoriteRepository
 import com.animevost.app.core.network.AnimeVostApi
@@ -28,7 +29,7 @@ class FavoriteRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun toggleFavorite(newsId: Int): Boolean {
+    override suspend fun toggleFavorite(newsId: Int, preview: AnimePreview?): Boolean {
         val isFav = favoriteDao.isFavorite(newsId)
         if (isFav) {
             api.toggleFavorite(newsId, "del")
@@ -36,6 +37,18 @@ class FavoriteRepositoryImpl @Inject constructor(
             return false
         } else {
             api.toggleFavorite(newsId, "add")
+            if (preview != null) {
+                favoriteDao.insert(
+                    FavoriteEntity(
+                        newsId = newsId,
+                        title = preview.title,
+                        titleOriginal = preview.titleOriginal,
+                        posterUrl = preview.posterUrl,
+                        episodeInfo = preview.episodeInfo,
+                        url = preview.url,
+                    ),
+                )
+            }
             return true
         }
     }

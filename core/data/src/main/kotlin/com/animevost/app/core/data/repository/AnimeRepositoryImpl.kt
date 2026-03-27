@@ -4,6 +4,7 @@ import com.animevost.app.core.domain.model.AnimeDetail
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.CatalogFilter
 import com.animevost.app.core.domain.repository.AnimeRepository
+import com.animevost.app.core.network.AnimeVostApi
 import com.animevost.app.core.network.DleEndpoints
 import com.animevost.app.core.network.HtmlFetcher
 import com.animevost.app.core.network.parser.AnimeDetailParser
@@ -18,6 +19,7 @@ class AnimeRepositoryImpl @Inject constructor(
     private val animeListParser: AnimeListParser,
     private val animeDetailParser: AnimeDetailParser,
     private val searchParser: SearchParser,
+    private val api: AnimeVostApi,
 ) : AnimeRepository {
 
     override suspend fun getAnimeList(page: Int, filter: CatalogFilter): List<AnimePreview> {
@@ -64,5 +66,10 @@ class AnimeRepositoryImpl @Inject constructor(
         filter.type?.let { return "tip/${it.name.lowercase()}/" }
         filter.year?.let { return "god/$it/" }
         return DleEndpoints.MAIN_PAGE
+    }
+
+    override suspend fun submitRating(newsId: Int, rating: Int): Double {
+        val response = api.submitRating(rating, newsId)
+        return response.get("rating")?.asDouble ?: 0.0
     }
 }
