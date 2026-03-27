@@ -155,16 +155,6 @@ fun HomeScreen(
                         contentPadding = PaddingValues(bottom = 16.dp),
                         modifier = Modifier.fillMaxSize(),
                     ) {
-                        // Hero carousel
-                        if (state.animeList.isNotEmpty()) {
-                            item(key = "carousel") {
-                                FeaturedCarousel(
-                                    items = state.animeList.take(3),
-                                    onAnimeClick = onAnimeClick,
-                                )
-                            }
-                        }
-
                         // Sticky sort + layout row
                         stickyHeader(key = "sort_header") {
                             SortAndLayoutRow(
