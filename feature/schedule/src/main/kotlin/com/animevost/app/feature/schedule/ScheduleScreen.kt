@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,16 +51,18 @@ fun ScheduleScreen(
     val state by viewModel.uiState.collectAsState()
 
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = {
                     Text(
                         text = "Расписание",
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
+                    containerColor = MaterialTheme.colorScheme.background,
                 ),
             )
         },
@@ -112,29 +115,44 @@ private fun DaySelector(
             val isSelected = day == selectedDay
             val isToday = day == DayTab.fromToday()
 
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(
-                        when {
-                            isSelected -> MaterialTheme.colorScheme.primary
-                            isToday -> MaterialTheme.colorScheme.primaryContainer
-                            else -> MaterialTheme.colorScheme.surfaceVariant
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(
+                            when {
+                                isSelected -> MaterialTheme.colorScheme.primary
+                                isToday -> MaterialTheme.colorScheme.primaryContainer
+                                else -> MaterialTheme.colorScheme.surfaceVariant
+                            },
+                        )
+                        .clickable { onDaySelected(day) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = day.shortName,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
+                        color = when {
+                            isSelected -> MaterialTheme.colorScheme.onPrimary
+                            isToday -> MaterialTheme.colorScheme.onPrimaryContainer
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
                         },
                     )
-                    .clickable { onDaySelected(day) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    text = day.shortName,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
-                    color = when {
-                        isSelected -> MaterialTheme.colorScheme.onPrimary
-                        isToday -> MaterialTheme.colorScheme.onPrimaryContainer
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                }
+                // Orange dot under today's day
+                Box(
+                    modifier = Modifier
+                        .size(4.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (isToday) MaterialTheme.colorScheme.primary
+                            else Color.Transparent,
+                        ),
                 )
             }
         }
