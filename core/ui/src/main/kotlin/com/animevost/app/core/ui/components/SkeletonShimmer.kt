@@ -99,7 +99,7 @@ fun HomeShimmer(modifier: Modifier = Modifier) {
             )
         }
 
-        // Grid card rows (3-col)
+        // Grid card rows (2-col)
         repeat(4) {
             Row(
                 modifier = Modifier
@@ -107,7 +107,7 @@ fun HomeShimmer(modifier: Modifier = Modifier) {
                     .padding(horizontal = 12.dp, vertical = 3.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                repeat(3) {
+                repeat(2) {
                     ShimmerBox(
                         modifier = Modifier
                             .weight(1f)
