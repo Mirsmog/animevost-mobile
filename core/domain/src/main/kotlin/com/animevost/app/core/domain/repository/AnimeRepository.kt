@@ -8,4 +8,5 @@ interface AnimeRepository {
     suspend fun getAnimeList(page: Int, filter: CatalogFilter): List<AnimePreview>
     suspend fun getAnimeDetail(url: String): AnimeDetail
     suspend fun search(query: String, page: Int): List<AnimePreview>
+    suspend fun submitRating(newsId: Int, rating: Int): Double
 }

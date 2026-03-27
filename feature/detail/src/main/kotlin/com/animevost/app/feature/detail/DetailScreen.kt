@@ -20,25 +20,32 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Comment
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -53,14 +60,17 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.animevost.app.core.domain.model.AnimeDetail
+import com.animevost.app.core.domain.model.Comment
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.ui.components.AnimeCard
 import com.animevost.app.core.ui.components.ErrorState
@@ -105,6 +115,11 @@ fun DetailScreen(
                     isFavorite = state.isFavorite,
                     userRating = state.userRating,
                     isDescriptionExpanded = state.isDescriptionExpanded,
+                    comments = state.comments,
+                    isLoadingComments = state.isLoadingComments,
+                    commentText = state.commentText,
+                    isAddingComment = state.isAddingComment,
+                    hasMoreComments = state.hasMoreComments,
                     onBack = onBack,
                     onToggleFavorite = { viewModel.onEvent(DetailEvent.ToggleFavorite) },
                     onRate = { viewModel.onEvent(DetailEvent.RateAnime(it)) },
@@ -117,6 +132,9 @@ fun DetailScreen(
                     },
                     onGenreClick = onGenreClick,
                     onRelatedClick = onRelatedClick,
+                    onLoadMoreComments = { viewModel.onEvent(DetailEvent.LoadMoreComments) },
+                    onCommentTextChange = { viewModel.onEvent(DetailEvent.UpdateCommentText(it)) },
+                    onSubmitComment = { viewModel.onEvent(DetailEvent.SubmitComment) },
                 )
             }
         }
@@ -130,6 +148,11 @@ private fun DetailContent(
     isFavorite: Boolean,
     userRating: Int,
     isDescriptionExpanded: Boolean,
+    comments: List<Comment>,
+    isLoadingComments: Boolean,
+    commentText: String,
+    isAddingComment: Boolean,
+    hasMoreComments: Boolean,
     onBack: () -> Unit,
     onToggleFavorite: () -> Unit,
     onRate: (Int) -> Unit,
@@ -138,6 +161,9 @@ private fun DetailContent(
     onDownloadEpisode: (Episode) -> Unit,
     onGenreClick: (String) -> Unit,
     onRelatedClick: (String) -> Unit,
+    onLoadMoreComments: () -> Unit,
+    onCommentTextChange: (String) -> Unit,
+    onSubmitComment: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -390,7 +416,164 @@ private fun DetailContent(
                 )
             }
         }
+
+        // --- Comments section ---
+        Spacer(modifier = Modifier.height(16.dp))
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        CommentsSection(
+            comments = comments,
+            isLoading = isLoadingComments,
+            commentText = commentText,
+            isAddingComment = isAddingComment,
+            hasMore = hasMoreComments,
+            onLoadMore = onLoadMoreComments,
+            onTextChange = onCommentTextChange,
+            onSubmit = onSubmitComment,
+        )
+
         Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun CommentsSection(
+    comments: List<Comment>,
+    isLoading: Boolean,
+    commentText: String,
+    isAddingComment: Boolean,
+    hasMore: Boolean,
+    onLoadMore: () -> Unit,
+    onTextChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        Text(
+            text = "Комментарии (${comments.size})",
+            style = MaterialTheme.typography.titleLarge,
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Add comment input
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedTextField(
+                value = commentText,
+                onValueChange = onTextChange,
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Написать комментарий…") },
+                maxLines = 3,
+                enabled = !isAddingComment,
+            )
+            IconButton(
+                onClick = onSubmit,
+                enabled = commentText.isNotBlank() && !isAddingComment,
+            ) {
+                if (isAddingComment) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                } else {
+                    Icon(
+                        Icons.AutoMirrored.Filled.Send,
+                        contentDescription = "Отправить",
+                        tint = if (commentText.isNotBlank()) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Comment list
+        comments.forEach { comment ->
+            CommentItem(comment = comment)
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        // Loading / Load more
+        if (isLoading && comments.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(32.dp))
+            }
+        }
+
+        if (hasMore && !isLoading) {
+            TextButton(
+                onClick = onLoadMore,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text("Показать ещё")
+            }
+        }
+
+        if (isLoading && comments.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommentItem(comment: Comment) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+        ),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                AsyncImage(
+                    model = comment.avatar,
+                    contentDescription = comment.author,
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Crop,
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = comment.author,
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    if (comment.date.isNotBlank()) {
+                        Text(
+                            text = comment.date,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = comment.text,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
     }
 }
 
