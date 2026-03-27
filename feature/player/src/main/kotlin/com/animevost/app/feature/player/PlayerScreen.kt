@@ -51,14 +51,10 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import com.animevost.app.core.domain.model.Episode
 
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(
-    episode: Episode,
-    allEpisodes: List<Episode>,
-    currentIndex: Int,
     onBack: () -> Unit,
     viewModel: PlayerViewModel = hiltViewModel(),
 ) {
@@ -77,21 +73,26 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(episode.videoId) {
-        viewModel.onEvent(PlayerEvent.LoadVideo(episode, allEpisodes, currentIndex))
-    }
-
     val exoPlayer = remember(context) {
         ExoPlayer.Builder(context).build()
     }
 
-    // Set media when URL changes
+    // Track previous videoId to detect quality-only changes vs episode changes
+    var previousVideoId by remember { mutableStateOf<String?>(null) }
+
+    // Set media when URL changes, restoring position on quality switch
     LaunchedEffect(state.currentVideoUrl, state.currentEpisode?.videoId) {
         val url = state.currentVideoUrl ?: return@LaunchedEffect
+        val currentEpisodeId = state.currentEpisode?.videoId
+        val isSameEpisode = previousVideoId != null && previousVideoId == currentEpisodeId
         val currentPosition = exoPlayer.currentPosition
         exoPlayer.setMediaItem(MediaItem.fromUri(url))
         exoPlayer.prepare()
+        if (isSameEpisode && currentPosition > 0) {
+            exoPlayer.seekTo(currentPosition)
+        }
         exoPlayer.playWhenReady = true
+        previousVideoId = currentEpisodeId
     }
 
     // Lifecycle handling

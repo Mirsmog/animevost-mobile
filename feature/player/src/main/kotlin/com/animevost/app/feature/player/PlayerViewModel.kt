@@ -1,9 +1,11 @@
 package com.animevost.app.feature.player
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.model.VideoSource
+import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
 import com.animevost.app.core.domain.usecase.GetVideoUrlUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,11 +32,6 @@ data class PlayerUiState(
 }
 
 sealed interface PlayerEvent {
-    data class LoadVideo(
-        val episode: Episode,
-        val allEpisodes: List<Episode>,
-        val currentIndex: Int,
-    ) : PlayerEvent
     data class SelectQuality(val quality: String) : PlayerEvent
     data object NextEpisode : PlayerEvent
     data object PreviousEpisode : PlayerEvent
@@ -42,18 +39,48 @@ sealed interface PlayerEvent {
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
     private val getVideoUrlUseCase: GetVideoUrlUseCase,
+    private val getAnimeDetailUseCase: GetAnimeDetailUseCase,
 ) : ViewModel() {
+
+    private val videoId: String = savedStateHandle["videoId"] ?: ""
+    private val episodeName: String = savedStateHandle["episodeName"] ?: ""
+    private val animeUrl: String = savedStateHandle["animeUrl"] ?: ""
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
+    init {
+        val episode = Episode(name = episodeName, videoId = videoId, thumbnailUrl = "")
+        loadVideo(episode, emptyList(), 0)
+        loadEpisodeList()
+    }
+
     fun onEvent(event: PlayerEvent) {
         when (event) {
-            is PlayerEvent.LoadVideo -> loadVideo(event.episode, event.allEpisodes, event.currentIndex)
             is PlayerEvent.SelectQuality -> selectQuality(event.quality)
             is PlayerEvent.NextEpisode -> navigateEpisode(1)
             is PlayerEvent.PreviousEpisode -> navigateEpisode(-1)
+        }
+    }
+
+    private fun loadEpisodeList() {
+        if (animeUrl.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val detail = getAnimeDetailUseCase(animeUrl)
+                val episodes = detail.episodes
+                val currentIdx = episodes.indexOfFirst { it.videoId == videoId }
+                _uiState.update {
+                    it.copy(
+                        allEpisodes = episodes,
+                        currentEpisodeIndex = if (currentIdx >= 0) currentIdx else 0,
+                    )
+                }
+            } catch (_: Exception) {
+                // prev/next navigation just won't work
+            }
         }
     }
 
@@ -64,8 +91,8 @@ class PlayerViewModel @Inject constructor(
                     isLoading = true,
                     error = null,
                     currentEpisode = episode,
-                    allEpisodes = allEpisodes,
-                    currentEpisodeIndex = index,
+                    allEpisodes = if (allEpisodes.isNotEmpty()) allEpisodes else it.allEpisodes,
+                    currentEpisodeIndex = if (allEpisodes.isNotEmpty()) index else it.currentEpisodeIndex,
                 )
             }
             try {

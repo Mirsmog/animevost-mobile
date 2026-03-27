@@ -1,7 +1,6 @@
 package com.animevost.app.navigation
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
+import android.net.Uri
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -10,7 +9,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -20,9 +18,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.animevost.app.feature.auth.LoginScreen
+import com.animevost.app.feature.auth.RegisterScreen
 import com.animevost.app.feature.catalog.CatalogScreen
 import com.animevost.app.feature.catalog.FilteredListScreen
+import com.animevost.app.feature.detail.DetailScreen
 import com.animevost.app.feature.home.HomeScreen
+import com.animevost.app.feature.player.PlayerScreen
+import com.animevost.app.feature.profile.ProfileScreen
 import com.animevost.app.feature.schedule.ScheduleScreen
 import com.animevost.app.feature.search.SearchScreen
 
@@ -96,7 +99,10 @@ fun AppNavGraph() {
                 )
             }
             composable(Screen.Profile.route) {
-                PlaceholderScreen(title = "Profile")
+                ProfileScreen(
+                    onNavigateToLogin = { navController.navigate(NavRoutes.LOGIN) },
+                    onAnimeClick = { url -> navController.navigate(NavRoutes.animeDetail(url)) },
+                )
             }
             composable(
                 route = NavRoutes.FILTERED_LIST,
@@ -118,19 +124,52 @@ fun AppNavGraph() {
                 arguments = listOf(
                     navArgument("url") { type = NavType.StringType },
                 ),
+            ) { backStackEntry ->
+                val url = Uri.decode(backStackEntry.arguments?.getString("url") ?: "")
+                DetailScreen(
+                    animeUrl = url,
+                    onBack = { navController.popBackStack() },
+                    onPlayEpisode = { episode, _, _ ->
+                        navController.navigate(NavRoutes.player(episode.videoId, episode.name, url))
+                    },
+                    onGenreClick = { genre ->
+                        navController.navigate(NavRoutes.filteredList("genre", genre, genre))
+                    },
+                    onRelatedClick = { relatedUrl ->
+                        navController.navigate(NavRoutes.animeDetail(relatedUrl))
+                    },
+                )
+            }
+            composable(
+                route = NavRoutes.PLAYER,
+                arguments = listOf(
+                    navArgument("videoId") { type = NavType.StringType },
+                    navArgument("episodeName") { type = NavType.StringType },
+                    navArgument("animeUrl") { type = NavType.StringType },
+                ),
             ) {
-                PlaceholderScreen(title = "Anime Detail")
+                PlayerScreen(onBack = { navController.popBackStack() })
+            }
+            composable(NavRoutes.LOGIN) {
+                LoginScreen(
+                    onLoginSuccess = { navController.popBackStack() },
+                    onNavigateToRegister = {
+                        navController.navigate(NavRoutes.REGISTER) {
+                            popUpTo(NavRoutes.LOGIN) { inclusive = true }
+                        }
+                    },
+                )
+            }
+            composable(NavRoutes.REGISTER) {
+                RegisterScreen(
+                    onRegisterSuccess = { navController.popBackStack() },
+                    onNavigateToLogin = {
+                        navController.navigate(NavRoutes.LOGIN) {
+                            popUpTo(NavRoutes.REGISTER) { inclusive = true }
+                        }
+                    },
+                )
             }
         }
-    }
-}
-
-@Composable
-private fun PlaceholderScreen(title: String) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(text = title)
     }
 }
