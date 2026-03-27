@@ -1,8 +1,10 @@
 package com.animevost.app.feature.home
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -11,8 +13,10 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -30,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.animevost.app.core.domain.model.SortOption
 import com.animevost.app.core.ui.components.AnimeCard
 import com.animevost.app.core.ui.components.ErrorState
 import com.animevost.app.core.ui.components.LoadingState
@@ -101,6 +106,15 @@ fun HomeScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.fillMaxSize(),
                     ) {
+                        item(span = { GridItemSpan(2) }) {
+                            SortChipsRow(
+                                selectedSort = state.sort,
+                                sortAscending = state.sortAscending,
+                                onSortSelected = { viewModel.onEvent(HomeEvent.SelectSort(it)) },
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            )
+                        }
+
                         items(
                             items = state.animeList,
                             key = { it.id },
@@ -129,6 +143,37 @@ fun HomeScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SortChipsRow(
+    selectedSort: SortOption,
+    sortAscending: Boolean,
+    onSortSelected: (SortOption) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        SortOption.entries.forEach { option ->
+            val isSelected = selectedSort == option
+            FilterChip(
+                selected = isSelected,
+                onClick = { onSortSelected(option) },
+                label = {
+                    Text(
+                        if (isSelected) {
+                            "${option.displayName} ${if (sortAscending) "↑" else "↓"}"
+                        } else {
+                            option.displayName
+                        }
+                    )
+                },
+            )
         }
     }
 }

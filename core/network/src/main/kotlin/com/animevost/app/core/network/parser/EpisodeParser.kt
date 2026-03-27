@@ -6,7 +6,7 @@ import javax.inject.Inject
 
 class EpisodeParser @Inject constructor() {
 
-    private val dataBlockRegex = Regex("""var\s+data\s*=\s*\{([^}]+)}""")
+    private val dataBlockRegex = Regex("""var\s+data\s*=\s*\{([^}]+)\}""")
     private val entryRegex = Regex(""""([^"]+)"\s*:\s*"(\d+)"""")
 
     fun parse(html: String): List<Episode> {

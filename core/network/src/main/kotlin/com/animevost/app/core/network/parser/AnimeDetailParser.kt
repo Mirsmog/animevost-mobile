@@ -3,6 +3,7 @@ package com.animevost.app.core.network.parser
 import com.animevost.app.core.domain.model.AnimeDetail
 import com.animevost.app.core.domain.model.AnimeType
 import com.animevost.app.core.domain.model.Genre
+import com.animevost.app.core.domain.model.RelatedSeries
 import com.animevost.app.core.network.DleEndpoints
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
@@ -13,7 +14,7 @@ class AnimeDetailParser @Inject constructor(
     private val episodeParser: EpisodeParser,
 ) {
 
-    fun parse(html: String): AnimeDetail {
+    fun parse(html: String, url: String = ""): AnimeDetail {
         val doc = Jsoup.parse(html, DleEndpoints.BASE_URL)
         val story = doc.selectFirst("div.shortstory") ?: doc
 
@@ -75,6 +76,7 @@ class AnimeDetailParser @Inject constructor(
 
         return AnimeDetail(
             id = id,
+            url = url,
             title = title,
             titleOriginal = titleOriginal,
             posterUrl = posterUrl,
@@ -91,6 +93,7 @@ class AnimeDetailParser @Inject constructor(
             publishDate = publishDate,
             categories = categories,
             relatedAnime = emptyList(),
+            relatedSeries = parseRelatedSeries(story),
             episodes = episodes,
         )
     }
@@ -133,6 +136,22 @@ class AnimeDetailParser @Inject constructor(
             }
         }
         return ""
+    }
+
+    private fun parseRelatedSeries(root: Element): List<RelatedSeries> {
+        for (titleDiv in root.select("div.title_spoiler")) {
+            if ("состоит" !in titleDiv.text()) continue
+            val spoilerDiv = titleDiv.nextElementSibling() ?: continue
+            if (!spoilerDiv.hasClass("text_spoiler")) continue
+            return spoilerDiv.select("li").mapNotNull { li ->
+                val link = li.selectFirst("a") ?: return@mapNotNull null
+                val title = link.attr("title").ifEmpty { link.text() }.trim()
+                val url = link.absUrl("href").ifEmpty { link.attr("href") }
+                val description = li.text().substringAfter(link.text()).trim().trimStart('-', ' ')
+                RelatedSeries(title = title, url = url, description = description)
+            }
+        }
+        return emptyList()
     }
 
     private fun extractIdFromDocument(doc: Document): Int? {

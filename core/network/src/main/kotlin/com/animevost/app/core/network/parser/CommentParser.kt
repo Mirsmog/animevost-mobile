@@ -16,26 +16,28 @@ class CommentParser @Inject constructor() {
     fun parseCommentsHtml(html: String): List<Comment> {
         val doc = Jsoup.parse(html, DleEndpoints.BASE_URL)
 
-        return doc.select("[id^=comment-], [id^=comm-id-], .comment, .comm-item")
+        return doc.select("[id^=comment-id-]")
             .mapNotNull { el ->
                 val id = el.attr("id")
-                    .removePrefix("comment-")
-                    .removePrefix("comm-id-")
+                    .removePrefix("comment-id-")
                     .toIntOrNull() ?: 0
 
-                val author = el.selectFirst(".comm-author a, .comment_author a, .nickname a")
+                val author = el.selectFirst(".commentFinalAva strong a")
                     ?.text()?.trim()
-                    ?: el.selectFirst(".comm-author, .comment_author, .nickname")
+                    ?: el.selectFirst(".commentFinalAva a")
                         ?.text()?.trim()
                     .orEmpty()
 
-                val date = el.selectFirst(".comm-date, .comment_date, .date")
-                    ?.text()?.trim().orEmpty()
+                val date = el.selectFirst(".commentFinalData")
+                    ?.ownText()?.trim().orEmpty()
 
-                val text = el.selectFirst(".comm-body, .comment_text, .text, .comm_body")
-                    ?.text()?.trim().orEmpty()
+                val text = el.selectFirst("[id^=comm-id-]")
+                    ?.text()?.trim()
+                    ?: el.selectFirst(".commentFinalText")
+                        ?.text()?.trim()
+                    .orEmpty()
 
-                val avatar = el.selectFirst(".comm-avatar img, .comment_avatar img, .avatar img")
+                val avatar = el.selectFirst(".commentFinalAva img")
                     ?.let { img ->
                         img.absUrl("src").ifEmpty { AnimeListParser.resolveUrl(img.attr("src")) }
                     }.orEmpty()

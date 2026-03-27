@@ -2,6 +2,7 @@ package com.animevost.app.core.domain.model
 
 data class AnimeDetail(
     val id: Int,
+    val url: String = "",
     val title: String,
     val titleOriginal: String,
     val posterUrl: String,
@@ -18,5 +19,6 @@ data class AnimeDetail(
     val publishDate: String,
     val categories: List<String>,
     val relatedAnime: List<AnimePreview>,
+    val relatedSeries: List<RelatedSeries>,
     val episodes: List<Episode>,
 )

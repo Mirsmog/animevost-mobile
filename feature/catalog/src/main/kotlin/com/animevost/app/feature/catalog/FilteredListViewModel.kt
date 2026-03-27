@@ -84,7 +84,7 @@ class FilteredListViewModel @Inject constructor(
                 val items = getAnimeListUseCase(page = nextPage, filter = catalogFilter)
                 _uiState.update {
                     it.copy(
-                        animeList = it.animeList + items,
+                        animeList = (it.animeList + items).distinctBy { anime -> anime.id },
                         isLoadingMore = false,
                         currentPage = nextPage,
                         canLoadMore = items.isNotEmpty(),

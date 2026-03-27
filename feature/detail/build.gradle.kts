@@ -8,7 +8,7 @@ plugins {
 
 android {
     namespace = "com.animevost.app.feature.detail"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         minSdk = 26

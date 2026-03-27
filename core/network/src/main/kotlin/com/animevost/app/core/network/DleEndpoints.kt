@@ -6,7 +6,7 @@ object DleEndpoints {
 
     // HTML pages (scraped with Jsoup)
     const val MAIN_PAGE = ""
-    const val SCHEDULE = "raspisanie/"
+    const val SCHEDULE = ""
 
     // URL patterns (for reference):
     // Detail:  /tip/{type}/{id}-{slug}.html
@@ -16,7 +16,7 @@ object DleEndpoints {
     // Page N:  /page/{n}/
 
     // Search — POST with form field "story"
-    const val SEARCH = "index.php?do=search&subaction=search"
+    const val SEARCH = "index.php?do=search"
 
     // DLE AJAX endpoints
     const val AJAX_RATING = "engine/ajax/rating.php"
@@ -25,7 +25,7 @@ object DleEndpoints {
     const val AJAX_FAVORITES = "engine/ajax/favorites.php"
 
     // Login is a POST to the site root
-    const val LOGIN = "."
+    const val LOGIN = ""
 
     // Video player frame
     const val PLAYER_FRAME = "frame5.php"

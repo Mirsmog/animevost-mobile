@@ -3,6 +3,7 @@ package com.animevost.app.feature.home
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.animevost.app.core.domain.model.CatalogFilter
+import com.animevost.app.core.domain.model.SortOption
 import com.animevost.app.core.domain.usecase.GetAnimeListUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +31,7 @@ class HomeViewModel @Inject constructor(
             HomeEvent.LoadMore -> loadMore()
             HomeEvent.Refresh -> refresh()
             HomeEvent.ClearError -> _uiState.update { it.copy(error = null) }
+            is HomeEvent.SelectSort -> selectSort(event.sort)
         }
     }
 
@@ -38,7 +40,8 @@ class HomeViewModel @Inject constructor(
         _uiState.update { it.copy(isLoading = true, error = null) }
         viewModelScope.launch {
             try {
-                val items = getAnimeListUseCase(page = 1, filter = CatalogFilter())
+                val s = _uiState.value
+                val items = getAnimeListUseCase(page = 1, filter = CatalogFilter(sortBy = s.sort, sortAscending = s.sortAscending))
                 _uiState.update {
                     it.copy(
                         animeList = items,
@@ -62,10 +65,10 @@ class HomeViewModel @Inject constructor(
         _uiState.update { it.copy(isLoadingMore = true) }
         viewModelScope.launch {
             try {
-                val items = getAnimeListUseCase(page = nextPage, filter = CatalogFilter())
+                val items = getAnimeListUseCase(page = nextPage, filter = CatalogFilter(sortBy = state.sort, sortAscending = state.sortAscending))
                 _uiState.update {
                     it.copy(
-                        animeList = it.animeList + items,
+                        animeList = (it.animeList + items).distinctBy { anime -> anime.id },
                         isLoadingMore = false,
                         currentPage = nextPage,
                         canLoadMore = items.isNotEmpty(),
@@ -83,19 +86,39 @@ class HomeViewModel @Inject constructor(
         _uiState.update { it.copy(isLoading = true, error = null) }
         viewModelScope.launch {
             try {
-                val items = getAnimeListUseCase(page = 1, filter = CatalogFilter())
+                val s = _uiState.value
+                val items = getAnimeListUseCase(page = 1, filter = CatalogFilter(sortBy = s.sort, sortAscending = s.sortAscending))
                 _uiState.update {
                     HomeUiState(
                         animeList = items,
                         isLoading = false,
                         currentPage = 1,
                         canLoadMore = items.isNotEmpty(),
+                        sort = s.sort,
+                        sortAscending = s.sortAscending,
                     )
                 }
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(isLoading = false, error = e.message ?: "Ошибка загрузки")
                 }
+            }
+        }
+    }
+
+    private fun selectSort(sort: SortOption) {
+        val prev = _uiState.value
+        // same sort → toggle direction; new sort → start with descending
+        val ascending = if (prev.sort == sort) !prev.sortAscending else false
+        _uiState.update { HomeUiState(sort = sort, sortAscending = ascending, isLoading = true) }
+        viewModelScope.launch {
+            try {
+                val items = getAnimeListUseCase(page = 1, filter = CatalogFilter(sortBy = sort, sortAscending = ascending))
+                _uiState.update {
+                    it.copy(animeList = items, isLoading = false, currentPage = 1, canLoadMore = items.isNotEmpty())
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(isLoading = false, error = e.message ?: "Ошибка загрузки") }
             }
         }
     }

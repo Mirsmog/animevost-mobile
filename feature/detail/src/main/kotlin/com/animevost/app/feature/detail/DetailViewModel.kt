@@ -169,6 +169,7 @@ class DetailViewModel @Inject constructor(
     }
 
     private fun toggleDescription() {
+        _uiState.update { it.copy(isDescriptionExpanded = !it.isDescriptionExpanded) }
     }
 
     private fun loadComments() {
@@ -176,7 +177,7 @@ class DetailViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingComments = true) }
             try {
-                val comments = getCommentsUseCase(anime.id, 1)
+                val comments = getCommentsUseCase(anime.id, 1, anime.url)
                 _uiState.update {
                     it.copy(
                         comments = comments,
@@ -198,7 +199,7 @@ class DetailViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingComments = true) }
             try {
-                val moreComments = getCommentsUseCase(anime.id, nextPage)
+                val moreComments = getCommentsUseCase(anime.id, nextPage, anime.url)
                 _uiState.update {
                     it.copy(
                         comments = it.comments + moreComments,
