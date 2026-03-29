@@ -9,6 +9,8 @@ import androidx.room.Room
 import com.animevost.app.core.data.db.AppDatabase
 import com.animevost.app.core.data.db.FavoriteDao
 import com.animevost.app.core.data.db.HistoryDao
+import com.animevost.app.core.data.db.MalMappingDao
+import com.animevost.app.core.data.db.SkipSegmentDao
 import com.animevost.app.core.data.repository.AnimeRepositoryImpl
 import com.animevost.app.core.data.repository.AuthRepositoryImpl
 import com.animevost.app.core.data.repository.CommentRepositoryImpl
@@ -16,6 +18,7 @@ import com.animevost.app.core.data.repository.FavoriteRepositoryImpl
 import com.animevost.app.core.data.repository.HistoryRepositoryImpl
 import com.animevost.app.core.data.repository.ScheduleRepositoryImpl
 import com.animevost.app.core.data.repository.SharedPrefsCookieStorage
+import com.animevost.app.core.data.repository.SkipRepositoryImpl
 import com.animevost.app.core.data.repository.VideoRepositoryImpl
 import com.animevost.app.core.domain.repository.AnimeRepository
 import com.animevost.app.core.domain.repository.AuthRepository
@@ -23,6 +26,7 @@ import com.animevost.app.core.domain.repository.CommentRepository
 import com.animevost.app.core.domain.repository.FavoriteRepository
 import com.animevost.app.core.domain.repository.HistoryRepository
 import com.animevost.app.core.domain.repository.ScheduleRepository
+import com.animevost.app.core.domain.repository.SkipRepository
 import com.animevost.app.core.domain.repository.VideoRepository
 import com.animevost.app.core.network.CookieStorage
 import dagger.Binds
@@ -44,7 +48,7 @@ object DataProvidesModule {
             context,
             AppDatabase::class.java,
             "animevost.db",
-        ).build()
+        ).fallbackToDestructiveMigration().build()
     }
 
     @Provides
@@ -52,6 +56,12 @@ object DataProvidesModule {
 
     @Provides
     fun provideHistoryDao(db: AppDatabase): HistoryDao = db.historyDao()
+
+    @Provides
+    fun provideMalMappingDao(db: AppDatabase): MalMappingDao = db.malMappingDao()
+
+    @Provides
+    fun provideSkipSegmentDao(db: AppDatabase): SkipSegmentDao = db.skipSegmentDao()
 
     @Provides
     @Singleton
@@ -93,6 +103,10 @@ abstract class DataBindsModule {
     @Binds
     @Singleton
     abstract fun bindScheduleRepository(impl: ScheduleRepositoryImpl): ScheduleRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindSkipRepository(impl: SkipRepositoryImpl): SkipRepository
 
     @Binds
     @Singleton
