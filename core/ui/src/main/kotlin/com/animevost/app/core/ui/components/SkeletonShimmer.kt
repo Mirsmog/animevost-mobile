@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -70,33 +69,20 @@ fun ShimmerBox(
 @Composable
 fun HomeShimmer(modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
-        // Sort chips row + layout button placeholder
+        // Sort chips row placeholder
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+                .padding(vertical = 8.dp)
+                .padding(start = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                repeat(4) {
-                    ShimmerBox(
-                        modifier = Modifier.height(32.dp).width(72.dp),
-                        radius = 16,
-                    )
-                }
+            repeat(4) {
+                ShimmerBox(
+                    modifier = Modifier.height(32.dp).width(72.dp),
+                    radius = 16,
+                )
             }
-            // Layout toggle button placeholder
-            ShimmerBox(
-                modifier = Modifier
-                    .padding(horizontal = 12.dp)
-                    .size(22.dp),
-                radius = 4,
-            )
         }
 
         // Grid card rows (2-col)

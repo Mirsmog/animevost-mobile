@@ -27,7 +27,7 @@ sealed class Screen(
     data object Profile : Screen("profile", "Профиль", Icons.Filled.Person, Icons.Outlined.Person)
 
     companion object {
-        val bottomNavItems = listOf(Home, Catalog, Search, Schedule, Profile)
+        val bottomNavItems = listOf(Home, Schedule, Profile)
     }
 }
 

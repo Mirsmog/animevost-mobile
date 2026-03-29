@@ -26,14 +26,12 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.animevost.app.feature.auth.LoginScreen
 import com.animevost.app.feature.auth.RegisterScreen
-import com.animevost.app.feature.catalog.CatalogScreen
 import com.animevost.app.feature.catalog.FilteredListScreen
 import com.animevost.app.feature.detail.DetailScreen
 import com.animevost.app.feature.home.HomeScreen
 import com.animevost.app.feature.player.PlayerScreen
 import com.animevost.app.feature.profile.ProfileScreen
 import com.animevost.app.feature.schedule.ScheduleScreen
-import com.animevost.app.feature.search.SearchScreen
 
 @Composable
 fun AppNavGraph() {
@@ -107,21 +105,10 @@ fun AppNavGraph() {
                     onAnimeClick = { url ->
                         navController.navigate(NavRoutes.animeDetail(url))
                     },
-                )
-            }
-            composable(Screen.Catalog.route) {
-                CatalogScreen(
                     onNavigateToFilteredList = { filterType, filterValue, filterLabel ->
                         navController.navigate(
                             NavRoutes.filteredList(filterType, filterValue, filterLabel),
                         )
-                    },
-                )
-            }
-            composable(Screen.Search.route) {
-                SearchScreen(
-                    onAnimeClick = { url ->
-                        navController.navigate(NavRoutes.animeDetail(url))
                     },
                 )
             }

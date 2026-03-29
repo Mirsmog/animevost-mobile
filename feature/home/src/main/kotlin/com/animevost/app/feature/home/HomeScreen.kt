@@ -1,17 +1,19 @@
 package com.animevost.app.feature.home
 
+import android.app.Activity
+import android.view.WindowManager
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,32 +21,44 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.BrightnessHigh
+import androidx.compose.material.icons.filled.BrightnessLow
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -53,33 +67,71 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.animevost.app.core.domain.model.AnimePreview
+import com.animevost.app.core.domain.model.AnimeType
 import com.animevost.app.core.domain.model.SortOption
 import com.animevost.app.core.ui.components.AnimeCard
-import com.animevost.app.core.ui.components.AnimeCardFeatured
 import com.animevost.app.core.ui.components.AnimeCardHorizontal
 import com.animevost.app.core.ui.components.ErrorState
 import com.animevost.app.core.ui.components.HomeShimmer
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
+
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.SortByAlpha
+import androidx.compose.material.icons.outlined.Star
+import androidx.compose.material.icons.outlined.SwapVert
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
+import com.animevost.app.core.ui.R as UiR
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     onAnimeClick: (String) -> Unit,
+    onNavigateToFilteredList: (filterType: String, filterValue: String, filterLabel: String) -> Unit = { _, _, _ -> },
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
-    var isGridMode by rememberSaveable { mutableStateOf(true) }
-    val layoutColumns = if (isGridMode) 2 else 1
+    var keepScreenOn by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(keepScreenOn) {
+        val window = (context as? Activity)?.window ?: return@LaunchedEffect
+        if (keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+    DisposableEffect(Unit) {
+        onDispose { (context as? Activity)?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    }
+
+    LaunchedEffect(state.isSearchActive) {
+        if (state.isSearchActive) focusRequester.requestFocus()
+    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -87,33 +139,75 @@ fun HomeScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = "AnimeVost",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                },
-                actions = {
-                    IconButton(onClick = { /* profile */ }) {
-                        Icon(
-                            Icons.Default.Person,
-                            contentDescription = "Профиль",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    if (state.isSearchActive) {
+                        TextField(
+                            value = state.searchQuery,
+                            onValueChange = { viewModel.onEvent(HomeEvent.SearchQueryChanged(it)) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(end = 8.dp)
+                                .focusRequester(focusRequester),
+                            placeholder = { Text("Название аниме...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                            leadingIcon = {
+                                Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                            },
+                            trailingIcon = {
+                                if (state.searchQuery.isNotEmpty()) {
+                                    IconButton(onClick = { viewModel.onEvent(HomeEvent.SearchQueryChanged("")) }) {
+                                        Icon(Icons.Default.Close, "Очистить", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            shape = RoundedCornerShape(24.dp),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                cursorColor = MaterialTheme.colorScheme.primary,
+                            ),
+                            textStyle = MaterialTheme.typography.bodyLarge,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = { keyboardController?.hide() }),
                         )
+                    } else {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Image(
+                                painter = painterResource(id = UiR.drawable.animevost_logo),
+                                contentDescription = null,
+                                modifier = Modifier.size(38.dp),
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "AnimeVost",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
+                actions = {
+                    if (state.isSearchActive) {
+                        IconButton(onClick = { viewModel.onEvent(HomeEvent.ToggleSearch) }) {
+                            Icon(Icons.Default.Close, "Закрыть поиск", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    } else {
+                        IconButton(onClick = { viewModel.onEvent(HomeEvent.ToggleSearch) }) {
+                            Icon(Icons.Default.Search, "Поиск", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
             )
         },
     ) { innerPadding ->
         when {
-            state.isLoading && state.animeList.isEmpty() -> {
+            state.isLoading && state.animeList.isEmpty() && !state.isSearchActive -> {
                 HomeShimmer(modifier = Modifier.padding(innerPadding))
             }
-            state.error != null && state.animeList.isEmpty() -> {
+            state.error != null && state.animeList.isEmpty() && !state.isSearchActive -> {
                 ErrorState(
                     message = state.error!!,
                     onRetry = { viewModel.onEvent(HomeEvent.Refresh) },
@@ -121,73 +215,208 @@ fun HomeScreen(
                 )
             }
             else -> {
-                val listState = rememberLazyListState()
-
-                // Reliable infinite scroll
-                LaunchedEffect(listState, state.animeList.size) {
-                    snapshotFlow {
-                        val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-                        val total = listState.layoutInfo.totalItemsCount
-                        total > 0 && last >= total - 4
+                Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+                    if (state.isSearchActive) {
+                        SearchContent(
+                            state = state,
+                            onAnimeClick = onAnimeClick,
+                            onLoadMore = { viewModel.onEvent(HomeEvent.SearchLoadMore) },
+                            onNavigateToFilteredList = onNavigateToFilteredList,
+                        )
+                    } else {
+                        CatalogContent(
+                            state = state,
+                            onAnimeClick = onAnimeClick,
+                            onSortSelected = { viewModel.onEvent(HomeEvent.SelectSort(it)) },
+                            onTypeSelected = { viewModel.onEvent(HomeEvent.SelectType(it)) },
+                            onLoadMore = { viewModel.onEvent(HomeEvent.LoadMore) },
+                            onRefresh = { viewModel.onEvent(HomeEvent.Refresh) },
+                        )
                     }
-                        .distinctUntilChanged()
-                        .filter { it }
-                        .collect {
-                            if (state.canLoadMore && !state.isLoadingMore) {
-                                viewModel.onEvent(HomeEvent.LoadMore)
+
+                    // Keep-awake FAB (bottom-left)
+                    FloatingActionButton(
+                        onClick = { keepScreenOn = !keepScreenOn },
+                        modifier = Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 16.dp).size(44.dp),
+                        containerColor = if (keepScreenOn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                    ) {
+                        Icon(
+                            imageVector = if (keepScreenOn) Icons.Default.BrightnessHigh else Icons.Default.BrightnessLow,
+                            contentDescription = if (keepScreenOn) "Не спать: вкл" else "Не спать: выкл",
+                            tint = if (keepScreenOn) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── Catalog content ──────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+private fun CatalogContent(
+    state: HomeUiState,
+    onAnimeClick: (String) -> Unit,
+    onSortSelected: (SortOption) -> Unit,
+    onTypeSelected: (AnimeType) -> Unit,
+    onLoadMore: () -> Unit,
+    onRefresh: () -> Unit,
+) {
+    val listState = rememberLazyListState()
+    var showSortSheet by remember { mutableStateOf(false) }
+
+    LaunchedEffect(listState, state.animeList.size) {
+        snapshotFlow {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            val total = listState.layoutInfo.totalItemsCount
+            total > 0 && last >= total - 4
+        }
+            .distinctUntilChanged()
+            .filter { it }
+            .collect { if (state.canLoadMore && !state.isLoadingMore) onLoadMore() }
+    }
+
+    val rows = remember(state.animeList) { state.animeList.chunked(2) }
+
+    PullToRefreshBox(
+        isRefreshing = state.isLoading && state.animeList.isNotEmpty(),
+        onRefresh = onRefresh,
+        modifier = Modifier.fillMaxSize(),
+    ) {
+        LazyColumn(
+            state = listState,
+            contentPadding = PaddingValues(bottom = 80.dp),
+            modifier = Modifier.fillMaxSize(),
+        ) {
+            stickyHeader(key = "filter_header") {
+                FilterBar(
+                    selectedSort = state.sort,
+                    sortAscending = state.sortAscending,
+                    selectedType = state.selectedType,
+                    onTypeSelected = onTypeSelected,
+                    onSortClick = { showSortSheet = true },
+                )
+            }
+            items(rows, key = { it.first().id }) { row ->
+                AnimeGridRow(items = row, onAnimeClick = onAnimeClick)
+            }
+            if (state.isLoadingMore) {
+                item(key = "loading_more") {
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(modifier = Modifier.size(28.dp), color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
+                    }
+                }
+            }
+        }
+    }
+
+    if (showSortSheet) {
+        SortBottomSheet(
+            selectedSort = state.sort,
+            sortAscending = state.sortAscending,
+            onSortSelected = { sort ->
+                onSortSelected(sort)
+                showSortSheet = false
+            },
+            onDismiss = { showSortSheet = false },
+        )
+    }
+}
+
+// ─── Search content ───────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SearchContent(
+    state: HomeUiState,
+    onAnimeClick: (String) -> Unit,
+    onLoadMore: () -> Unit,
+    onNavigateToFilteredList: (String, String, String) -> Unit,
+) {
+    when {
+        state.isSearchLoading && state.searchResults.isEmpty() -> {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, strokeWidth = 3.dp, modifier = Modifier.size(36.dp))
+            }
+        }
+
+        !state.hasSearched -> {
+            val hasNavData = state.genres.isNotEmpty() || state.years.isNotEmpty()
+            if (!hasNavData) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(Icons.Default.Search, null, modifier = Modifier.size(56.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = if (state.searchQuery.isNotBlank() && state.searchQuery.trim().length < 4) "Введите минимум 4 символа" else "Введите название аниме",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 80.dp),
+                ) {
+                    if (state.searchQuery.isNotBlank() && state.searchQuery.trim().length < 4) {
+                        item {
+                            Text(
+                                "Введите минимум 4 символа",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                            )
+                        }
+                    }
+                    if (state.genres.isNotEmpty()) {
+                        item {
+                            Text(
+                                "Жанры",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
+                            )
+                        }
+                        item {
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                state.genres.forEach { genre ->
+                                    SuggestionChip(
+                                        onClick = { onNavigateToFilteredList("genre", genre.url, genre.name) },
+                                        label = { Text(genre.name, style = MaterialTheme.typography.labelLarge) },
+                                        shape = RoundedCornerShape(16.dp),
+                                    )
+                                }
                             }
                         }
-                }
-
-                val rows = remember(state.animeList, layoutColumns) {
-                    state.animeList.chunked(layoutColumns)
-                }
-
-                PullToRefreshBox(
-                    isRefreshing = state.isLoading && state.animeList.isNotEmpty(),
-                    onRefresh = { viewModel.onEvent(HomeEvent.Refresh) },
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
-                ) {
-                    LazyColumn(
-                        state = listState,
-                        contentPadding = PaddingValues(bottom = 16.dp),
-                        modifier = Modifier.fillMaxSize(),
-                    ) {
-                        // Sticky sort + layout row
-                        stickyHeader(key = "sort_header") {
-                            SortAndLayoutRow(
-                                selectedSort = state.sort,
-                                sortAscending = state.sortAscending,
-                                onSortSelected = { viewModel.onEvent(HomeEvent.SelectSort(it)) },
-                                isGridMode = isGridMode,
-                                onToggleLayout = { isGridMode = !isGridMode },
+                    }
+                    if (state.years.isNotEmpty()) {
+                        item {
+                            Text(
+                                "Год",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
                             )
                         }
-
-                        // Card rows
-                        items(rows, key = { it.first().id }) { row ->
-                            AnimeRow(
-                                items = row,
-                                columns = layoutColumns,
-                                onAnimeClick = onAnimeClick,
-                            )
-                        }
-
-                        // Load-more spinner
-                        if (state.isLoadingMore) {
-                            item(key = "loading_more") {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 20.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(28.dp),
-                                        color = MaterialTheme.colorScheme.primary,
-                                        strokeWidth = 2.dp,
+                        item {
+                            LazyRow(
+                                contentPadding = PaddingValues(horizontal = 12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                items(state.years) { year ->
+                                    SuggestionChip(
+                                        onClick = { onNavigateToFilteredList("year", year, year) },
+                                        label = { Text(year, style = MaterialTheme.typography.labelLarge) },
+                                        shape = RoundedCornerShape(16.dp),
                                     )
                                 }
                             }
@@ -196,21 +425,64 @@ fun HomeScreen(
                 }
             }
         }
+
+        state.hasSearched && state.searchResults.isEmpty() -> {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
+                    Text("😕", style = MaterialTheme.typography.headlineLarge)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Ничего не найдено", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text("По запросу «${state.searchQuery}» совпадений нет.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                }
+            }
+        }
+
+        else -> {
+            val listState = rememberLazyListState()
+            val shouldLoadMore by remember {
+                derivedStateOf {
+                    val info = listState.layoutInfo
+                    val last = info.visibleItemsInfo.lastOrNull()?.index ?: 0
+                    last >= info.totalItemsCount - 4
+                }
+            }
+            LaunchedEffect(shouldLoadMore) {
+                if (shouldLoadMore && state.canSearchLoadMore && !state.isSearchLoadingMore) onLoadMore()
+            }
+
+            LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
+                item {
+                    Text("Результаты: ${state.searchResults.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                }
+                items(state.searchResults, key = { it.id }) { anime ->
+                    AnimeCardHorizontal(anime = anime, onClick = { onAnimeClick(anime.url) })
+                    HorizontalDivider(modifier = Modifier.padding(start = 84.dp, end = 16.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+                }
+                if (state.isSearchLoadingMore) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
-// ─── Sort chips + layout icons in one sticky row ──────────────────────────────
+// ─── Filter bar: type chips + sort button ─────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SortAndLayoutRow(
+private fun FilterBar(
     selectedSort: SortOption,
     sortAscending: Boolean,
-    onSortSelected: (SortOption) -> Unit,
-    isGridMode: Boolean,
-    onToggleLayout: () -> Unit,
+    selectedType: AnimeType?,
+    onTypeSelected: (AnimeType) -> Unit,
+    onSortClick: () -> Unit,
 ) {
     val bgColor = MaterialTheme.colorScheme.background
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -218,33 +490,32 @@ private fun SortAndLayoutRow(
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Sort chips — scrollable, takes remaining space
+        // Type chips — horizontal scroll with fade edge
         Box(modifier = Modifier.weight(1f)) {
-            Row(
-                modifier = Modifier
-                    .horizontalScroll(rememberScrollState())
-                    .padding(start = 12.dp, end = 4.dp),
+            LazyRow(
+                contentPadding = PaddingValues(start = 12.dp, end = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                SortOption.entries.forEach { option ->
-                    val isSelected = selectedSort == option
+                items(AnimeType.entries.filter { it != AnimeType.UNKNOWN }) { type ->
+                    val isSelected = selectedType == type
                     FilterChip(
                         selected = isSelected,
-                        onClick = { onSortSelected(option) },
+                        onClick = { onTypeSelected(type) },
                         label = {
                             Text(
-                                text = if (isSelected) {
-                                    "${option.displayName} ${if (sortAscending) "↑" else "↓"}"
-                                } else {
-                                    option.displayName
-                                },
+                                typeShortName(type),
                                 style = MaterialTheme.typography.labelLarge,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                             )
                         },
-                        shape = RoundedCornerShape(16.dp),
+                        leadingIcon = if (isSelected) {
+                            { Icon(Icons.Default.Check, null, modifier = Modifier.size(14.dp)) }
+                        } else null,
+                        shape = RoundedCornerShape(20.dp),
                         colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
                             selectedLabelColor = MaterialTheme.colorScheme.primary,
+                            selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
                             containerColor = MaterialTheme.colorScheme.surfaceVariant,
                             labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
                         ),
@@ -252,125 +523,180 @@ private fun SortAndLayoutRow(
                             enabled = true,
                             selected = isSelected,
                             borderColor = Color.Transparent,
-                            selectedBorderColor = Color.Transparent,
+                            selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
                         ),
                     )
                 }
             }
-
-            // Soft fade shadow on the right edge of chip row
+            // Fade edge so chips don't clip abruptly
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .width(40.dp)
-                    .height(48.dp)
-                    .background(
-                        Brush.horizontalGradient(
-                            colors = listOf(Color.Transparent, bgColor),
-                        ),
-                    ),
+                    .width(24.dp)
+                    .matchParentSize()
+                    .background(Brush.horizontalGradient(listOf(Color.Transparent, bgColor))),
             )
         }
 
-        // List / Grid toggle icon button
-        IconButton(
-            onClick = onToggleLayout,
-            modifier = Modifier.padding(end = 4.dp),
+        // Sort button — opens bottom sheet
+        Surface(
+            onClick = onSortClick,
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant,
+            modifier = Modifier.padding(end = 12.dp),
         ) {
-            Icon(
-                imageVector = if (isGridMode) Icons.Default.ViewList else Icons.Default.GridView,
-                contentDescription = if (isGridMode) "Список" else "Сетка",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp),
-            )
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Icon(
+                    Icons.Outlined.SwapVert,
+                    contentDescription = "Сортировка",
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = sortShortName(selectedSort),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
 
-// ─── Card row (replaces LazyVerticalGrid rows) ────────────────────────────────
+// ─── Sort bottom sheet ────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SortBottomSheet(
+    selectedSort: SortOption,
+    sortAscending: Boolean,
+    onSortSelected: (SortOption) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(),
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+        dragHandle = {
+            Box(
+                modifier = Modifier
+                    .padding(vertical = 10.dp)
+                    .width(36.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)),
+            )
+        },
+    ) {
+        Column(modifier = Modifier.padding(bottom = 28.dp)) {
+            Text(
+                text = "Сортировка",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            SortOption.entries.forEach { option ->
+                val isSelected = selectedSort == option
+                SortOptionRow(
+                    icon = sortOptionIcon(option),
+                    label = option.displayName,
+                    isSelected = isSelected,
+                    ascending = if (isSelected) sortAscending else false,
+                    onClick = { onSortSelected(option) },
+                )
+            }
+        }
+    }
+}
 
 @Composable
-private fun AnimeRow(
-    items: List<AnimePreview>,
-    columns: Int,
-    onAnimeClick: (String) -> Unit,
+private fun SortOptionRow(
+    icon: ImageVector,
+    label: String,
+    isSelected: Boolean,
+    ascending: Boolean,
+    onClick: () -> Unit,
 ) {
+    val bgColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent
+    val contentColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+    val iconColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 3.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+            .clickable(onClick = onClick)
+            .background(bgColor)
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        items.forEach { anime ->
-            if (columns == 1) {
-                AnimeCardHorizontal(
-                    anime = anime,
-                    onClick = { onAnimeClick(anime.url) },
-                    modifier = Modifier.weight(1f),
-                )
-            } else {
-                AnimeCard(
-                    anime = anime,
-                    onClick = { onAnimeClick(anime.url) },
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-        // Fill remaining slots in last row
-        repeat(columns - items.size) {
-            Spacer(modifier = Modifier.weight(1f))
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(22.dp),
+            tint = iconColor,
+        )
+        Spacer(modifier = Modifier.width(14.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+            color = contentColor,
+            modifier = Modifier.weight(1f),
+        )
+        if (isSelected) {
+            Icon(
+                imageVector = if (ascending) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = if (ascending) "По возрастанию" else "По убыванию",
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
         }
     }
 }
 
-// ─── Carousel ────────────────────────────────────────────────────────────────
+private fun sortOptionIcon(option: SortOption): ImageVector = when (option) {
+    SortOption.DATE -> Icons.Outlined.CalendarMonth
+    SortOption.RATING -> Icons.Outlined.Star
+    SortOption.VIEWS -> Icons.Outlined.Visibility
+    SortOption.COMMENTS -> Icons.Outlined.ChatBubbleOutline
+    SortOption.TITLE -> Icons.Outlined.SortByAlpha
+}
+
+private fun sortShortName(sort: SortOption) = when (sort) {
+    SortOption.DATE -> "Дата"
+    SortOption.RATING -> "Рейтинг"
+    SortOption.VIEWS -> "Просмотры"
+    SortOption.COMMENTS -> "Комменты"
+    SortOption.TITLE -> "Алфавит"
+}
+
+private fun typeShortName(type: AnimeType) = when (type) {
+    AnimeType.FULL_MOVIE -> "Фильм"
+    AnimeType.SHORT_MOVIE -> "К/М"
+    else -> type.displayName
+}
+
+// ─── 2-column card row ────────────────────────────────────────────────────────
 
 @Composable
-private fun FeaturedCarousel(
+private fun AnimeGridRow(
     items: List<AnimePreview>,
     onAnimeClick: (String) -> Unit,
 ) {
-    val pagerState = rememberPagerState { items.size }
-
-    LaunchedEffect(pagerState.pageCount) {
-        while (true) {
-            delay(4_000)
-            val next = (pagerState.currentPage + 1) % pagerState.pageCount
-            pagerState.animateScrollToPage(next)
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        items.forEach { anime ->
+            AnimeCard(anime = anime, onClick = { onAnimeClick(anime.url) }, modifier = Modifier.weight(1f))
         }
-    }
-
-    Box {
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier.fillMaxWidth(),
-        ) { page ->
-            AnimeCardFeatured(
-                anime = items[page],
-                onClick = { onAnimeClick(items[page].url) },
-            )
-        }
-
-        if (items.size > 1) {
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                repeat(items.size) { index ->
-                    val isActive = pagerState.currentPage == index
-                    Box(
-                        modifier = Modifier
-                            .size(if (isActive) 8.dp else 5.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (isActive) MaterialTheme.colorScheme.primary
-                                else Color.White.copy(alpha = 0.4f),
-                            ),
-                    )
-                }
-            }
-        }
+        if (items.size == 1) Spacer(modifier = Modifier.weight(1f))
     }
 }
