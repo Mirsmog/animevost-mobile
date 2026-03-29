@@ -91,6 +91,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -129,6 +130,11 @@ fun PlayerScreen(
     // ── Auto-next ────────────────────────────────────────────────
     var showAutoNext by remember { mutableStateOf(false) }
     var autoNextCountdown by remember { mutableIntStateOf(5) }
+
+    // ── Speed boost (double-tap + hold) ──────────────────────────
+    var isSpeedBoosting by remember { mutableStateOf(false) }
+    var lastDoubleTapTimeMs by remember { mutableLongStateOf(0L) }
+    var speedBoostJustEnded by remember { mutableStateOf(false) }
 
     // ── Skip segment state ───────────────────────────────────
     val activeSkip = state.skipSegments.firstOrNull { seg ->
@@ -282,11 +288,43 @@ fun PlayerScreen(
                 .fillMaxSize()
                 .pointerInput(Unit) {
                     kotlinx.coroutines.coroutineScope {
-                        // Double-tap seek ±10 s / single-tap toggle controls
+                        // Double-tap seek ±10 s / single-tap toggle / triple-tap-hold speed boost
                         launch {
                             detectTapGestures(
-                                onTap = { controlsVisible = !controlsVisible },
+                                onPress = {
+                                    val pressTime = System.currentTimeMillis()
+                                    if (pressTime - lastDoubleTapTimeMs < 400 &&
+                                        lastDoubleTapTimeMs > 0
+                                    ) {
+                                        // Third tap after double-tap — check if held
+                                        delay(200)
+                                        isSpeedBoosting = true
+                                        exoPlayer.setPlaybackParameters(
+                                            PlaybackParameters(2.0f),
+                                        )
+                                        haptic.performHapticFeedback(
+                                            HapticFeedbackType.LongPress,
+                                        )
+                                        tryAwaitRelease()
+                                        isSpeedBoosting = false
+                                        exoPlayer.setPlaybackParameters(
+                                            PlaybackParameters(1.0f),
+                                        )
+                                        speedBoostJustEnded = true
+                                        lastDoubleTapTimeMs = 0L
+                                    } else {
+                                        tryAwaitRelease()
+                                    }
+                                },
+                                onTap = {
+                                    if (speedBoostJustEnded) {
+                                        speedBoostJustEnded = false
+                                    } else {
+                                        controlsVisible = !controlsVisible
+                                    }
+                                },
                                 onDoubleTap = { offset ->
+                                    lastDoubleTapTimeMs = System.currentTimeMillis()
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     if (offset.x < size.width / 2) {
                                         exoPlayer.seekTo(
@@ -367,6 +405,27 @@ fun PlayerScreen(
                 Text(
                     text = formatTime(seekPreviewMs),
                     style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
+            }
+        }
+
+        // ── Speed boost indicator ────────────────────────────────
+        AnimatedVisibility(
+            visible = isSpeedBoosting,
+            enter = fadeIn(tween(100)),
+            exit = fadeOut(tween(200)),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    text = "▶▶ 2x",
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
                 )
