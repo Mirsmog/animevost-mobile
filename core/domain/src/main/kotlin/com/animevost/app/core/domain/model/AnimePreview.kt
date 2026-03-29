@@ -7,4 +7,8 @@ data class AnimePreview(
     val posterUrl: String,
     val episodeInfo: String,
     val url: String,
+    val type: String = "",
+    val rating: Double = 0.0,
+    val viewCount: Int = 0,
+    val commentCount: Int = 0,
 )
