@@ -5,10 +5,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.Episode
+import com.animevost.app.core.domain.model.SkipSegment
 import com.animevost.app.core.domain.model.VideoSource
 import com.animevost.app.core.domain.usecase.AddToHistoryUseCase
 import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
+import com.animevost.app.core.domain.usecase.GetSkipSegmentsUseCase
 import com.animevost.app.core.domain.usecase.GetVideoUrlUseCase
+import com.animevost.app.core.data.repository.SkipRepositoryImpl
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,6 +28,7 @@ data class PlayerUiState(
     val error: String? = null,
     val allEpisodes: List<Episode> = emptyList(),
     val currentEpisodeIndex: Int = 0,
+    val skipSegments: List<SkipSegment> = emptyList(),
 ) {
     val hasPrevious: Boolean get() = currentEpisodeIndex > 0
     val hasNext: Boolean get() = currentEpisodeIndex < allEpisodes.lastIndex
@@ -45,6 +49,8 @@ class PlayerViewModel @Inject constructor(
     private val getVideoUrlUseCase: GetVideoUrlUseCase,
     private val getAnimeDetailUseCase: GetAnimeDetailUseCase,
     private val addToHistoryUseCase: AddToHistoryUseCase,
+    private val getSkipSegmentsUseCase: GetSkipSegmentsUseCase,
+    private val skipRepositoryImpl: SkipRepositoryImpl,
 ) : ViewModel() {
 
     private val videoId: String = savedStateHandle["videoId"] ?: ""
@@ -55,6 +61,8 @@ class PlayerViewModel @Inject constructor(
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
     private var animePreview: AnimePreview? = null
+    private var animeYear: String? = null
+    private var animeType: String? = null
 
     init {
         val episode = Episode(name = episodeName, videoId = videoId, thumbnailUrl = "")
@@ -85,6 +93,8 @@ class PlayerViewModel @Inject constructor(
                     episodeInfo = detail.episodeCount,
                     url = animeUrl,
                 )
+                animeYear = detail.year
+                animeType = detail.type.name
                 _uiState.update {
                     it.copy(
                         allEpisodes = episodes,
@@ -97,8 +107,31 @@ class PlayerViewModel @Inject constructor(
                 if (currentEp != null && preview != null) {
                     addToHistoryUseCase(preview, currentEp)
                 }
+
+                // Resolve MAL ID for skip segments (once per anime)
+                skipRepositoryImpl.resolveMalId(
+                    animeId = detail.id,
+                    titleOriginal = detail.titleOriginal,
+                    title = detail.title,
+                    year = detail.year,
+                    type = detail.type.name,
+                )
+
+                // Load skip segments for current episode
+                loadSkipSegments(detail.id, _uiState.value.currentEpisode?.name ?: episodeName)
             } catch (_: Exception) {
                 // prev/next navigation just won't work
+            }
+        }
+    }
+
+    private fun loadSkipSegments(animeId: Int, episodeName: String) {
+        viewModelScope.launch {
+            try {
+                val segments = getSkipSegmentsUseCase(animeId, episodeName)
+                _uiState.update { it.copy(skipSegments = segments) }
+            } catch (_: Exception) {
+                // Skip segments just won't be available
             }
         }
     }
@@ -110,6 +143,7 @@ class PlayerViewModel @Inject constructor(
                     isLoading = true,
                     error = null,
                     currentEpisode = episode,
+                    skipSegments = emptyList(),
                     allEpisodes = if (allEpisodes.isNotEmpty()) allEpisodes else it.allEpisodes,
                     currentEpisodeIndex = if (allEpisodes.isNotEmpty()) index else it.currentEpisodeIndex,
                 )
@@ -128,6 +162,9 @@ class PlayerViewModel @Inject constructor(
                 if (preview != null) {
                     addToHistoryUseCase(preview, episode)
                 }
+                // Load skip segments for new episode
+                val id = animePreview?.id ?: return@launch
+                loadSkipSegments(id, episode.name)
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(

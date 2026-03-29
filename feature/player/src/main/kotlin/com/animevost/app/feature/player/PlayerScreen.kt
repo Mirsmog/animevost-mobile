@@ -10,7 +10,9 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -93,6 +95,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import com.animevost.app.core.domain.model.SkipType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -127,7 +130,27 @@ fun PlayerScreen(
     var showAutoNext by remember { mutableStateOf(false) }
     var autoNextCountdown by remember { mutableIntStateOf(5) }
 
-    // ── Landscape lock + immersive + wake lock ───────────────────
+    // ── Skip segment state ───────────────────────────────────
+    val activeSkip = state.skipSegments.firstOrNull { seg ->
+        currentPosition in seg.startMs..seg.endMs
+    }
+    var skipButtonVisible by remember { mutableStateOf(false) }
+    var skipDismissed by remember { mutableStateOf<Long?>(null) }
+
+    // Show skip button when entering a segment, auto-hide after 5s
+    LaunchedEffect(activeSkip?.startMs, activeSkip?.type) {
+        if (activeSkip != null && skipDismissed != activeSkip.startMs) {
+            skipButtonVisible = true
+            delay(5_000)
+            skipButtonVisible = false
+        } else {
+            skipButtonVisible = false
+        }
+    }
+    // Reset dismissed when leaving segment
+    LaunchedEffect(activeSkip) {
+        if (activeSkip == null) skipDismissed = null
+    }
     DisposableEffect(Unit) {
         val origOrientation = activity.requestedOrientation
         activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -394,6 +417,30 @@ fun PlayerScreen(
                 },
                 onCancel = { showAutoNext = false },
             )
+        }
+
+        // ── Skip intro/outro button ──────────────────────────────
+        AnimatedVisibility(
+            visible = skipButtonVisible && activeSkip != null,
+            enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+            exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 24.dp, bottom = 90.dp),
+        ) {
+            activeSkip?.let { skip ->
+                SkipButton(
+                    label = when (skip.type) {
+                        SkipType.INTRO -> "Пропустить интро"
+                        SkipType.OUTRO -> "Пропустить аутро"
+                    },
+                    onClick = {
+                        exoPlayer.seekTo(skip.endMs)
+                        skipButtonVisible = false
+                        skipDismissed = skip.startMs
+                    },
+                )
+            }
         }
 
         // ── Controls overlay (fade in/out) ───────────────────────
@@ -799,6 +846,30 @@ private fun ThinSeekBar(
                 .offset(x = thumbOffset)
                 .size(thumbDiameter)
                 .background(primary, CircleShape),
+        )
+    }
+}
+
+// ─── Skip button (Netflix-style) ──────────────────────────────────────────────
+
+@Composable
+private fun SkipButton(
+    label: String,
+    onClick: () -> Unit,
+) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color.White.copy(alpha = 0.9f),
+        ),
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.height(40.dp),
+    ) {
+        Text(
+            text = label,
+            color = Color.Black,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.Bold,
         )
     }
 }

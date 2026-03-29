@@ -7,11 +7,15 @@ import androidx.room.RoomDatabase
     entities = [
         FavoriteEntity::class,
         HistoryEntity::class,
+        MalMappingEntity::class,
+        SkipSegmentEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun favoriteDao(): FavoriteDao
     abstract fun historyDao(): HistoryDao
+    abstract fun malMappingDao(): MalMappingDao
+    abstract fun skipSegmentDao(): SkipSegmentDao
 }
