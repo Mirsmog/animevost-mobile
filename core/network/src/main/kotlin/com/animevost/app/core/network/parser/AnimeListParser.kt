@@ -48,6 +48,13 @@ class AnimeListParser @Inject constructor() {
             it.absUrl("src").ifEmpty { resolveUrl(it.attr("src")) }
         }.orEmpty()
 
+        // Best-effort extraction of rating / views / comments from shortstory block
+        val rating = parseRating(block)
+        val viewCount = parseIntFromSelectors(block,
+            ".staticInfoRightSmotr", "span.views-num", ".views-count")
+        val commentCount = parseIntFromSelectors(block,
+            "#dle-comm-link", "a.coms-num", ".comments-num", "span.comm-num")
+
         return AnimePreview(
             id = id,
             title = title,
@@ -55,15 +62,58 @@ class AnimeListParser @Inject constructor() {
             posterUrl = posterUrl,
             episodeInfo = episodeInfo,
             url = fullUrl,
+            type = extractTypeFromUrl(fullUrl),
+            rating = rating,
+            viewCount = viewCount,
+            commentCount = commentCount,
         )
+    }
+
+    private fun parseRating(block: Element): Double {
+        val el = block.selectFirst(".current-rating")
+            ?: block.selectFirst(".rating")
+            ?: return 0.0
+        // Try extracting from style="width:XX%"
+        val fromStyle = RATING_WIDTH.find(el.attr("style"))
+            ?.groupValues?.get(1)?.toDoubleOrNull()
+        if (fromStyle != null) return fromStyle / 20.0 // percent → 5-star scale
+        // Fallback: text might contain raw value
+        val text = el.text().trim().toDoubleOrNull() ?: return 0.0
+        return if (text > 5.0) text / 20.0 else text
+    }
+
+    private fun parseIntFromSelectors(block: Element, vararg selectors: String): Int {
+        for (sel in selectors) {
+            val text = block.selectFirst(sel)?.text() ?: continue
+            val num = DIGITS_ONLY.replace(text, "").toIntOrNull()
+            if (num != null) return num
+        }
+        return 0
     }
 
     companion object {
         private val ID_FROM_URL = Regex("""/(\d+)-[^/]+\.html""")
         private val EPISODE_BRACKET = Regex("""\[([^\]]+)]\s*$""")
+        private val TYPE_FROM_URL = Regex("""/tip/([^/]+)/""")
+        private val RATING_WIDTH = Regex("""width:\s*(\d+)%""")
+        private val DIGITS_ONLY = Regex("""[^\d]""")
+
+        private val TYPE_SLUG_MAP = mapOf(
+            "tv"                     to "ТВ",
+            "tv-speshl"              to "ТВ-спэшл",
+            "ova"                    to "OVA",
+            "ona"                    to "ONA",
+            "polnometrazhnyy-film"   to "Фильм",
+            "korotkometrazhnyy-film" to "К/М фильм",
+            "dunkhua"                to "Дунхуа",
+        )
 
         fun extractIdFromUrl(url: String): Int? =
             ID_FROM_URL.find(url)?.groupValues?.get(1)?.toIntOrNull()
+
+        fun extractTypeFromUrl(url: String): String =
+            TYPE_FROM_URL.find(url)?.groupValues?.get(1)?.lowercase()
+                ?.let { TYPE_SLUG_MAP[it] } ?: ""
 
         fun splitTitle(raw: String): Triple<String, String, String> {
             val episodeMatch = EPISODE_BRACKET.find(raw)

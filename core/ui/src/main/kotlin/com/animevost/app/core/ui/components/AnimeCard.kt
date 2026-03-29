@@ -2,6 +2,7 @@ package com.animevost.app.core.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,6 +15,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.animevost.app.core.domain.model.AnimePreview
+import com.animevost.app.core.ui.theme.OrangePrimary
 
 // ── Grid card (2-column): poster with title + info overlay ─────
 @Composable
@@ -37,9 +44,8 @@ fun AnimeCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // Parse episodeInfo e.g. "TV / 12 из 24" or "OVA" or "12 серий"
-    val animeType = remember(anime.episodeInfo) { extractAnimeType(anime.episodeInfo) }
     val episodeCount = remember(anime.episodeInfo) { extractEpisodeCount(anime.episodeInfo) }
+    val hasStats = anime.rating > 0 || anime.viewCount > 0 || anime.commentCount > 0
 
     Box(
         modifier = modifier
@@ -57,7 +63,7 @@ fun AnimeCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(110.dp)
+                .height(if (hasStats) 120.dp else 110.dp)
                 .align(Alignment.BottomCenter)
                 .background(
                     Brush.verticalGradient(
@@ -66,9 +72,9 @@ fun AnimeCard(
                 ),
         )
         // Type badge — top right
-        if (animeType.isNotEmpty()) {
+        if (anime.type.isNotEmpty()) {
             Text(
-                text = animeType,
+                text = anime.type,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
@@ -82,7 +88,7 @@ fun AnimeCard(
                     .padding(horizontal = 5.dp, vertical = 2.dp),
             )
         }
-        // Title + episode count at bottom
+        // Title + stats at bottom
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
@@ -106,29 +112,63 @@ fun AnimeCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
+            // Stats row: rating, views, comments
+            if (hasStats) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (anime.rating > 0) {
+                        StatBadge(
+                            icon = { Icon(Icons.Filled.Star, null, modifier = Modifier.size(10.dp), tint = OrangePrimary) },
+                            text = String.format("%.1f", anime.rating),
+                        )
+                    }
+                    if (anime.viewCount > 0) {
+                        StatBadge(
+                            icon = { Icon(Icons.Outlined.Visibility, null, modifier = Modifier.size(10.dp), tint = Color.White.copy(alpha = 0.6f)) },
+                            text = formatCount(anime.viewCount),
+                        )
+                    }
+                    if (anime.commentCount > 0) {
+                        StatBadge(
+                            icon = { Icon(Icons.Outlined.ChatBubbleOutline, null, modifier = Modifier.size(10.dp), tint = Color.White.copy(alpha = 0.6f)) },
+                            text = formatCount(anime.commentCount),
+                        )
+                    }
+                }
+            }
         }
     }
 }
 
-// Extract type token: TV, OVA, ONA, Movie, etc.
-private fun extractAnimeType(info: String): String {
-    if (info.isBlank()) return ""
-    val types = listOf("TV", "OVA", "ONA", "Movie", "Special", "Фильм", "Спэшл")
-    for (type in types) {
-        if (info.contains(type, ignoreCase = true)) return type.uppercase()
+@Composable
+private fun StatBadge(
+    icon: @Composable () -> Unit,
+    text: String,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        icon()
+        Spacer(modifier = Modifier.width(2.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.75f),
+        )
     }
-    return ""
 }
 
-// Extract episode info: "12 из 24" or "12 серий" etc.
+private fun formatCount(count: Int): String = when {
+    count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0)
+    count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
+    else -> count.toString()
+}
+
+// Extract episode info: "1-12 из 12" stays as is, strips type prefix if present
 private fun extractEpisodeCount(info: String): String {
     if (info.isBlank()) return ""
-    // Remove type prefix: "TV / 12 из 24" → "12 из 24"
-    val stripped = info.replace(Regex("^(TV|OVA|ONA|Movie|Special|Фильм|Спэшл)\\s*/\\s*", RegexOption.IGNORE_CASE), "").trim()
-    return if (stripped.isNotEmpty() && stripped != info.trim()) stripped else {
-        // If no type prefix, return full info as fallback
-        info
-    }
+    return if (info.contains("/")) info.substringAfter("/").trim() else info.trim()
 }
 
 // ── Horizontal card: poster + info row (search results, history) ─
@@ -139,6 +179,8 @@ fun AnimeCardHorizontal(
     modifier: Modifier = Modifier,
     trailingContent: @Composable (() -> Unit)? = null,
 ) {
+    val hasStats = anime.rating > 0 || anime.viewCount > 0 || anime.commentCount > 0
+
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -174,6 +216,47 @@ fun AnimeCardHorizontal(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+            if (hasStats) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (anime.rating > 0) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Star, null, modifier = Modifier.size(12.dp), tint = OrangePrimary)
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(
+                                text = String.format("%.1f", anime.rating),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (anime.viewCount > 0) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.Visibility, null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(
+                                text = formatCount(anime.viewCount),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (anime.commentCount > 0) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Outlined.ChatBubbleOutline, null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text(
+                                text = formatCount(anime.commentCount),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
             }
         }
         trailingContent?.invoke()
