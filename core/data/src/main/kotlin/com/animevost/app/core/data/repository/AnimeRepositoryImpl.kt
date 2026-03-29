@@ -29,12 +29,16 @@ class AnimeRepositoryImpl @Inject constructor(
         val path = buildCatalogPath(filter)
         val baseUrl = DleEndpoints.BASE_URL + path
         val html = if (page == 1) {
-            // Always POST on page 1 to explicitly set the sort cookie in DLE
+            // POST on page 1 to set the DLE sort cookie.
+            // Main page uses dle_sort_main; category pages (tip/, god/, zhanr/) use dle_sort_cat.
+            val isMainPage = filter.genre == null && filter.type == null && filter.year == null
+            val sortCookieKey = if (isMainPage) "dle_sort_main" else "dle_sort_cat"
+            val dirCookieKey = if (isMainPage) "dle_direction_main" else "dle_direction_cat"
             val sortParams = mapOf(
                 "dlenewssortby" to filter.sortBy.dleField,
                 "dledirection" to if (filter.sortAscending) "asc" else "desc",
-                "set_new_sort" to "dle_sort_main",
-                "set_direction_sort" to "dle_direction_main",
+                "set_new_sort" to sortCookieKey,
+                "set_direction_sort" to dirCookieKey,
             )
             htmlFetcher.fetchPost(baseUrl, sortParams)
         } else {
