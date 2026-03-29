@@ -11,6 +11,7 @@ interface AniSkipApi {
         @Path("mal_id") malId: Int,
         @Path("episode") episode: Int,
         @Query("types[]") types: List<String> = listOf("op", "ed"),
+        @Query("episodeLength") episodeLength: Long = 0,
     ): AniSkipResponse
 }
 
