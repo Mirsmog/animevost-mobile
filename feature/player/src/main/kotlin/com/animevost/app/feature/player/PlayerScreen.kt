@@ -96,6 +96,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import com.animevost.app.core.domain.model.SkipSegment
 import com.animevost.app.core.domain.model.SkipType
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -518,6 +519,7 @@ fun PlayerScreen(
                 duration = duration,
                 hasPrevious = state.hasPrevious,
                 hasNext = state.hasNext,
+                skipSegments = state.skipSegments,
                 onBack = onBack,
                 onPlayPause = {
                     if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
@@ -642,6 +644,7 @@ private fun PlayerControls(
     duration: Long,
     hasPrevious: Boolean,
     hasNext: Boolean,
+    skipSegments: List<SkipSegment>,
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
     onPrevious: () -> Unit,
@@ -833,6 +836,8 @@ private fun PlayerControls(
                 fraction = if (duration > 0) currentPosition.toFloat() / duration.toFloat()
                 else 0f,
                 onSeek = onSeek,
+                skipSegments = skipSegments,
+                durationMs = duration,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -845,6 +850,8 @@ private fun PlayerControls(
 private fun ThinSeekBar(
     fraction: Float,
     onSeek: (Float) -> Unit,
+    skipSegments: List<SkipSegment>,
+    durationMs: Long,
     modifier: Modifier = Modifier,
 ) {
     val primary = MaterialTheme.colorScheme.primary
@@ -852,6 +859,10 @@ private fun ThinSeekBar(
     var dragFraction by remember { mutableFloatStateOf(0f) }
     val displayFraction = if (dragging) dragFraction else fraction.coerceIn(0f, 1f)
     val thumbDiameter = 14.dp
+
+    // Segment colors
+    val introColor = Color(0xFF42A5F5) // blue
+    val outroColor = Color(0xFFAB47BC) // purple
 
     androidx.compose.foundation.layout.BoxWithConstraints(
         modifier = modifier
@@ -882,6 +893,8 @@ private fun ThinSeekBar(
             },
         contentAlignment = Alignment.CenterStart,
     ) {
+        val trackHeight = 3.dp
+        val trackShape = RoundedCornerShape(1.5.dp)
         val thumbOffset = (maxWidth * displayFraction - thumbDiameter / 2)
             .coerceAtLeast(0.dp)
 
@@ -889,15 +902,35 @@ private fun ThinSeekBar(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(3.dp)
-                .background(Color.White.copy(alpha = 0.2f), RoundedCornerShape(1.5.dp)),
+                .height(trackHeight)
+                .background(Color.White.copy(alpha = 0.2f), trackShape),
         )
+
+        // Skip segment highlights
+        if (durationMs > 0) {
+            for (seg in skipSegments) {
+                val startFrac = (seg.startMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                val endFrac = (seg.endMs.toFloat() / durationMs).coerceIn(0f, 1f)
+                val segWidth = maxWidth * (endFrac - startFrac)
+                val segOffset = maxWidth * startFrac
+                val segColor = if (seg.type == SkipType.INTRO) introColor else outroColor
+
+                Box(
+                    modifier = Modifier
+                        .offset(x = segOffset)
+                        .width(segWidth)
+                        .height(trackHeight)
+                        .background(segColor.copy(alpha = 0.7f), trackShape),
+                )
+            }
+        }
+
         // Active track
         Box(
             modifier = Modifier
                 .fillMaxWidth(displayFraction)
-                .height(3.dp)
-                .background(primary, RoundedCornerShape(1.5.dp)),
+                .height(trackHeight)
+                .background(primary, trackShape),
         )
         // Thumb circle
         Box(
