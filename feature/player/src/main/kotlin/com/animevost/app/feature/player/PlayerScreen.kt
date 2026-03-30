@@ -333,6 +333,10 @@ fun PlayerScreen(
                                     }
                                 },
                                 onDoubleTap = { offset ->
+                                    if (speedBoostJustEnded) {
+                                        speedBoostJustEnded = false
+                                        return@detectTapGestures
+                                    }
                                     lastTapUpTime = 0L
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     if (offset.x < size.width / 2) {
