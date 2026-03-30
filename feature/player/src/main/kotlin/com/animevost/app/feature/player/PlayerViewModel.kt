@@ -1,5 +1,9 @@
 package com.animevost.app.feature.player
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -16,6 +20,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -51,7 +57,12 @@ class PlayerViewModel @Inject constructor(
     private val addToHistoryUseCase: AddToHistoryUseCase,
     private val getSkipSegmentsUseCase: GetSkipSegmentsUseCase,
     private val skipRepositoryImpl: SkipRepositoryImpl,
+    private val dataStore: DataStore<Preferences>,
 ) : ViewModel() {
+
+    private companion object {
+        val KEY_QUALITY = stringPreferencesKey("preferred_quality")
+    }
 
     private val videoId: String = savedStateHandle["videoId"] ?: ""
     private val episodeName: String = savedStateHandle["episodeName"] ?: ""
@@ -150,11 +161,17 @@ class PlayerViewModel @Inject constructor(
             }
             try {
                 val sources = getVideoUrlUseCase(episode.videoId)
+                val preferred = dataStore.data.map { it[KEY_QUALITY] }.first()
+                val quality = if (preferred != null && sources.any { it.quality == preferred }) {
+                    preferred
+                } else {
+                    sources.firstOrNull()?.quality ?: "SD (480p)"
+                }
                 _uiState.update {
                     it.copy(
                         videoSources = sources,
                         isLoading = false,
-                        selectedQuality = sources.firstOrNull()?.quality ?: "SD (480p)",
+                        selectedQuality = quality,
                     )
                 }
                 // Record in history when video loads successfully
@@ -178,6 +195,9 @@ class PlayerViewModel @Inject constructor(
 
     private fun selectQuality(quality: String) {
         _uiState.update { it.copy(selectedQuality = quality) }
+        viewModelScope.launch {
+            dataStore.edit { it[KEY_QUALITY] = quality }
+        }
     }
 
     private fun navigateEpisode(direction: Int) {

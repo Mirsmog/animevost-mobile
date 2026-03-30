@@ -53,6 +53,7 @@ dependencies {
 
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
+    implementation(libs.datastore.preferences)
 
     debugImplementation(libs.compose.ui.tooling)
 }
