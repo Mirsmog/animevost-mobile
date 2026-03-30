@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -532,8 +533,8 @@ private fun FilterBar(
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
+                    .fillMaxHeight()
                     .width(40.dp)
-                    .matchParentSize()
                     .background(
                         Brush.horizontalGradient(
                             0f to Color.Transparent,
