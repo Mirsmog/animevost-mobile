@@ -132,9 +132,9 @@ fun PlayerScreen(
     var showAutoNext by remember { mutableStateOf(false) }
     var autoNextCountdown by remember { mutableIntStateOf(5) }
 
-    // ── Speed boost (double-tap + hold) ──────────────────────────
+    // ── Speed boost (tap + hold) ────────────────────────────────
     var isSpeedBoosting by remember { mutableStateOf(false) }
-    var lastDoubleTapTimeMs by remember { mutableLongStateOf(0L) }
+    var lastTapUpTime by remember { mutableLongStateOf(0L) }
     var speedBoostJustEnded by remember { mutableStateOf(false) }
 
     // ── Skip segment state ───────────────────────────────────
@@ -289,32 +289,40 @@ fun PlayerScreen(
                 .fillMaxSize()
                 .pointerInput(Unit) {
                     kotlinx.coroutines.coroutineScope {
-                        // Double-tap seek ±10 s / single-tap toggle / triple-tap-hold speed boost
+                        // Tap + hold = 2x speed / double-tap = seek ±10s / single-tap = toggle
                         launch {
                             detectTapGestures(
-                                onPress = {
+                                onPress = { offset ->
                                     val pressTime = System.currentTimeMillis()
-                                    if (pressTime - lastDoubleTapTimeMs < 400 &&
-                                        lastDoubleTapTimeMs > 0
-                                    ) {
-                                        // Third tap after double-tap — check if held
-                                        delay(200)
-                                        isSpeedBoosting = true
-                                        exoPlayer.setPlaybackParameters(
-                                            PlaybackParameters(2.0f),
-                                        )
-                                        haptic.performHapticFeedback(
-                                            HapticFeedbackType.LongPress,
-                                        )
-                                        tryAwaitRelease()
-                                        isSpeedBoosting = false
-                                        exoPlayer.setPlaybackParameters(
-                                            PlaybackParameters(1.0f),
-                                        )
-                                        speedBoostJustEnded = true
-                                        lastDoubleTapTimeMs = 0L
+                                    val isSecondTap = pressTime - lastTapUpTime < 400 &&
+                                        lastTapUpTime > 0
+
+                                    if (isSecondTap) {
+                                        lastTapUpTime = 0L
+                                        // Hold → speed boost, quick release → let onDoubleTap handle
+                                        val releasedQuickly =
+                                            kotlinx.coroutines.withTimeoutOrNull(200L) {
+                                                tryAwaitRelease()
+                                            } != null
+
+                                        if (!releasedQuickly) {
+                                            isSpeedBoosting = true
+                                            exoPlayer.setPlaybackParameters(
+                                                PlaybackParameters(2.0f),
+                                            )
+                                            haptic.performHapticFeedback(
+                                                HapticFeedbackType.LongPress,
+                                            )
+                                            tryAwaitRelease()
+                                            isSpeedBoosting = false
+                                            exoPlayer.setPlaybackParameters(
+                                                PlaybackParameters(1.0f),
+                                            )
+                                            speedBoostJustEnded = true
+                                        }
                                     } else {
                                         tryAwaitRelease()
+                                        lastTapUpTime = System.currentTimeMillis()
                                     }
                                 },
                                 onTap = {
@@ -325,7 +333,7 @@ fun PlayerScreen(
                                     }
                                 },
                                 onDoubleTap = { offset ->
-                                    lastDoubleTapTimeMs = System.currentTimeMillis()
+                                    lastTapUpTime = 0L
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     if (offset.x < size.width / 2) {
                                         exoPlayer.seekTo(
