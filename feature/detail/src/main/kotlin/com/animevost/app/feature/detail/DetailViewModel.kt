@@ -26,6 +26,7 @@ import javax.inject.Inject
 
 data class DetailUiState(
     val anime: com.animevost.app.core.domain.model.AnimeDetail? = null,
+    val animeUrl: String = "",
     val isLoading: Boolean = false,
     val error: String? = null,
     val isFavorite: Boolean = false,
@@ -92,7 +93,7 @@ class DetailViewModel @Inject constructor(
     private fun loadAnime(url: String) {
         if (_uiState.value.isLoading) return
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
+            _uiState.update { it.copy(isLoading = true, error = null, animeUrl = url) }
             try {
                 val anime = getAnimeDetailUseCase(url)
                 val isFav = favoriteRepository.isFavorite(anime.id)
@@ -162,7 +163,7 @@ class DetailViewModel @Inject constructor(
             titleOriginal = anime.titleOriginal,
             posterUrl = anime.posterUrl,
             episodeInfo = anime.episodeCount,
-            url = "",
+            url = _uiState.value.animeUrl,
         )
         viewModelScope.launch {
             try {
