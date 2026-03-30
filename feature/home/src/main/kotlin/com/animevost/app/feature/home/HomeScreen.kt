@@ -26,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -495,10 +496,10 @@ private fun FilterBar(
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Type chips — horizontal scroll with right fade edge
+        // Type chips — horizontal scroll with soft right fade
         val fadeBrush = Brush.horizontalGradient(
             0.0f to Color.Black,
-            0.8f to Color.Black,
+            0.88f to Color.Black,
             1.0f to Color.Transparent,
         )
         LazyRow(
@@ -509,7 +510,7 @@ private fun FilterBar(
                     drawContent()
                     drawRect(brush = fadeBrush, blendMode = BlendMode.DstIn)
                 },
-            contentPadding = PaddingValues(start = 12.dp, end = 8.dp),
+            contentPadding = PaddingValues(start = 12.dp, end = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(AnimeType.entries.filter { it != AnimeType.UNKNOWN }) { type ->
@@ -545,29 +546,19 @@ private fun FilterBar(
             }
         }
 
-        // Sort button — opens bottom sheet
+        // Sort button — circle icon
         Surface(
             onClick = onSortClick,
-            shape = RoundedCornerShape(20.dp),
+            shape = CircleShape,
             color = MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier.padding(end = 12.dp),
+            modifier = Modifier.padding(end = 12.dp).size(36.dp),
         ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
+            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                 Icon(
                     Icons.Outlined.SwapVert,
                     contentDescription = "Сортировка",
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-                Text(
-                    text = sortShortName(selectedSort),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
