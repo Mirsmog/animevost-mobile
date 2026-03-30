@@ -19,6 +19,12 @@ interface FavoriteDao {
     @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE newsId = :newsId)")
     suspend fun isFavorite(newsId: Int): Boolean
 
+    @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE newsId = :newsId)")
+    fun isFavoriteFlow(newsId: Int): Flow<Boolean>
+
+    @Query("SELECT COUNT(*) FROM favorites")
+    fun countFlow(): Flow<Int>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: FavoriteEntity)
 

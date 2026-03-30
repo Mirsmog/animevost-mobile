@@ -12,6 +12,7 @@ import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
 import com.animevost.app.core.domain.usecase.GetCommentsUseCase
 import com.animevost.app.core.domain.usecase.RateAnimeUseCase
 import com.animevost.app.core.domain.usecase.ToggleFavoriteUseCase
+import com.animevost.app.core.domain.repository.FavoriteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -59,6 +60,7 @@ sealed interface DetailEffect {
 class DetailViewModel @Inject constructor(
     private val getAnimeDetailUseCase: GetAnimeDetailUseCase,
     private val toggleFavoriteUseCase: ToggleFavoriteUseCase,
+    private val favoriteRepository: FavoriteRepository,
     private val downloadEpisodeUseCase: DownloadEpisodeUseCase,
     private val episodeDownloader: EpisodeDownloader,
     private val rateAnimeUseCase: RateAnimeUseCase,
@@ -93,9 +95,11 @@ class DetailViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 val anime = getAnimeDetailUseCase(url)
+                val isFav = favoriteRepository.isFavorite(anime.id)
                 _uiState.update {
                     it.copy(
                         anime = anime,
+                        isFavorite = isFav,
                         isLoading = false,
                     )
                 }

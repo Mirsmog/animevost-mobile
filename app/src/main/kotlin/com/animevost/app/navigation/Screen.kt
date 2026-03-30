@@ -3,11 +3,13 @@ package com.animevost.app.navigation
 import android.net.Uri
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Search
@@ -21,13 +23,14 @@ sealed class Screen(
     val iconOutlined: ImageVector,
 ) {
     data object Home : Screen("home", "Главная", Icons.Filled.Home, Icons.Outlined.Home)
+    data object Favorites : Screen("favorites", "Избранное", Icons.Filled.Favorite, Icons.Outlined.FavoriteBorder)
     data object Catalog : Screen("catalog", "Каталог", Icons.Filled.VideoLibrary, Icons.Outlined.VideoLibrary)
     data object Search : Screen("search", "Поиск", Icons.Filled.Search, Icons.Outlined.Search)
     data object Schedule : Screen("schedule", "Расписание", Icons.Filled.CalendarMonth, Icons.Outlined.CalendarMonth)
     data object Profile : Screen("profile", "Профиль", Icons.Filled.Person, Icons.Outlined.Person)
 
     companion object {
-        val bottomNavItems = listOf(Home, Schedule, Profile)
+        val bottomNavItems = listOf(Home, Favorites, Schedule, Profile)
     }
 }
 
