@@ -70,7 +70,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -104,6 +107,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
 import com.animevost.app.core.ui.R as UiR
@@ -491,58 +495,54 @@ private fun FilterBar(
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Type chips — horizontal scroll with fade edge
-        Box(modifier = Modifier.weight(1f)) {
-            LazyRow(
-                contentPadding = PaddingValues(start = 12.dp, end = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(AnimeType.entries.filter { it != AnimeType.UNKNOWN }) { type ->
-                    val isSelected = selectedType == type
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = { onTypeSelected(type) },
-                        label = {
-                            Text(
-                                typeShortName(type),
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                            )
-                        },
-                        leadingIcon = if (isSelected) {
-                            { Icon(Icons.Default.Check, null, modifier = Modifier.size(14.dp)) }
-                        } else null,
-                        shape = RoundedCornerShape(20.dp),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                            selectedLabelColor = MaterialTheme.colorScheme.primary,
-                            selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            enabled = true,
-                            selected = isSelected,
-                            borderColor = Color.Transparent,
-                            selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-                        ),
-                    )
-                }
-            }
-            // Fade edge so chips blend into sort button
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .fillMaxHeight()
-                    .width(40.dp)
-                    .background(
-                        Brush.horizontalGradient(
-                            0f to Color.Transparent,
-                            0.3f to bgColor.copy(alpha = 0.5f),
-                            1f to bgColor,
-                        ),
+        // Type chips — horizontal scroll with right fade edge
+        val fadeBrush = Brush.horizontalGradient(
+            0.0f to Color.Black,
+            0.8f to Color.Black,
+            1.0f to Color.Transparent,
+        )
+        LazyRow(
+            modifier = Modifier
+                .weight(1f)
+                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                .drawWithContent {
+                    drawContent()
+                    drawRect(brush = fadeBrush, blendMode = BlendMode.DstIn)
+                },
+            contentPadding = PaddingValues(start = 12.dp, end = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(AnimeType.entries.filter { it != AnimeType.UNKNOWN }) { type ->
+                val isSelected = selectedType == type
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { onTypeSelected(type) },
+                    label = {
+                        Text(
+                            typeShortName(type),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        )
+                    },
+                    leadingIcon = if (isSelected) {
+                        { Icon(Icons.Default.Check, null, modifier = Modifier.size(14.dp)) }
+                    } else null,
+                    shape = RoundedCornerShape(20.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                        selectedLabelColor = MaterialTheme.colorScheme.primary,
+                        selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     ),
-            )
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = isSelected,
+                        borderColor = Color.Transparent,
+                        selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                    ),
+                )
+            }
         }
 
         // Sort button — opens bottom sheet
