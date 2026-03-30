@@ -528,13 +528,19 @@ private fun FilterBar(
                     )
                 }
             }
-            // Fade edge so chips don't clip abruptly
+            // Fade edge so chips blend into sort button
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .width(24.dp)
+                    .width(40.dp)
                     .matchParentSize()
-                    .background(Brush.horizontalGradient(listOf(Color.Transparent, bgColor))),
+                    .background(
+                        Brush.horizontalGradient(
+                            0f to Color.Transparent,
+                            0.3f to bgColor.copy(alpha = 0.5f),
+                            1f to bgColor,
+                        ),
+                    ),
             )
         }
 
