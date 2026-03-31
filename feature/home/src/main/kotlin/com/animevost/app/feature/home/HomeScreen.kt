@@ -1,7 +1,5 @@
 package com.animevost.app.feature.home
 
-import android.app.Activity
-import android.view.WindowManager
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -32,8 +30,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.BrightnessHigh
-import androidx.compose.material.icons.filled.BrightnessLow
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
@@ -42,7 +38,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -64,7 +59,6 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -122,19 +116,9 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
-    var keepScreenOn by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
-
-    LaunchedEffect(keepScreenOn) {
-        val window = (context as? Activity)?.window ?: return@LaunchedEffect
-        if (keepScreenOn) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-    }
-    DisposableEffect(Unit) {
-        onDispose { (context as? Activity)?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
-    }
 
     LaunchedEffect(state.isSearchActive) {
         if (state.isSearchActive) focusRequester.requestFocus()
@@ -241,19 +225,6 @@ fun HomeScreen(
                         )
                     }
 
-                    // Keep-awake FAB (bottom-left)
-                    FloatingActionButton(
-                        onClick = { keepScreenOn = !keepScreenOn },
-                        modifier = Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 16.dp).size(44.dp),
-                        containerColor = if (keepScreenOn) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                    ) {
-                        Icon(
-                            imageVector = if (keepScreenOn) Icons.Default.BrightnessHigh else Icons.Default.BrightnessLow,
-                            contentDescription = if (keepScreenOn) "Не спать: вкл" else "Не спать: выкл",
-                            tint = if (keepScreenOn) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(20.dp),
-                        )
-                    }
                 }
             }
         }
