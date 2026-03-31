@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.animevost.app.core.domain.model.AnimePreview
+import com.animevost.app.core.ui.theme.AccentPurple
 import com.animevost.app.core.ui.theme.OrangePrimary
 
 // ── Grid card (2-column): poster with title + info overlay ─────
@@ -86,6 +87,14 @@ fun AnimeCard(
                         shape = RoundedCornerShape(4.dp),
                     )
                     .padding(horizontal = 5.dp, vertical = 2.dp),
+            )
+        }
+        // Announcement badge — top left
+        if (isAnnouncement(anime.episodeInfo)) {
+            AnnouncementBadge(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(6.dp),
             )
         }
         // Title + stats at bottom
@@ -171,6 +180,25 @@ private fun extractEpisodeCount(info: String): String {
     return if (info.contains("/")) info.substringAfter("/").trim() else info.trim()
 }
 
+private fun isAnnouncement(episodeInfo: String): Boolean =
+    episodeInfo.contains("Анонс", ignoreCase = true)
+
+@Composable
+private fun AnnouncementBadge(modifier: Modifier = Modifier) {
+    Text(
+        text = "АНОНС",
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Bold,
+        color = Color.White,
+        modifier = modifier
+            .background(
+                color = AccentPurple.copy(alpha = 0.9f),
+                shape = RoundedCornerShape(4.dp),
+            )
+            .padding(horizontal = 5.dp, vertical = 2.dp),
+    )
+}
+
 // ── Horizontal card: poster + info row (search results, history) ─
 @Composable
 fun AnimeCardHorizontal(
@@ -209,13 +237,17 @@ fun AnimeCardHorizontal(
             )
             if (anime.episodeInfo.isNotBlank()) {
                 Spacer(modifier = Modifier.height(3.dp))
-                Text(
-                    text = anime.episodeInfo,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (isAnnouncement(anime.episodeInfo)) {
+                    AnnouncementBadge()
+                } else {
+                    Text(
+                        text = anime.episodeInfo,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             if (hasStats) {
                 Spacer(modifier = Modifier.height(4.dp))
@@ -313,12 +345,16 @@ fun AnimeCardFeatured(
             )
             if (anime.episodeInfo.isNotBlank()) {
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = anime.episodeInfo,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color.White.copy(alpha = 0.75f),
-                    maxLines = 1,
-                )
+                if (isAnnouncement(anime.episodeInfo)) {
+                    AnnouncementBadge()
+                } else {
+                    Text(
+                        text = anime.episodeInfo,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White.copy(alpha = 0.75f),
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }
