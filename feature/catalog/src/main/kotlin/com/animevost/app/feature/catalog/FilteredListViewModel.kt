@@ -82,6 +82,7 @@ class FilteredListViewModel @Inject constructor(
         "type"  -> CatalogFilter(
             type = AnimeType.entries.find { it.name == filterValue } ?: AnimeType.UNKNOWN,
         )
+        "path"  -> CatalogFilter(path = filterValue)
         else -> CatalogFilter()
     }
 }
