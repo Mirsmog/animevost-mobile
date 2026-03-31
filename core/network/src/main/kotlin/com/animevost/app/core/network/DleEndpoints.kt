@@ -15,6 +15,10 @@ object DleEndpoints {
     // Type:    /tip/{type}/
     // Page N:  /page/{n}/
 
+    // Browseable listing pages
+    const val ONGOING = "ongoing/"
+    const val PREVIEW = "preview/"
+
     // Search — POST with form field "story"
     const val SEARCH = "index.php?do=search"
 

@@ -34,7 +34,7 @@ class AnimeRepositoryImpl @Inject constructor(
             val html = if (page == 1) {
                 // POST on page 1 to set the DLE sort cookie.
                 // Main page uses dle_sort_main; category pages (tip/, god/, zhanr/) use dle_sort_cat.
-                val isMainPage = filter.genre == null && filter.type == null && filter.year == null
+                val isMainPage = filter.genre == null && filter.type == null && filter.year == null && filter.path == null
                 val sortCookieKey = if (isMainPage) "dle_sort_main" else "dle_sort_cat"
                 val dirCookieKey = if (isMainPage) "dle_direction_main" else "dle_direction_cat"
                 val sortParams = mapOf(
@@ -114,6 +114,7 @@ class AnimeRepositoryImpl @Inject constructor(
     }
 
     private fun buildCatalogPath(filter: CatalogFilter): String {
+        filter.path?.let { return it }
         filter.genre?.let { genre ->
             val genreUrl = genre.url
             return if (genreUrl.startsWith(DleEndpoints.BASE_URL)) {

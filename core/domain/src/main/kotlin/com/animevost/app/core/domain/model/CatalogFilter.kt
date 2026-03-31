@@ -11,6 +11,7 @@ data class CatalogFilter(
     val genre: Genre? = null,
     val year: String? = null,
     val type: AnimeType? = null,
+    val path: String? = null,   // direct URL path e.g. "ongoing/" or "preview/"
     val sortBy: SortOption = SortOption.DATE,
     val sortAscending: Boolean = false,
 )

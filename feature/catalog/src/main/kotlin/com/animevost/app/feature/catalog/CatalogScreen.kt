@@ -14,13 +14,20 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.NewReleases
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SecondaryTabRow
@@ -35,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -70,6 +78,26 @@ fun CatalogScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                BrowseCard(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Filled.PlayCircle,
+                    label = "Онгоинги",
+                    onClick = { onNavigateToFilteredList("path", "ongoing/", "Онгоинги") },
+                )
+                BrowseCard(
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Filled.NewReleases,
+                    label = "Анонсы",
+                    onClick = { onNavigateToFilteredList("path", "preview/", "Анонсы") },
+                )
+            }
+
             SecondaryTabRow(selectedTabIndex = state.selectedTab.ordinal) {
                 CatalogTab.entries.forEach { tab ->
                     Tab(
@@ -141,6 +169,40 @@ fun CatalogScreen(
 }
 
 // 2-column genre card grid with accent color backgrounds
+@Composable
+private fun BrowseCard(
+    modifier: Modifier = Modifier,
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    ElevatedCard(
+        onClick = onClick,
+        modifier = modifier,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = label,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
 @Composable
 private fun GenreCardGrid(
     genres: List<com.animevost.app.core.domain.model.Genre>,
