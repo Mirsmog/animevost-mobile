@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.animevost.app.core.domain.usecase.LoginUseCase
 import com.animevost.app.core.domain.usecase.RegisterUseCase
+import com.animevost.app.core.domain.usecase.SyncFavoritesUseCase
 import com.animevost.app.core.domain.util.InputValidator
 import com.animevost.app.core.domain.util.ValidationResult
 import com.animevost.app.core.domain.util.isValid
@@ -39,6 +40,7 @@ sealed interface AuthEvent {
 class AuthViewModel @Inject constructor(
     private val loginUseCase: LoginUseCase,
     private val registerUseCase: RegisterUseCase,
+    private val syncFavoritesUseCase: SyncFavoritesUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AuthUiState())
@@ -74,6 +76,8 @@ class AuthViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 loginUseCase(state.username, state.password)
+                // Fire-and-forget: sync favourites in background, don't block login UI
+                launch { syncFavoritesUseCase() }
                 _uiState.update { it.copy(isLoading = false, isLoggedIn = true) }
             } catch (e: Exception) {
                 _uiState.update {

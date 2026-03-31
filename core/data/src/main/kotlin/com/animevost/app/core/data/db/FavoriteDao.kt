@@ -30,4 +30,7 @@ interface FavoriteDao {
 
     @Query("DELETE FROM favorites WHERE newsId = :newsId")
     suspend fun deleteByNewsId(newsId: Int)
+
+    @Query("SELECT newsId FROM favorites")
+    suspend fun getAllIds(): List<Int>
 }

@@ -18,6 +18,9 @@ object DleEndpoints {
     // Browseable listing pages
     const val ONGOING = "ongoing/"
     const val PREVIEW = "preview/"
+    const val FAVORITES = "favorites/"
+    const val FAVORITES_ADD = "index.php?do=favorites&doaction=add&id="
+    const val FAVORITES_REMOVE = "index.php?do=favorites&doaction=del&id="
 
     // Search — POST with form field "story"
     const val SEARCH = "index.php?do=search"
