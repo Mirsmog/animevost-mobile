@@ -6,14 +6,17 @@ import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.AnimeType
 import com.animevost.app.core.domain.model.CatalogFilter
 import com.animevost.app.core.domain.model.Genre
+import com.animevost.app.core.domain.model.SortOption
 import com.animevost.app.core.domain.usecase.GetAnimeListUseCase
 import com.animevost.app.core.domain.util.BasePaginatedViewModel
 import com.animevost.app.core.domain.util.Result
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.update
 import javax.inject.Inject
 
 @HiltViewModel
@@ -32,26 +35,25 @@ class FilteredListViewModel @Inject constructor(
         "Missing required navigation argument: filterLabel"
     }
 
-    private val catalogFilter: CatalogFilter = buildCatalogFilter()
+    private var currentSort: SortOption = SortOption.DATE
+    private var currentSortAscending: Boolean = false
+    private var catalogFilter: CatalogFilter = buildCatalogFilter()
 
-    val uiState: StateFlow<FilteredListUiState> = combine(
-        items, isLoading, isLoadingMore, error, hasMore,
-    ) { animeList, loading, loadingMore, err, more ->
-        FilteredListUiState(
-            animeList = animeList,
-            isLoading = loading,
-            isLoadingMore = loadingMore,
-            error = err,
-            canLoadMore = more,
-            filterLabel = filterLabel,
-        )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000L),
-        initialValue = FilteredListUiState(filterLabel = filterLabel),
-    )
+    private val _uiState = MutableStateFlow(FilteredListUiState(filterLabel = filterLabel))
+    val uiState: StateFlow<FilteredListUiState> = _uiState.asStateFlow()
 
     init {
+        combine(items, isLoading, isLoadingMore, error, hasMore) { animeList, loading, loadingMore, err, more ->
+            _uiState.update {
+                it.copy(
+                    animeList = animeList,
+                    isLoading = loading,
+                    isLoadingMore = loadingMore,
+                    error = err,
+                    canLoadMore = more,
+                )
+            }
+        }.launchIn(viewModelScope)
         loadInitial()
     }
 
@@ -60,6 +62,7 @@ class FilteredListViewModel @Inject constructor(
             FilteredListEvent.LoadMore -> loadMore()
             FilteredListEvent.Refresh -> refresh()
             FilteredListEvent.ClearError -> _error.value = null
+            is FilteredListEvent.SelectSort -> selectSort(event.sort)
         }
     }
 
@@ -75,6 +78,15 @@ class FilteredListViewModel @Inject constructor(
         existing: List<AnimePreview>,
         new: List<AnimePreview>,
     ): List<AnimePreview> = (existing + new).distinctBy { it.id }
+
+    private fun selectSort(sort: SortOption) {
+        currentSortAscending = if (currentSort == sort) !currentSortAscending else false
+        currentSort = sort
+        catalogFilter = catalogFilter.copy(sortBy = sort, sortAscending = currentSortAscending)
+        _uiState.update { it.copy(sort = sort, sortAscending = currentSortAscending) }
+        _items.value = emptyList()
+        loadInitial()
+    }
 
     private fun buildCatalogFilter(): CatalogFilter = when (filterType) {
         "genre" -> CatalogFilter(genre = Genre(0, filterLabel, filterValue))
