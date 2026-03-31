@@ -3,6 +3,8 @@ package com.animevost.app.feature.catalog
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.animevost.app.core.domain.usecase.GetNavDataUseCase
+import com.animevost.app.core.domain.util.onError
+import com.animevost.app.core.domain.util.onSuccess
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,18 +32,19 @@ class CatalogViewModel @Inject constructor(
     private fun loadNavData() {
         _uiState.update { it.copy(isLoadingNav = true) }
         viewModelScope.launch {
-            try {
-                val navData = getNavDataUseCase()
-                _uiState.update {
-                    it.copy(
-                        genres = if (navData.genres.isNotEmpty()) navData.genres else CatalogDefaults.genres,
-                        years = if (navData.years.isNotEmpty()) navData.years else CatalogDefaults.years,
-                        isLoadingNav = false,
-                    )
+            getNavDataUseCase()
+                .onSuccess { navData ->
+                    _uiState.update {
+                        it.copy(
+                            genres = if (navData.genres.isNotEmpty()) navData.genres else CatalogDefaults.genres,
+                            years = if (navData.years.isNotEmpty()) navData.years else CatalogDefaults.years,
+                            isLoadingNav = false,
+                        )
+                    }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoadingNav = false) }
-            }
+                .onError { _, _ ->
+                    _uiState.update { it.copy(isLoadingNav = false) }
+                }
         }
     }
 }

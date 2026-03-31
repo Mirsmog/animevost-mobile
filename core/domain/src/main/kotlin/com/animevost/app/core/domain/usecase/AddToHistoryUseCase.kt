@@ -5,6 +5,7 @@ import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.repository.HistoryRepository
 import javax.inject.Inject
 
+/** Records [episode] of [anime] as watched in the user's history. */
 class AddToHistoryUseCase @Inject constructor(
     private val historyRepository: HistoryRepository,
 ) {

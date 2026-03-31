@@ -23,5 +23,6 @@ android {
 
 dependencies {
     implementation(libs.coroutines.core)
+    implementation(libs.lifecycle.viewmodel.ktx)
     implementation("javax.inject:javax.inject:1")
 }

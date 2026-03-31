@@ -1,21 +1,27 @@
 package com.animevost.app.feature.home
 
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
+import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.AnimeType
 import com.animevost.app.core.domain.model.CatalogFilter
 import com.animevost.app.core.domain.model.SortOption
 import com.animevost.app.core.domain.usecase.GetAnimeListUseCase
 import com.animevost.app.core.domain.usecase.GetNavDataUseCase
 import com.animevost.app.core.domain.usecase.SearchAnimeUseCase
+import com.animevost.app.core.domain.util.BasePaginatedViewModel
+import com.animevost.app.core.domain.util.Result
+import com.animevost.app.core.domain.util.onError
+import com.animevost.app.core.domain.util.onSuccess
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import androidx.lifecycle.viewModelScope
 import javax.inject.Inject
 
 @HiltViewModel
@@ -23,7 +29,12 @@ class HomeViewModel @Inject constructor(
     private val getAnimeListUseCase: GetAnimeListUseCase,
     private val searchAnimeUseCase: SearchAnimeUseCase,
     private val getNavDataUseCase: GetNavDataUseCase,
-) : ViewModel() {
+) : BasePaginatedViewModel<AnimePreview>() {
+
+    // Filter state backing fields — read by fetchPage, updated by selectSort/selectType.
+    private var currentSort: SortOption = SortOption.DATE
+    private var currentSortAscending: Boolean = false
+    private var currentTypeFilter: AnimeType? = null
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
@@ -31,132 +42,89 @@ class HomeViewModel @Inject constructor(
     private var searchJob: Job? = null
 
     init {
-        onEvent(HomeEvent.LoadInitial)
+        // Keep HomeUiState's pagination fields in sync with base class flows.
+        combine(items, isLoading, isLoadingMore, error, hasMore) { animeList, loading, loadingMore, err, more ->
+            _uiState.update {
+                it.copy(
+                    animeList = animeList,
+                    isLoading = loading,
+                    isLoadingMore = loadingMore,
+                    error = err,
+                    canLoadMore = more,
+                )
+            }
+        }.launchIn(viewModelScope)
+
+        loadInitial()
         loadNavData()
     }
 
-    private fun loadNavData() {
-        viewModelScope.launch {
-            try {
-                val navData = getNavDataUseCase()
-                _uiState.update { it.copy(genres = navData.genres, years = navData.years) }
-            } catch (_: Exception) {
-                // Nav data is optional — ignore failures
-            }
+    override suspend fun fetchPage(page: Int): List<AnimePreview> {
+        val result = getAnimeListUseCase(
+            page = page,
+            filter = CatalogFilter(
+                sortBy = currentSort,
+                sortAscending = currentSortAscending,
+                type = currentTypeFilter,
+            ),
+        )
+        return when (result) {
+            is Result.Success -> result.data
+            is Result.Error -> throw result.exception ?: Exception(result.message)
         }
     }
+
+    override fun mergeItems(
+        existing: List<AnimePreview>,
+        new: List<AnimePreview>,
+    ): List<AnimePreview> = (existing + new).distinctBy { it.id }
+
+    // ── Public event dispatch ─────────────────────────────────────────────────
 
     fun onEvent(event: HomeEvent) {
         when (event) {
-            HomeEvent.LoadInitial        -> loadInitial()
-            HomeEvent.LoadMore           -> loadMore()
-            HomeEvent.Refresh            -> refresh()
-            HomeEvent.ClearError         -> _uiState.update { it.copy(error = null) }
-            is HomeEvent.SelectSort      -> selectSort(event.sort)
-            is HomeEvent.SelectType      -> selectType(event.type)
-            HomeEvent.ToggleSearch       -> toggleSearch()
+            HomeEvent.LoadInitial           -> loadInitial()
+            HomeEvent.LoadMore              -> loadMore()
+            HomeEvent.Refresh               -> refresh()
+            HomeEvent.ClearError            -> _error.value = null
+            is HomeEvent.SelectSort         -> selectSort(event.sort)
+            is HomeEvent.SelectType         -> selectType(event.type)
+            HomeEvent.ToggleSearch          -> toggleSearch()
             is HomeEvent.SearchQueryChanged -> onSearchQueryChanged(event.query)
-            HomeEvent.SearchLoadMore     -> searchLoadMore()
+            HomeEvent.SearchLoadMore        -> searchLoadMore()
         }
     }
 
-    // ── Catalog list ─────────────────────────────────────────────────────────
+    // ── Nav data ──────────────────────────────────────────────────────────────
 
-    private fun buildFilter() = _uiState.value.run {
-        CatalogFilter(sortBy = sort, sortAscending = sortAscending, type = selectedType)
-    }
-
-    private fun loadInitial() {
-        if (_uiState.value.isLoading) return
-        _uiState.update { it.copy(isLoading = true, error = null) }
+    private fun loadNavData() {
         viewModelScope.launch {
-            try {
-                val items = getAnimeListUseCase(page = 1, filter = buildFilter())
-                _uiState.update {
-                    it.copy(animeList = items, isLoading = false, currentPage = 1, canLoadMore = items.isNotEmpty())
+            getNavDataUseCase()
+                .onSuccess { navData ->
+                    _uiState.update { it.copy(genres = navData.genres, years = navData.years) }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, error = e.message ?: "Ошибка загрузки") }
-            }
+            // Nav data is optional — ignore failures
         }
     }
 
-    private fun loadMore() {
-        val s = _uiState.value
-        if (s.isLoading || s.isLoadingMore || !s.canLoadMore) return
-        val nextPage = s.currentPage + 1
-        _uiState.update { it.copy(isLoadingMore = true) }
-        viewModelScope.launch {
-            try {
-                val items = getAnimeListUseCase(page = nextPage, filter = buildFilter())
-                _uiState.update {
-                    it.copy(
-                        animeList = (it.animeList + items).distinctBy { a -> a.id },
-                        isLoadingMore = false,
-                        currentPage = nextPage,
-                        canLoadMore = items.isNotEmpty(),
-                    )
-                }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoadingMore = false, error = e.message ?: "Ошибка загрузки") }
-            }
-        }
-    }
-
-    private fun refresh() {
-        _uiState.update { it.copy(isLoading = true, error = null) }
-        viewModelScope.launch {
-            try {
-                val items = getAnimeListUseCase(page = 1, filter = buildFilter())
-                val s = _uiState.value
-                _uiState.update {
-                    HomeUiState(
-                        animeList = items,
-                        isLoading = false,
-                        currentPage = 1,
-                        canLoadMore = items.isNotEmpty(),
-                        sort = s.sort,
-                        sortAscending = s.sortAscending,
-                        selectedType = s.selectedType,
-                        genres = s.genres,
-                        years = s.years,
-                    )
-                }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, error = e.message ?: "Ошибка загрузки") }
-            }
-        }
-    }
+    // ── Filter / sort ─────────────────────────────────────────────────────────
 
     private fun selectSort(sort: SortOption) {
-        val prev = _uiState.value
-        val ascending = if (prev.sort == sort) !prev.sortAscending else false
-        _uiState.update { it.copy(sort = sort, sortAscending = ascending, isLoading = true, animeList = emptyList()) }
-        viewModelScope.launch {
-            try {
-                val items = getAnimeListUseCase(page = 1, filter = buildFilter())
-                _uiState.update { it.copy(animeList = items, isLoading = false, currentPage = 1, canLoadMore = items.isNotEmpty()) }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, error = e.message ?: "Ошибка загрузки") }
-            }
-        }
+        currentSortAscending = if (currentSort == sort) !currentSortAscending else false
+        currentSort = sort
+        _uiState.update { it.copy(sort = sort, sortAscending = currentSortAscending) }
+        _items.value = emptyList() // clear list for immediate visual feedback
+        loadInitial()
     }
 
     private fun selectType(type: AnimeType?) {
-        val prev = _uiState.value
-        val newType = if (prev.selectedType == type) null else type // tap again = deselect
-        _uiState.update { it.copy(selectedType = newType, isLoading = true, animeList = emptyList(), currentPage = 1) }
-        viewModelScope.launch {
-            try {
-                val items = getAnimeListUseCase(page = 1, filter = buildFilter())
-                _uiState.update { it.copy(animeList = items, isLoading = false, currentPage = 1, canLoadMore = items.isNotEmpty()) }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, error = e.message ?: "Ошибка загрузки") }
-            }
-        }
+        currentTypeFilter = if (currentTypeFilter == type) null else type
+        _uiState.update { it.copy(selectedType = currentTypeFilter) }
+        _items.value = emptyList() // clear list for immediate visual feedback
+        loadInitial()
     }
 
-    // ── Search ───────────────────────────────────────────────────────────────
+    // ── Search ────────────────────────────────────────────────────────────────
 
     private fun toggleSearch() {
         val active = !_uiState.value.isSearchActive
@@ -183,20 +151,21 @@ class HomeViewModel @Inject constructor(
         searchJob = viewModelScope.launch {
             delay(DEBOUNCE_MS)
             _uiState.update { it.copy(isSearchLoading = true, searchError = null) }
-            try {
-                val items = searchAnimeUseCase(query, 1)
-                _uiState.update {
-                    it.copy(
-                        searchResults = items,
-                        isSearchLoading = false,
-                        searchPage = 1,
-                        canSearchLoadMore = items.isNotEmpty(),
-                        hasSearched = true,
-                    )
+            searchAnimeUseCase(query, 1)
+                .onSuccess { items ->
+                    _uiState.update {
+                        it.copy(
+                            searchResults = items,
+                            isSearchLoading = false,
+                            searchPage = 1,
+                            canSearchLoadMore = items.isNotEmpty(),
+                            hasSearched = true,
+                        )
+                    }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isSearchLoading = false, searchError = e.message ?: "Ошибка поиска") }
-            }
+                .onError { _, msg ->
+                    _uiState.update { it.copy(isSearchLoading = false, searchError = msg ?: "Ошибка поиска") }
+                }
         }
     }
 
@@ -206,19 +175,20 @@ class HomeViewModel @Inject constructor(
         val nextPage = s.searchPage + 1
         _uiState.update { it.copy(isSearchLoadingMore = true) }
         viewModelScope.launch {
-            try {
-                val items = searchAnimeUseCase(s.searchQuery, nextPage)
-                _uiState.update {
-                    it.copy(
-                        searchResults = (it.searchResults + items).distinctBy { a -> a.id },
-                        isSearchLoadingMore = false,
-                        searchPage = nextPage,
-                        canSearchLoadMore = items.isNotEmpty(),
-                    )
+            searchAnimeUseCase(s.searchQuery, nextPage)
+                .onSuccess { items ->
+                    _uiState.update {
+                        it.copy(
+                            searchResults = (it.searchResults + items).distinctBy { a -> a.id },
+                            isSearchLoadingMore = false,
+                            searchPage = nextPage,
+                            canSearchLoadMore = items.isNotEmpty(),
+                        )
+                    }
                 }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isSearchLoadingMore = false, searchError = e.message ?: "Ошибка загрузки") }
-            }
+                .onError { _, msg ->
+                    _uiState.update { it.copy(isSearchLoadingMore = false, searchError = msg ?: "Ошибка загрузки") }
+                }
         }
     }
 

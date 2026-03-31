@@ -16,6 +16,8 @@ import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
 import com.animevost.app.core.domain.usecase.GetSkipSegmentsUseCase
 import com.animevost.app.core.domain.usecase.GetVideoUrlUseCase
 import com.animevost.app.core.data.repository.SkipRepositoryImpl
+import com.animevost.app.core.domain.util.onError
+import com.animevost.app.core.domain.util.onSuccess
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -92,58 +94,52 @@ class PlayerViewModel @Inject constructor(
     private fun loadEpisodeList() {
         if (animeUrl.isBlank()) return
         viewModelScope.launch {
-            try {
-                val detail = getAnimeDetailUseCase(animeUrl)
-                val episodes = detail.episodes
-                val currentIdx = episodes.indexOfFirst { it.videoId == videoId }
-                animePreview = AnimePreview(
-                    id = detail.id,
-                    title = detail.title,
-                    titleOriginal = detail.titleOriginal,
-                    posterUrl = detail.posterUrl,
-                    episodeInfo = detail.episodeCount,
-                    url = animeUrl,
-                )
-                animeYear = detail.year
-                animeType = detail.type.name
-                _uiState.update {
-                    it.copy(
-                        allEpisodes = episodes,
-                        currentEpisodeIndex = if (currentIdx >= 0) currentIdx else 0,
+            getAnimeDetailUseCase(animeUrl)
+                .onSuccess { detail ->
+                    val episodes = detail.episodes
+                    val currentIdx = episodes.indexOfFirst { it.videoId == videoId }
+                    animePreview = AnimePreview(
+                        id = detail.id,
+                        title = detail.title,
+                        titleOriginal = detail.titleOriginal,
+                        posterUrl = detail.posterUrl,
+                        episodeInfo = detail.episodeCount,
+                        url = animeUrl,
                     )
+                    animeYear = detail.year
+                    animeType = detail.type.name
+                    _uiState.update {
+                        it.copy(
+                            allEpisodes = episodes,
+                            currentEpisodeIndex = if (currentIdx >= 0) currentIdx else 0,
+                        )
+                    }
+                    // Record current episode in history after detail loaded
+                    val currentEp = _uiState.value.currentEpisode
+                    val preview = animePreview
+                    if (currentEp != null && preview != null) {
+                        addToHistoryUseCase(preview, currentEp)
+                    }
+                    // Resolve MAL ID for skip segments (once per anime)
+                    skipRepositoryImpl.resolveMalId(
+                        animeId = detail.id,
+                        titleOriginal = detail.titleOriginal,
+                        title = detail.title,
+                        year = detail.year,
+                        type = detail.type.name,
+                    )
+                    // Load skip segments for current episode
+                    loadSkipSegments(detail.id, _uiState.value.currentEpisode?.name ?: episodeName)
                 }
-                // Record current episode in history after detail loaded
-                val currentEp = _uiState.value.currentEpisode
-                val preview = animePreview
-                if (currentEp != null && preview != null) {
-                    addToHistoryUseCase(preview, currentEp)
-                }
-
-                // Resolve MAL ID for skip segments (once per anime)
-                skipRepositoryImpl.resolveMalId(
-                    animeId = detail.id,
-                    titleOriginal = detail.titleOriginal,
-                    title = detail.title,
-                    year = detail.year,
-                    type = detail.type.name,
-                )
-
-                // Load skip segments for current episode
-                loadSkipSegments(detail.id, _uiState.value.currentEpisode?.name ?: episodeName)
-            } catch (_: Exception) {
-                // prev/next navigation just won't work
-            }
+            // ignore error — prev/next navigation just won't work
         }
     }
 
     private fun loadSkipSegments(animeId: Int, episodeName: String) {
         viewModelScope.launch {
-            try {
-                val segments = getSkipSegmentsUseCase(animeId, episodeName)
-                _uiState.update { it.copy(skipSegments = segments) }
-            } catch (_: Exception) {
-                // Skip segments just won't be available
-            }
+            getSkipSegmentsUseCase(animeId, episodeName)
+                .onSuccess { segments -> _uiState.update { it.copy(skipSegments = segments) } }
+            // ignore error — skip segments just won't be available
         }
     }
 
@@ -159,37 +155,28 @@ class PlayerViewModel @Inject constructor(
                     currentEpisodeIndex = if (allEpisodes.isNotEmpty()) index else it.currentEpisodeIndex,
                 )
             }
-            try {
-                val sources = getVideoUrlUseCase(episode.videoId)
-                val preferred = dataStore.data.map { it[KEY_QUALITY] }.first()
-                val quality = if (preferred != null && sources.any { it.quality == preferred }) {
-                    preferred
-                } else {
-                    sources.firstOrNull()?.quality ?: "SD (480p)"
+            getVideoUrlUseCase(episode.videoId)
+                .onSuccess { sources ->
+                    val preferred = dataStore.data.map { it[KEY_QUALITY] }.first()
+                    val quality = if (preferred != null && sources.any { it.quality == preferred }) {
+                        preferred
+                    } else {
+                        sources.firstOrNull()?.quality ?: "SD (480p)"
+                    }
+                    _uiState.update {
+                        it.copy(videoSources = sources, isLoading = false, selectedQuality = quality)
+                    }
+                    // Record in history when video loads successfully
+                    val preview = animePreview
+                    if (preview != null) addToHistoryUseCase(preview, episode)
+                    // Load skip segments for new episode
+                    animePreview?.id?.let { id -> loadSkipSegments(id, episode.name) }
                 }
-                _uiState.update {
-                    it.copy(
-                        videoSources = sources,
-                        isLoading = false,
-                        selectedQuality = quality,
-                    )
+                .onError { _, msg ->
+                    _uiState.update {
+                        it.copy(isLoading = false, error = msg ?: "Не удалось загрузить видео")
+                    }
                 }
-                // Record in history when video loads successfully
-                val preview = animePreview
-                if (preview != null) {
-                    addToHistoryUseCase(preview, episode)
-                }
-                // Load skip segments for new episode
-                val id = animePreview?.id ?: return@launch
-                loadSkipSegments(id, episode.name)
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = e.message ?: "Не удалось загрузить видео",
-                    )
-                }
-            }
         }
     }
 

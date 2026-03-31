@@ -5,7 +5,6 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStoreFile
-import androidx.room.Room
 import com.animevost.app.core.data.db.AppDatabase
 import com.animevost.app.core.data.db.FavoriteDao
 import com.animevost.app.core.data.db.HistoryDao
@@ -43,13 +42,8 @@ object DataProvidesModule {
 
     @Provides
     @Singleton
-    fun provideDatabase(@ApplicationContext context: Context): AppDatabase {
-        return Room.databaseBuilder(
-            context,
-            AppDatabase::class.java,
-            "animevost.db",
-        ).fallbackToDestructiveMigration().build()
-    }
+    fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
+        AppDatabase.build(context)
 
     @Provides
     fun provideFavoriteDao(db: AppDatabase): FavoriteDao = db.favoriteDao()

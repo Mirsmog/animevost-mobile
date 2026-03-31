@@ -11,15 +11,13 @@ class AnimeListParser @Inject constructor() {
 
     fun parse(html: String): AnimeListResult {
         val doc = Jsoup.parse(html, DleEndpoints.BASE_URL)
-        val items = doc.select("div.shortstory").mapNotNull { block -> parseBlock(block) }
+        val items = doc.select(SHORT_STORY).mapNotNull { block -> parseBlock(block) }
 
-        val currentPage = doc.select(
-            ".pnext span.active, .dle-pagination span.active, .navigation span.dle_active"
-        ).firstOrNull()?.text()?.toIntOrNull() ?: 1
+        val currentPage = doc.select(ACTIVE_PAGE_SELECTOR)
+            .firstOrNull()?.text()?.toIntOrNull() ?: 1
 
-        val paginationPages = doc.select(
-            ".pnext a, .dle-pagination a, .navigation a"
-        ).mapNotNull { it.text().toIntOrNull() }
+        val paginationPages = doc.select(PAGINATION_LINK_SELECTOR)
+            .mapNotNull { it.text().toIntOrNull() }
 
         val totalPages = paginationPages.maxOrNull() ?: currentPage
 
@@ -33,8 +31,8 @@ class AnimeListParser @Inject constructor() {
     fun parseItems(html: String): List<AnimePreview> = parse(html).items
 
     private fun parseBlock(block: Element): AnimePreview? {
-        val headLink = block.selectFirst(".shortstoryHead h2 a")
-            ?: block.selectFirst(".shortstoryHead h1 a")
+        val headLink = block.selectFirst(STORY_HEAD_H2_LINK)
+            ?: block.selectFirst(STORY_HEAD_H1_LINK)
             ?: return null
 
         val fullUrl = headLink.absUrl("href").ifEmpty { return null }
@@ -43,7 +41,7 @@ class AnimeListParser @Inject constructor() {
 
         val (title, titleOriginal, episodeInfo) = splitTitle(rawTitle)
 
-        val img = block.selectFirst(".shortstoryContent img")
+        val img = block.selectFirst(STORY_CONTENT_IMG)
         val posterUrl = img?.let {
             it.absUrl("src").ifEmpty { resolveUrl(it.attr("src")) }
         }.orEmpty()
@@ -51,9 +49,9 @@ class AnimeListParser @Inject constructor() {
         // Best-effort extraction of rating / views / comments from shortstory block
         val rating = parseRating(block)
         val viewCount = parseIntFromSelectors(block,
-            ".staticInfoRightSmotr", "span.views-num", ".views-count")
+            STATIC_INFO_VIEWS, "span.views-num", ".views-count")
         val commentCount = parseIntFromSelectors(block,
-            "#dle-comm-link", "a.coms-num", ".comments-num", "span.comm-num")
+            DLE_COMMENT_LINK, COMS_NUM, COMMENTS_NUM, COMM_NUM)
 
         return AnimePreview(
             id = id,
@@ -70,8 +68,8 @@ class AnimeListParser @Inject constructor() {
     }
 
     private fun parseRating(block: Element): Double {
-        val el = block.selectFirst(".current-rating")
-            ?: block.selectFirst(".rating")
+        val el = block.selectFirst(CURRENT_RATING)
+            ?: block.selectFirst(RATING)
             ?: return 0.0
         // Try extracting from style="width:XX%"
         val fromStyle = RATING_WIDTH.find(el.attr("style"))
@@ -92,6 +90,23 @@ class AnimeListParser @Inject constructor() {
     }
 
     companion object {
+        // CSS selectors
+        private const val SHORT_STORY = "div.shortstory"
+        private const val STORY_HEAD_H2_LINK = ".shortstoryHead h2 a"
+        private const val STORY_HEAD_H1_LINK = ".shortstoryHead h1 a"
+        private const val STORY_CONTENT_IMG = ".shortstoryContent img"
+        private const val ACTIVE_PAGE_SELECTOR =
+            ".pnext span.active, .dle-pagination span.active, .navigation span.dle_active"
+        private const val PAGINATION_LINK_SELECTOR = ".pnext a, .dle-pagination a, .navigation a"
+        private const val CURRENT_RATING = ".current-rating"
+        private const val RATING = ".rating"
+        private const val STATIC_INFO_VIEWS = ".staticInfoRightSmotr"
+        private const val DLE_COMMENT_LINK = "#dle-comm-link"
+        private const val COMS_NUM = "a.coms-num"
+        private const val COMMENTS_NUM = ".comments-num"
+        private const val COMM_NUM = "span.comm-num"
+
+        // Regex patterns
         private val ID_FROM_URL = Regex("""/(\d+)-[^/]+\.html""")
         private val EPISODE_BRACKET = Regex("""\[([^\]]+)]\s*$""")
         private val TYPE_FROM_URL = Regex("""/tip/([^/]+)/""")

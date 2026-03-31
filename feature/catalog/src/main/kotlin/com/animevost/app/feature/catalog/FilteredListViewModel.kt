@@ -1,34 +1,55 @@
 package com.animevost.app.feature.catalog
 
-import androidx.lifecycle.SavedStateHandle
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.SavedStateHandle
+import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.AnimeType
 import com.animevost.app.core.domain.model.CatalogFilter
 import com.animevost.app.core.domain.model.Genre
 import com.animevost.app.core.domain.usecase.GetAnimeListUseCase
+import com.animevost.app.core.domain.util.BasePaginatedViewModel
+import com.animevost.app.core.domain.util.Result
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
 @HiltViewModel
 class FilteredListViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val getAnimeListUseCase: GetAnimeListUseCase,
-) : ViewModel() {
+) : BasePaginatedViewModel<AnimePreview>() {
 
-    private val filterType: String = savedStateHandle["filterType"] ?: ""
-    private val filterValue: String = savedStateHandle["filterValue"] ?: ""
-    private val filterLabel: String = savedStateHandle["filterLabel"] ?: ""
+    private val filterType: String = requireNotNull(savedStateHandle["filterType"]) {
+        "Missing required navigation argument: filterType"
+    }
+    private val filterValue: String = requireNotNull(savedStateHandle["filterValue"]) {
+        "Missing required navigation argument: filterValue"
+    }
+    private val filterLabel: String = requireNotNull(savedStateHandle["filterLabel"]) {
+        "Missing required navigation argument: filterLabel"
+    }
 
-    private val _uiState = MutableStateFlow(FilteredListUiState(filterLabel = filterLabel))
-    val uiState: StateFlow<FilteredListUiState> = _uiState.asStateFlow()
+    private val catalogFilter: CatalogFilter = buildCatalogFilter()
 
-    private val catalogFilter: CatalogFilter = buildFilter()
+    val uiState: StateFlow<FilteredListUiState> = combine(
+        items, isLoading, isLoadingMore, error, hasMore,
+    ) { animeList, loading, loadingMore, err, more ->
+        FilteredListUiState(
+            animeList = animeList,
+            isLoading = loading,
+            isLoadingMore = loadingMore,
+            error = err,
+            canLoadMore = more,
+            filterLabel = filterLabel,
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000L),
+        initialValue = FilteredListUiState(filterLabel = filterLabel),
+    )
 
     init {
         loadInitial()
@@ -38,84 +59,29 @@ class FilteredListViewModel @Inject constructor(
         when (event) {
             FilteredListEvent.LoadMore -> loadMore()
             FilteredListEvent.Refresh -> refresh()
-            FilteredListEvent.ClearError -> _uiState.update { it.copy(error = null) }
+            FilteredListEvent.ClearError -> _error.value = null
         }
     }
 
-    private fun buildFilter(): CatalogFilter {
-        return when (filterType) {
-            "genre" -> CatalogFilter(genre = Genre(0, filterLabel, filterValue))
-            "year" -> CatalogFilter(year = filterValue)
-            "type" -> CatalogFilter(
-                type = AnimeType.entries.find { it.name == filterValue } ?: AnimeType.UNKNOWN,
-            )
-            else -> CatalogFilter()
+    override suspend fun fetchPage(page: Int): List<AnimePreview> {
+        val result = getAnimeListUseCase(page = page, filter = catalogFilter)
+        return when (result) {
+            is Result.Success -> result.data
+            is Result.Error -> throw result.exception ?: Exception(result.message)
         }
     }
 
-    private fun loadInitial() {
-        _uiState.update { it.copy(isLoading = true, error = null) }
-        viewModelScope.launch {
-            try {
-                val items = getAnimeListUseCase(page = 1, filter = catalogFilter)
-                _uiState.update {
-                    it.copy(
-                        animeList = items,
-                        isLoading = false,
-                        currentPage = 1,
-                        canLoadMore = items.isNotEmpty(),
-                    )
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(isLoading = false, error = e.message ?: "Ошибка загрузки")
-                }
-            }
-        }
-    }
+    override fun mergeItems(
+        existing: List<AnimePreview>,
+        new: List<AnimePreview>,
+    ): List<AnimePreview> = (existing + new).distinctBy { it.id }
 
-    private fun loadMore() {
-        val state = _uiState.value
-        if (state.isLoading || state.isLoadingMore || !state.canLoadMore) return
-        val nextPage = state.currentPage + 1
-        _uiState.update { it.copy(isLoadingMore = true) }
-        viewModelScope.launch {
-            try {
-                val items = getAnimeListUseCase(page = nextPage, filter = catalogFilter)
-                _uiState.update {
-                    it.copy(
-                        animeList = (it.animeList + items).distinctBy { anime -> anime.id },
-                        isLoadingMore = false,
-                        currentPage = nextPage,
-                        canLoadMore = items.isNotEmpty(),
-                    )
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(isLoadingMore = false, error = e.message ?: "Ошибка загрузки")
-                }
-            }
-        }
-    }
-
-    private fun refresh() {
-        _uiState.update { it.copy(isLoading = true, error = null) }
-        viewModelScope.launch {
-            try {
-                val items = getAnimeListUseCase(page = 1, filter = catalogFilter)
-                _uiState.update {
-                    it.copy(
-                        animeList = items,
-                        isLoading = false,
-                        currentPage = 1,
-                        canLoadMore = items.isNotEmpty(),
-                    )
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(isLoading = false, error = e.message ?: "Ошибка загрузки")
-                }
-            }
-        }
+    private fun buildCatalogFilter(): CatalogFilter = when (filterType) {
+        "genre" -> CatalogFilter(genre = Genre(0, filterLabel, filterValue))
+        "year"  -> CatalogFilter(year = filterValue)
+        "type"  -> CatalogFilter(
+            type = AnimeType.entries.find { it.name == filterValue } ?: AnimeType.UNKNOWN,
+        )
+        else -> CatalogFilter()
     }
 }

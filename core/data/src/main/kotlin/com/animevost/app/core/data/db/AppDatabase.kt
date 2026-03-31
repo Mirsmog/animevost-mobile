@@ -1,7 +1,11 @@
 package com.animevost.app.core.data.db
 
+import android.content.Context
 import androidx.room.Database
+import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [
@@ -18,4 +22,40 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun historyDao(): HistoryDao
     abstract fun malMappingDao(): MalMappingDao
     abstract fun skipSegmentDao(): SkipSegmentDao
+
+    companion object {
+        /**
+         * Migrates from version 1 (favorites + history) to version 2,
+         * which introduced the mal_mapping and skip_segments tables.
+         */
+        val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `mal_mapping` (
+                        `animeId` INTEGER NOT NULL,
+                        `malId` INTEGER NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`animeId`)
+                    )""".trimIndent(),
+                )
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `skip_segments` (
+                        `animeId` INTEGER NOT NULL,
+                        `episodeName` TEXT NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `startMs` INTEGER NOT NULL,
+                        `endMs` INTEGER NOT NULL,
+                        `source` TEXT NOT NULL,
+                        PRIMARY KEY(`animeId`, `episodeName`, `type`)
+                    )""".trimIndent(),
+                )
+            }
+        }
+
+        fun build(context: Context): AppDatabase =
+            Room.databaseBuilder(context, AppDatabase::class.java, "animevost.db")
+                .addMigrations(MIGRATION_1_2)
+                .build()
+    }
 }
