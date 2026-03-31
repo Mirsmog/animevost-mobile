@@ -3,6 +3,7 @@ package com.animevost.app.feature.catalog
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.AnimeType
 import com.animevost.app.core.domain.model.Genre
+import com.animevost.app.core.domain.model.SortOption
 
 data class CatalogUiState(
     val selectedTab: CatalogTab = CatalogTab.GENRES,
@@ -26,12 +27,15 @@ data class FilteredListUiState(
     val currentPage: Int = 1,
     val canLoadMore: Boolean = true,
     val filterLabel: String = "",
+    val sort: SortOption = SortOption.DATE,
+    val sortAscending: Boolean = false,
 )
 
 sealed interface FilteredListEvent {
     data object LoadMore : FilteredListEvent
     data object Refresh : FilteredListEvent
     data object ClearError : FilteredListEvent
+    data class SelectSort(val sort: SortOption) : FilteredListEvent
 }
 
 object CatalogDefaults {
