@@ -31,6 +31,9 @@ object DleEndpoints {
     // Login is a POST to the site root
     const val LOGIN = ""
 
+    // Logout
+    const val LOGOUT = "index.php?action=logout"
+
     // Video player frame
     const val PLAYER_FRAME = "frame5.php"
 

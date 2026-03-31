@@ -3,6 +3,7 @@ package com.animevost.app.core.data.repository
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.animevost.app.core.domain.model.User
 import com.animevost.app.core.domain.repository.AuthRepository
@@ -25,16 +26,21 @@ class AuthRepositoryImpl @Inject constructor(
 
     internal companion object {
         val KEY_USERNAME = stringPreferencesKey("auth_username")
+        val KEY_USER_ID = intPreferencesKey("auth_user_id")
     }
 
     override suspend fun login(username: String, password: String): User {
-        val response = api.login(username, password)
-        val body = response.string()
-        if (body.contains("Неверный логин") || body.contains("Неверный пароль")) {
-            throw IllegalArgumentException("Invalid credentials")
+        val body = api.login(username, password).string()
+        if (body.contains("Ошибка авторизации") || body.contains("berrors")) {
+            throw IllegalArgumentException("Неверный логин или пароль")
         }
-        dataStore.edit { it[KEY_USERNAME] = username }
-        return User(id = 0, name = username, avatarUrl = "", isLoggedIn = true)
+        val userId = cookieJar.getCookieValue("animevost.org", "dle_user_id")
+            ?.toIntOrNull() ?: 0
+        dataStore.edit { prefs ->
+            prefs[KEY_USERNAME] = username
+            prefs[KEY_USER_ID] = userId
+        }
+        return User(id = userId, name = username, avatarUrl = "", isLoggedIn = true)
     }
 
     override suspend fun register(username: String, password: String, email: String): User {
@@ -48,23 +54,35 @@ class AuthRepositoryImpl @Inject constructor(
         )
         val html = htmlFetcher.fetchPost(url, params)
         if (html.contains("уже используется") || html.contains("Ошибка")) {
-            throw IllegalArgumentException("Registration failed")
+            throw IllegalArgumentException("Ошибка регистрации")
         }
         dataStore.edit { it[KEY_USERNAME] = username }
         return User(id = 0, name = username, avatarUrl = "", isLoggedIn = true)
     }
 
     override suspend fun logout() {
+        try {
+            htmlFetcher.fetch(DleEndpoints.BASE_URL + DleEndpoints.LOGOUT)
+        } catch (_: Exception) {
+            // Server-side logout is best-effort; always clear local session
+        }
         cookieJar.clear()
-        dataStore.edit { it.remove(KEY_USERNAME) }
+        dataStore.edit { prefs ->
+            prefs.remove(KEY_USERNAME)
+            prefs.remove(KEY_USER_ID)
+        }
     }
 
     override suspend fun getCurrentUser(): User? {
         val username = dataStore.data
             .map { it[KEY_USERNAME] }
-            .firstOrNull()
-            ?: return null
-        return User(id = 0, name = username, avatarUrl = "", isLoggedIn = true)
+            .firstOrNull() ?: return null
+        val cookieUserId = cookieJar.getCookieValue("animevost.org", "dle_user_id")
+        if (cookieUserId == null || cookieUserId == "deleted") return null
+        val userId = dataStore.data
+            .map { it[KEY_USER_ID] }
+            .firstOrNull() ?: cookieUserId.toIntOrNull() ?: 0
+        return User(id = userId, name = username, avatarUrl = "", isLoggedIn = true)
     }
 
     override suspend fun isLoggedIn(): Boolean = getCurrentUser() != null

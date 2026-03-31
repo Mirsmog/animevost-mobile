@@ -42,6 +42,14 @@ class SessionCookieJar @Inject constructor(
         }
     }
 
+    /** Returns the value of cookie [name] for [domain], checking memory cache then persistent storage. Expired cookies are excluded. */
+    fun getCookieValue(domain: String, name: String): String? = synchronized(lock) {
+        val now = System.currentTimeMillis()
+        memoryCache.getOrPut(domain) {
+            storage.loadCookies(domain).toMutableList()
+        }.find { it.name == name && it.expiresAt >= now }?.value
+    }
+
     fun clear() {
         memoryCache.clear()
         storage.clearCookies()
