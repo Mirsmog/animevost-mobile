@@ -31,8 +31,8 @@ object DleEndpoints {
     const val AJAX_ADD_COMMENT = "engine/ajax/addcomments.php"
     const val AJAX_FAVORITES = "engine/ajax/favorites.php"
 
-    // Login is a POST to the site root
-    const val LOGIN = ""
+    // Login form submit
+    const val LOGIN = "index.php?do=login"
 
     // Logout
     const val LOGOUT = "index.php?action=logout"
