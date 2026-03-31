@@ -3,6 +3,8 @@ package com.animevost.app.feature.schedule
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.animevost.app.core.domain.usecase.GetScheduleUseCase
+import com.animevost.app.core.domain.util.onError
+import com.animevost.app.core.domain.util.onSuccess
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -43,22 +45,23 @@ class ScheduleViewModel @Inject constructor(
     private fun loadSchedule() {
         _uiState.update { it.copy(isLoading = true, error = null) }
         viewModelScope.launch {
-            try {
-                val schedules = getScheduleUseCase()
-                val scheduleMap = schedules.associate { it.dayOfWeek to it.items }
-                val selectedDay = _uiState.value.selectedDay
-                _uiState.update {
-                    it.copy(
-                        allSchedule = scheduleMap,
-                        scheduleItems = scheduleMap[selectedDay.fullName].orEmpty(),
-                        isLoading = false,
-                    )
+            getScheduleUseCase()
+                .onSuccess { schedules ->
+                    val scheduleMap = schedules.associate { it.dayOfWeek to it.items }
+                    val selectedDay = _uiState.value.selectedDay
+                    _uiState.update {
+                        it.copy(
+                            allSchedule = scheduleMap,
+                            scheduleItems = scheduleMap[selectedDay.fullName].orEmpty(),
+                            isLoading = false,
+                        )
+                    }
                 }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(isLoading = false, error = e.message ?: "Ошибка загрузки расписания")
+                .onError { _, msg ->
+                    _uiState.update {
+                        it.copy(isLoading = false, error = msg ?: "Ошибка загрузки расписания")
+                    }
                 }
-            }
         }
     }
 }

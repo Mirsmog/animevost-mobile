@@ -3,6 +3,10 @@ package com.animevost.app.feature.auth
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.animevost.app.core.domain.usecase.LoginUseCase
+import com.animevost.app.core.domain.usecase.RegisterUseCase
+import com.animevost.app.core.domain.util.InputValidator
+import com.animevost.app.core.domain.util.ValidationResult
+import com.animevost.app.core.domain.util.isValid
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +38,7 @@ sealed interface AuthEvent {
 @HiltViewModel
 class AuthViewModel @Inject constructor(
     private val loginUseCase: LoginUseCase,
+    private val registerUseCase: RegisterUseCase,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(AuthUiState())
@@ -53,10 +58,18 @@ class AuthViewModel @Inject constructor(
 
     private fun login() {
         val state = _uiState.value
-        if (state.username.isBlank() || state.password.isBlank()) {
-            _uiState.update { it.copy(error = "Заполните все поля") }
+
+        val usernameResult = InputValidator.validateUsername(state.username)
+        if (!usernameResult.isValid) {
+            _uiState.update { it.copy(error = (usernameResult as ValidationResult.Invalid).reason) }
             return
         }
+        val passwordResult = InputValidator.validatePassword(state.password)
+        if (!passwordResult.isValid) {
+            _uiState.update { it.copy(error = (passwordResult as ValidationResult.Invalid).reason) }
+            return
+        }
+
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
@@ -64,10 +77,7 @@ class AuthViewModel @Inject constructor(
                 _uiState.update { it.copy(isLoading = false, isLoggedIn = true) }
             } catch (e: Exception) {
                 _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = e.message ?: "Ошибка входа",
-                    )
+                    it.copy(isLoading = false, error = e.message ?: "Ошибка входа")
                 }
             }
         }
@@ -75,25 +85,35 @@ class AuthViewModel @Inject constructor(
 
     private fun register() {
         val state = _uiState.value
-        if (state.username.isBlank() || state.password.isBlank() || state.email.isBlank()) {
-            _uiState.update { it.copy(error = "Заполните все поля") }
+
+        val usernameResult = InputValidator.validateUsername(state.username)
+        if (!usernameResult.isValid) {
+            _uiState.update { it.copy(error = (usernameResult as ValidationResult.Invalid).reason) }
+            return
+        }
+        val passwordResult = InputValidator.validatePassword(state.password)
+        if (!passwordResult.isValid) {
+            _uiState.update { it.copy(error = (passwordResult as ValidationResult.Invalid).reason) }
+            return
+        }
+        val emailResult = InputValidator.validateEmail(state.email)
+        if (!emailResult.isValid) {
+            _uiState.update { it.copy(error = (emailResult as ValidationResult.Invalid).reason) }
             return
         }
         if (state.password != state.confirmPassword) {
             _uiState.update { it.copy(error = "Пароли не совпадают") }
             return
         }
+
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
-                // Registration uses the same login after register flow
+                registerUseCase(state.username, state.password, state.email)
                 _uiState.update { it.copy(isLoading = false, isLoggedIn = true) }
             } catch (e: Exception) {
                 _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = e.message ?: "Ошибка регистрации",
-                    )
+                    it.copy(isLoading = false, error = e.message ?: "Ошибка регистрации")
                 }
             }
         }

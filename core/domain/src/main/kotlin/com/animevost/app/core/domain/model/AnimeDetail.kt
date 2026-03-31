@@ -1,5 +1,12 @@
 package com.animevost.app.core.domain.model
 
+/**
+ * Full details for a single anime title, fetched from the detail page.
+ *
+ * @property id Unique DLE news ID — matches [AnimePreview.id].
+ * @property url Canonical URL of the detail page.
+ * @property episodes Ordered list of available episodes with their playback IDs.
+ */
 data class AnimeDetail(
     val id: Int,
     val url: String = "",

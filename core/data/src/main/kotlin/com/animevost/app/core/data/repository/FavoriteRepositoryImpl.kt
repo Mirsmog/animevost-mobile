@@ -1,7 +1,8 @@
 package com.animevost.app.core.data.repository
 
 import com.animevost.app.core.data.db.FavoriteDao
-import com.animevost.app.core.data.db.FavoriteEntity
+import com.animevost.app.core.data.mapper.toAnimePreview
+import com.animevost.app.core.data.mapper.toFavoriteEntity
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.repository.FavoriteRepository
 import kotlinx.coroutines.flow.Flow
@@ -16,14 +17,14 @@ class FavoriteRepositoryImpl @Inject constructor(
 
     override fun getAllFavorites(): Flow<List<AnimePreview>> {
         return favoriteDao.getAll().map { list ->
-            list.map { it.toPreview() }
+            list.map { it.toAnimePreview() }
         }
     }
 
     override suspend fun getFavorites(page: Int): List<AnimePreview> {
         val pageSize = 20
         val offset = (page - 1) * pageSize
-        return favoriteDao.getPage(pageSize, offset).map { it.toPreview() }
+        return favoriteDao.getPage(pageSize, offset).map { it.toAnimePreview() }
     }
 
     override suspend fun isFavorite(newsId: Int): Boolean {
@@ -41,27 +42,9 @@ class FavoriteRepositoryImpl @Inject constructor(
             return false
         } else {
             if (preview != null) {
-                favoriteDao.insert(
-                    FavoriteEntity(
-                        newsId = newsId,
-                        title = preview.title,
-                        titleOriginal = preview.titleOriginal,
-                        posterUrl = preview.posterUrl,
-                        episodeInfo = preview.episodeInfo,
-                        url = preview.url,
-                    ),
-                )
+                favoriteDao.insert(preview.toFavoriteEntity())
             }
             return true
         }
     }
-
-    private fun FavoriteEntity.toPreview() = AnimePreview(
-        id = newsId,
-        title = title,
-        titleOriginal = titleOriginal,
-        posterUrl = posterUrl,
-        episodeInfo = episodeInfo,
-        url = url,
-    )
 }

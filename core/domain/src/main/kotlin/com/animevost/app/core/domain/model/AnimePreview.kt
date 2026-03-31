@@ -1,5 +1,11 @@
 package com.animevost.app.core.domain.model
 
+/**
+ * Lightweight representation of an anime item shown in lists and search results.
+ *
+ * @property id Unique DLE news ID used as the primary key throughout the app.
+ * @property url Relative or absolute URL to the detail page.
+ */
 data class AnimePreview(
     val id: Int,
     val title: String,

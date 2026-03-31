@@ -14,14 +14,33 @@ class AnimeDetailParser @Inject constructor(
     private val episodeParser: EpisodeParser,
 ) {
 
+    companion object {
+        // CSS selectors
+        private const val SHORT_STORY = "div.shortstory"
+        private const val STORY_HEAD_H1 = ".shortstoryHead h1"
+        private const val STORY_CONTENT = ".shortstoryContent"
+        private const val DESCRIPTION_SPAN = "span[itemprop=description]"
+        private const val CURRENT_RATING = ".current-rating"
+        private const val VOTE_NUM_SPAN = "span[id^=vote-num-id-]"
+        private const val VOTE_NUM_ID_PREFIX = "vote-num-id-"
+        private const val STATIC_INFO = ".staticInfo"
+        private const val STATIC_INFO_DATE = ".staticInfoLeftData"
+        private const val STATIC_INFO_VIEWS = ".staticInfoRightSmotr"
+        private const val DLE_COMMENT_LINK = "#dle-comm-link"
+        private const val CANONICAL_LINK = "link[rel=canonical]"
+        private const val STORY_FOOTER = ".shortstoryFuter"
+        private const val TITLE_SPOILER = "div.title_spoiler"
+        private const val TEXT_SPOILER_CLASS = "text_spoiler"
+    }
+
     fun parse(html: String, url: String = ""): AnimeDetail {
         val doc = Jsoup.parse(html, DleEndpoints.BASE_URL)
-        val story = doc.selectFirst("div.shortstory") ?: doc
+        val story = doc.selectFirst(SHORT_STORY) ?: doc
 
-        val rawTitle = story.selectFirst(".shortstoryHead h1")?.text()?.trim().orEmpty()
+        val rawTitle = story.selectFirst(STORY_HEAD_H1)?.text()?.trim().orEmpty()
         val (title, titleOriginal, _) = AnimeListParser.splitTitle(rawTitle)
 
-        val content = story.selectFirst(".shortstoryContent") ?: story
+        val content = story.selectFirst(STORY_CONTENT) ?: story
 
         val posterUrl = content.selectFirst("img")?.let { img ->
             img.absUrl("src").ifEmpty { AnimeListParser.resolveUrl(img.attr("src")) }
@@ -32,7 +51,7 @@ class AnimeDetailParser @Inject constructor(
         val episodeCount = extractField(content, "Количество серий")
         val director = extractField(content, "Режиссёр")
             .ifEmpty { extractField(content, "Режиссер") }
-        val description = content.selectFirst("span[itemprop=description]")?.text()?.trim()
+        val description = content.selectFirst(DESCRIPTION_SPAN)?.text()?.trim()
             ?: extractField(content, "Описание")
 
         val genres = parseGenres(content)
@@ -41,7 +60,7 @@ class AnimeDetailParser @Inject constructor(
             ?: AnimeType.UNKNOWN
 
         // Rating: <li class="current-rating" style="width:80%;">80</li> → 80% → 4.0/5
-        val ratingPercent = content.selectFirst(".current-rating")?.let { el ->
+        val ratingPercent = content.selectFirst(CURRENT_RATING)?.let { el ->
             el.text().toDoubleOrNull()
                 ?: el.attr("style").let { style ->
                     Regex("""width:\s*(\d+)%""").find(style)?.groupValues?.get(1)?.toDoubleOrNull()
@@ -50,25 +69,25 @@ class AnimeDetailParser @Inject constructor(
         val rating = ratingPercent / 20.0
 
         // Vote count: <span id="vote-num-id-3774">1084</span>
-        val voteCount = doc.select("span[id^=vote-num-id-]").firstOrNull()
+        val voteCount = doc.select(VOTE_NUM_SPAN).firstOrNull()
             ?.text()?.replace(Regex("[^\\d]"), "")?.toIntOrNull() ?: 0
 
         // Static info bar
-        val staticInfo = story.selectFirst(".staticInfo")
-        val publishDate = staticInfo?.selectFirst(".staticInfoLeftData")?.text()?.trim().orEmpty()
-        val viewCount = staticInfo?.selectFirst(".staticInfoRightSmotr")?.text()
+        val staticInfo = story.selectFirst(STATIC_INFO)
+        val publishDate = staticInfo?.selectFirst(STATIC_INFO_DATE)?.text()?.trim().orEmpty()
+        val viewCount = staticInfo?.selectFirst(STATIC_INFO_VIEWS)?.text()
             ?.replace(Regex("[^\\d]"), "")?.toIntOrNull() ?: 0
-        val commentCount = staticInfo?.selectFirst("#dle-comm-link")?.text()
+        val commentCount = staticInfo?.selectFirst(DLE_COMMENT_LINK)?.text()
             ?.replace(Regex("[^\\d]"), "")?.toIntOrNull() ?: 0
 
         // Anime id from vote span or canonical URL
-        val id = doc.select("span[id^=vote-num-id-]").firstOrNull()
-            ?.attr("id")?.removePrefix("vote-num-id-")?.toIntOrNull()
+        val id = doc.select(VOTE_NUM_SPAN).firstOrNull()
+            ?.attr("id")?.removePrefix(VOTE_NUM_ID_PREFIX)?.toIntOrNull()
             ?: extractIdFromDocument(doc)
             ?: 0
 
         // Footer categories
-        val categories = story.selectFirst(".shortstoryFuter")
+        val categories = story.selectFirst(STORY_FOOTER)
             ?.select("a")?.map { it.text().trim() }
             .orEmpty()
 
@@ -139,10 +158,10 @@ class AnimeDetailParser @Inject constructor(
     }
 
     private fun parseRelatedSeries(root: Element): List<RelatedSeries> {
-        for (titleDiv in root.select("div.title_spoiler")) {
+        for (titleDiv in root.select(TITLE_SPOILER)) {
             if ("состоит" !in titleDiv.text()) continue
             val spoilerDiv = titleDiv.nextElementSibling() ?: continue
-            if (!spoilerDiv.hasClass("text_spoiler")) continue
+            if (!spoilerDiv.hasClass(TEXT_SPOILER_CLASS)) continue
             return spoilerDiv.select("li").mapNotNull { li ->
                 val link = li.selectFirst("a") ?: return@mapNotNull null
                 val title = link.attr("title").ifEmpty { link.text() }.trim()
@@ -155,7 +174,7 @@ class AnimeDetailParser @Inject constructor(
     }
 
     private fun extractIdFromDocument(doc: Document): Int? {
-        val canonical = doc.selectFirst("link[rel=canonical]")?.attr("href").orEmpty()
+        val canonical = doc.selectFirst(CANONICAL_LINK)?.attr("href").orEmpty()
         return AnimeListParser.extractIdFromUrl(canonical)
     }
 }

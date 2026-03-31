@@ -39,6 +39,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -82,6 +83,8 @@ dependencies {
     implementation(libs.media3.exoplayer.hls)
 
     implementation(libs.coil.compose)
+
+    implementation(libs.timber)
 
     debugImplementation(libs.compose.ui.tooling)
 }

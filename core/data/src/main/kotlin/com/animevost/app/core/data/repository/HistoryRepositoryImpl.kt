@@ -1,7 +1,8 @@
 package com.animevost.app.core.data.repository
 
 import com.animevost.app.core.data.db.HistoryDao
-import com.animevost.app.core.data.db.HistoryEntity
+import com.animevost.app.core.data.mapper.toAnimePreview
+import com.animevost.app.core.data.mapper.toHistoryEntity
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.repository.HistoryRepository
@@ -14,32 +15,12 @@ class HistoryRepositoryImpl @Inject constructor(
 ) : HistoryRepository {
 
     override suspend fun getHistory(): List<AnimePreview> {
-        return historyDao.getAllList().map { entity ->
-            AnimePreview(
-                id = entity.animeId,
-                title = entity.title,
-                titleOriginal = entity.titleOriginal,
-                posterUrl = entity.posterUrl,
-                episodeInfo = entity.episodeInfo,
-                url = entity.url,
-            )
-        }
+        return historyDao.getAllList().map { it.toAnimePreview() }
     }
 
     override suspend fun addToHistory(anime: AnimePreview, episode: Episode) {
         historyDao.deleteByEpisode(anime.id, episode.videoId)
-        historyDao.insert(
-            HistoryEntity(
-                animeId = anime.id,
-                title = anime.title,
-                titleOriginal = anime.titleOriginal,
-                posterUrl = anime.posterUrl,
-                episodeInfo = anime.episodeInfo,
-                url = anime.url,
-                episodeName = episode.name,
-                episodeVideoId = episode.videoId,
-            ),
-        )
+        historyDao.insert(anime.toHistoryEntity(episode))
     }
 
     override suspend fun clearHistory() {

@@ -13,6 +13,8 @@ import com.animevost.app.core.domain.usecase.GetCommentsUseCase
 import com.animevost.app.core.domain.usecase.RateAnimeUseCase
 import com.animevost.app.core.domain.usecase.ToggleFavoriteUseCase
 import com.animevost.app.core.domain.repository.FavoriteRepository
+import com.animevost.app.core.domain.util.onError
+import com.animevost.app.core.domain.util.onSuccess
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -94,53 +96,45 @@ class DetailViewModel @Inject constructor(
         if (_uiState.value.isLoading) return
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null, animeUrl = url) }
-            try {
-                val anime = getAnimeDetailUseCase(url)
-                val isFav = favoriteRepository.isFavorite(anime.id)
-                _uiState.update {
-                    it.copy(
-                        anime = anime,
-                        isFavorite = isFav,
-                        isLoading = false,
-                    )
+            getAnimeDetailUseCase(url)
+                .onSuccess { anime ->
+                    val isFav = favoriteRepository.isFavorite(anime.id)
+                    _uiState.update { it.copy(anime = anime, isFavorite = isFav, isLoading = false) }
+                    loadComments()
                 }
-                loadComments()
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = e.message ?: "Не удалось загрузить данные",
-                    )
+                .onError { _, msg ->
+                    _uiState.update {
+                        it.copy(isLoading = false, error = msg ?: "Не удалось загрузить данные")
+                    }
                 }
-            }
         }
     }
 
     private fun downloadEpisode(episode: Episode) {
         val animeTitle = _uiState.value.anime?.title ?: "Anime"
         viewModelScope.launch {
-            try {
-                val sources = downloadEpisodeUseCase(episode.videoId)
-                val source = sources.firstOrNull()
-                if (source != null) {
-                    val downloadUrl = source.downloadUrl.ifBlank { source.url }
-                    val fileName = "$animeTitle - ${episode.name}"
-                    episodeDownloader.download(
-                        url = downloadUrl,
-                        fileName = fileName,
-                        title = "$animeTitle — ${episode.name}",
-                    )
-                    _effect.emit(DetailEffect.ShowSnackbar("Загрузка начата: ${episode.name}"))
-                } else {
-                    _effect.emit(DetailEffect.ShowSnackbar("Нет доступных источников"))
+            downloadEpisodeUseCase(episode.videoId)
+                .onSuccess { sources ->
+                    val source = sources.firstOrNull()
+                    if (source != null) {
+                        val downloadUrl = source.downloadUrl.ifBlank { source.url }
+                        episodeDownloader.download(
+                            url = downloadUrl,
+                            fileName = "$animeTitle - ${episode.name}",
+                            title = "$animeTitle — ${episode.name}",
+                        )
+                        _effect.emit(DetailEffect.ShowSnackbar("Загрузка начата: ${episode.name}"))
+                    } else {
+                        _effect.emit(DetailEffect.ShowSnackbar("Нет доступных источников"))
+                    }
                 }
-            } catch (e: Exception) {
-                _effect.emit(
-                    DetailEffect.ShowSnackbar(
-                        "Ошибка загрузки: ${e.message ?: "неизвестная ошибка"}",
-                    ),
-                )
-            }
+                .onError { _, msg ->
+                    _effect.emit(
+                        DetailEffect.ShowSnackbar(
+                            "Ошибка загрузки: ${msg ?: "неизвестная ошибка"}",
+                        ),
+                    )
+                }
         }
     }
 
@@ -148,10 +142,10 @@ class DetailViewModel @Inject constructor(
         val anime = _uiState.value.anime ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(userRating = rating) }
-            try {
-                val newRating = rateAnimeUseCase(anime.id, rating)
-                _uiState.update { it.copy(anime = it.anime?.copy(rating = newRating)) }
-            } catch (_: Exception) { }
+            rateAnimeUseCase(anime.id, rating)
+                .onSuccess { newRating ->
+                    _uiState.update { it.copy(anime = it.anime?.copy(rating = newRating)) }
+                }
         }
     }
 
@@ -181,41 +175,42 @@ class DetailViewModel @Inject constructor(
         val anime = _uiState.value.anime ?: return
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingComments = true) }
-            try {
-                val comments = getCommentsUseCase(anime.id, 1, anime.url)
-                _uiState.update {
-                    it.copy(
-                        comments = comments,
-                        isLoadingComments = false,
-                        commentsPage = 1,
-                        hasMoreComments = comments.size >= 10,
-                    )
+            getCommentsUseCase(anime.id, 1, anime.url)
+                .onSuccess { comments ->
+                    _uiState.update {
+                        it.copy(
+                            comments = comments,
+                            isLoadingComments = false,
+                            commentsPage = 1,
+                            hasMoreComments = comments.size >= 10,
+                        )
+                    }
                 }
-            } catch (_: Exception) {
-                _uiState.update { it.copy(isLoadingComments = false) }
-            }
+                .onError { _, _ ->
+                    _uiState.update { it.copy(isLoadingComments = false) }
+                }
         }
     }
 
     private fun loadMoreComments() {
         val anime = _uiState.value.anime ?: return
-        val state = _uiState.value
-        val nextPage = state.commentsPage + 1
+        val nextPage = _uiState.value.commentsPage + 1
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingComments = true) }
-            try {
-                val moreComments = getCommentsUseCase(anime.id, nextPage, anime.url)
-                _uiState.update {
-                    it.copy(
-                        comments = it.comments + moreComments,
-                        isLoadingComments = false,
-                        commentsPage = nextPage,
-                        hasMoreComments = moreComments.size >= 10,
-                    )
+            getCommentsUseCase(anime.id, nextPage, anime.url)
+                .onSuccess { moreComments ->
+                    _uiState.update {
+                        it.copy(
+                            comments = it.comments + moreComments,
+                            isLoadingComments = false,
+                            commentsPage = nextPage,
+                            hasMoreComments = moreComments.size >= 10,
+                        )
+                    }
                 }
-            } catch (_: Exception) {
-                _uiState.update { it.copy(isLoadingComments = false) }
-            }
+                .onError { _, _ ->
+                    _uiState.update { it.copy(isLoadingComments = false) }
+                }
         }
     }
 
@@ -229,24 +224,25 @@ class DetailViewModel @Inject constructor(
         if (text.isBlank()) return
         viewModelScope.launch {
             _uiState.update { it.copy(isAddingComment = true) }
-            try {
-                val comment = addCommentUseCase(anime.id, text)
-                _uiState.update {
-                    it.copy(
-                        comments = listOf(comment) + it.comments,
-                        commentText = "",
-                        isAddingComment = false,
+            addCommentUseCase(anime.id, text)
+                .onSuccess { comment ->
+                    _uiState.update {
+                        it.copy(
+                            comments = listOf(comment) + it.comments,
+                            commentText = "",
+                            isAddingComment = false,
+                        )
+                    }
+                    _effect.emit(DetailEffect.ShowSnackbar("Комментарий добавлен"))
+                }
+                .onError { _, msg ->
+                    _uiState.update { it.copy(isAddingComment = false) }
+                    _effect.emit(
+                        DetailEffect.ShowSnackbar(
+                            "Ошибка: ${msg ?: "не удалось добавить комментарий"}",
+                        ),
                     )
                 }
-                _effect.emit(DetailEffect.ShowSnackbar("Комментарий добавлен"))
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isAddingComment = false) }
-                _effect.emit(
-                    DetailEffect.ShowSnackbar(
-                        "Ошибка: ${e.message ?: "не удалось добавить комментарий"}",
-                    ),
-                )
-            }
         }
     }
 }
