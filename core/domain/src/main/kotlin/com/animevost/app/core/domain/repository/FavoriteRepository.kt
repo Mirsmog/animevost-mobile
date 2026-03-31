@@ -22,4 +22,11 @@ interface FavoriteRepository {
      * @return the new favourite state (`true` = added, `false` = removed).
      */
     suspend fun toggleFavorite(newsId: Int, preview: AnimePreview? = null): Boolean
+
+    /**
+     * Synchronises local favourites with the remote server.
+     * Pulls remote-only items into Room; pushes local-only IDs to the server.
+     * Requires the user to be authenticated — returns [Result.Error] if not logged in.
+     */
+    suspend fun syncWithRemote(): com.animevost.app.core.domain.util.Result<Unit>
 }
