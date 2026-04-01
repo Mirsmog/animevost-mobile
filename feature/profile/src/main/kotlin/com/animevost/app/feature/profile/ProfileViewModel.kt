@@ -50,7 +50,11 @@ class ProfileViewModel @Inject constructor(
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
     init {
-        onEvent(ProfileEvent.LoadProfile)
+        // Re-load profile on every auth state change (login → show profile, logout → show guest)
+        // MutableStateFlow emits the current value immediately, so this also covers the initial load.
+        viewModelScope.launch {
+            authRepository.isLoggedInFlow.collect { loadProfile() }
+        }
     }
 
     fun onEvent(event: ProfileEvent) {
