@@ -197,7 +197,7 @@ class DetailViewModel @Inject constructor(
                             comments = comments,
                             isLoadingComments = false,
                             commentsPage = 1,
-                            hasMoreComments = comments.size >= 10,
+                            hasMoreComments = anime.totalCommentPages > 1,
                         )
                     }
                 }
@@ -209,7 +209,9 @@ class DetailViewModel @Inject constructor(
 
     private fun loadMoreComments() {
         val anime = _uiState.value.anime ?: return
-        val nextPage = _uiState.value.commentsPage + 1
+        val state = _uiState.value
+        val nextPage = state.commentsPage + 1
+        if (nextPage > anime.totalCommentPages) return
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingComments = true) }
             getCommentsUseCase(anime.id, nextPage, anime.url)
@@ -219,7 +221,7 @@ class DetailViewModel @Inject constructor(
                             comments = it.comments + moreComments,
                             isLoadingComments = false,
                             commentsPage = nextPage,
-                            hasMoreComments = moreComments.size >= 10,
+                            hasMoreComments = nextPage < anime.totalCommentPages,
                         )
                     }
                 }

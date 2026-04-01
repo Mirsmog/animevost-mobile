@@ -6,4 +6,6 @@ data class Comment(
     val date: String,
     val text: String,
     val avatar: String,
+    val quotedAuthor: String = "",
+    val quotedText: String = "",
 )

@@ -91,6 +91,10 @@ class AnimeDetailParser @Inject constructor(
             ?.select("a")?.map { it.text().trim() }
             .orEmpty()
 
+        // Total comment pages: var total_comments_pages= '100';
+        val totalCommentPages = Regex("""total_comments_pages=\s*'(\d+)'""")
+            .find(html)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+
         val episodes = episodeParser.parse(html)
 
         return AnimeDetail(
@@ -108,6 +112,7 @@ class AnimeDetailParser @Inject constructor(
             voteCount = voteCount,
             viewCount = viewCount,
             commentCount = commentCount,
+            totalCommentPages = totalCommentPages,
             description = description,
             publishDate = publishDate,
             categories = categories,
