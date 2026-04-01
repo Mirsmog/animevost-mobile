@@ -16,6 +16,8 @@ import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.FavoriteRepository
 import com.animevost.app.core.domain.util.onError
 import com.animevost.app.core.domain.util.onSuccess
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,7 +42,7 @@ data class DetailUiState(
     val isDescriptionExpanded: Boolean = false,
     val comments: List<Comment> = emptyList(),
     val isLoadingComments: Boolean = false,
-    val commentText: String = "",
+    val commentTextValue: TextFieldValue = TextFieldValue(),
     val isAddingComment: Boolean = false,
     val commentsPage: Int = 1,
     val hasMoreComments: Boolean = false,
@@ -55,7 +57,8 @@ sealed interface DetailEvent {
     data object ToggleDescription : DetailEvent
     data object LoadComments : DetailEvent
     data object LoadMoreComments : DetailEvent
-    data class UpdateCommentText(val text: String) : DetailEvent
+    data class UpdateCommentTextValue(val value: TextFieldValue) : DetailEvent
+    data class ReplyToComment(val comment: Comment) : DetailEvent
     data object SubmitComment : DetailEvent
 }
 
@@ -98,7 +101,8 @@ class DetailViewModel @Inject constructor(
             is DetailEvent.ToggleDescription -> toggleDescription()
             is DetailEvent.LoadComments -> loadComments()
             is DetailEvent.LoadMoreComments -> loadMoreComments()
-            is DetailEvent.UpdateCommentText -> updateCommentText(event.text)
+            is DetailEvent.UpdateCommentTextValue -> _uiState.update { it.copy(commentTextValue = event.value) }
+            is DetailEvent.ReplyToComment -> replyToComment(event.comment)
             is DetailEvent.SubmitComment -> submitComment()
         }
     }
@@ -231,8 +235,12 @@ class DetailViewModel @Inject constructor(
         }
     }
 
-    private fun updateCommentText(text: String) {
-        _uiState.update { it.copy(commentText = text) }
+    private fun replyToComment(comment: Comment) {
+        val quote = "[quote=${comment.author}]${comment.text.take(200)}[/quote]\n"
+        val newText = quote + _uiState.value.commentTextValue.text
+        _uiState.update { it.copy(
+            commentTextValue = TextFieldValue(newText, TextRange(newText.length)),
+        )}
     }
 
     private fun submitComment() {
@@ -241,7 +249,7 @@ class DetailViewModel @Inject constructor(
             viewModelScope.launch { _effect.emit(DetailEffect.ShowSnackbar("Войдите в аккаунт чтобы комментировать")) }
             return
         }
-        val text = _uiState.value.commentText.trim()
+        val text = _uiState.value.commentTextValue.text.trim()
         if (text.isBlank()) return
         viewModelScope.launch {
             _uiState.update { it.copy(isAddingComment = true) }
@@ -250,7 +258,7 @@ class DetailViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(
                             comments = listOf(comment) + it.comments,
-                            commentText = "",
+                            commentTextValue = TextFieldValue(),
                             isAddingComment = false,
                         )
                     }
