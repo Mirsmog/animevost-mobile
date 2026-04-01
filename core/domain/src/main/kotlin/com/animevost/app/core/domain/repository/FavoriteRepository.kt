@@ -24,9 +24,14 @@ interface FavoriteRepository {
     suspend fun toggleFavorite(newsId: Int, preview: AnimePreview? = null): Boolean
 
     /**
-     * Synchronises local favourites with the remote server.
-     * Pulls remote-only items into Room; pushes local-only IDs to the server.
-     * Requires the user to be authenticated — returns [Result.Error] if not logged in.
+     * One-time merge performed on login: pushes local-only items to the remote server,
+     * clears the local Room DB, and loads all remote favorites into in-memory state.
      */
-    suspend fun syncWithRemote(): com.animevost.app.core.domain.util.Result<Unit>
+    suspend fun syncOnLogin(): com.animevost.app.core.domain.util.Result<Unit>
+
+    /**
+     * Fetches all pages of remote favorites and updates the in-memory state.
+     * No-op when not logged in.
+     */
+    suspend fun loadRemoteFavorites(): com.animevost.app.core.domain.util.Result<Unit>
 }
