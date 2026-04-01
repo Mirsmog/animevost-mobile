@@ -24,6 +24,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.animevost.app.MainViewModel
 import com.animevost.app.feature.auth.LoginScreen
 import com.animevost.app.feature.auth.RegisterScreen
 import com.animevost.app.feature.catalog.FilteredListScreen
@@ -36,6 +38,7 @@ import com.animevost.app.feature.schedule.ScheduleScreen
 
 @Composable
 fun AppNavGraph() {
+    hiltViewModel<MainViewModel>()
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
