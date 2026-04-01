@@ -1,23 +1,8 @@
 package com.animevost.app.feature.catalog
 
 import com.animevost.app.core.domain.model.AnimePreview
-import com.animevost.app.core.domain.model.AnimeType
 import com.animevost.app.core.domain.model.Genre
 import com.animevost.app.core.domain.model.SortOption
-
-data class CatalogUiState(
-    val selectedTab: CatalogTab = CatalogTab.GENRES,
-    val genres: List<Genre> = CatalogDefaults.genres,
-    val types: List<AnimeType> = AnimeType.entries.filter { it.urlSlug.isNotEmpty() },
-    val years: List<String> = CatalogDefaults.years,
-    val isLoadingNav: Boolean = false,
-)
-
-enum class CatalogTab(val title: String) {
-    GENRES("Жанры"),
-    TYPES("Типы"),
-    YEARS("Годы"),
-}
 
 data class FilteredListUiState(
     val animeList: List<AnimePreview> = emptyList(),
@@ -39,7 +24,6 @@ sealed interface FilteredListEvent {
 }
 
 object CatalogDefaults {
-
     val genres = listOf(
         Genre(1, "Боевые искусства", "/zhanr/boyevyye-iskusstva/"),
         Genre(2, "Война", "/zhanr/voyna/"),
@@ -68,6 +52,9 @@ object CatalogDefaults {
         Genre(25, "Школа", "/zhanr/shkola/"),
         Genre(26, "Этти", "/zhanr/etti/"),
     )
-
-    val years: List<String> = (listOf(2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016, 2015, 2014, 2013, 2012, 2011, 2010, 2009, 2008, 2007, 2006, 2005, 2004, 2003, 2002, 2001, 2000, 1999, 1998, 1997, 1996, 1995, 1994, 1993, 1992, 1991, 1984, 1980, 1977, 1971)).map { it.toString() }
+    val years: List<String> = listOf(
+        2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016, 2015, 2014, 2013,
+        2012, 2011, 2010, 2009, 2008, 2007, 2006, 2005, 2004, 2003, 2002, 2001, 2000,
+        1999, 1998, 1997, 1996, 1995, 1994, 1993, 1992, 1991, 1984, 1980, 1977, 1971,
+    ).map { it.toString() }
 }

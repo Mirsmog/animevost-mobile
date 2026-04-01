@@ -211,6 +211,7 @@ fun HomeScreen(
                             onTypeSelected = { viewModel.onEvent(HomeEvent.SelectType(it)) },
                             onLoadMore = { viewModel.onEvent(HomeEvent.LoadMore) },
                             onRefresh = { viewModel.onEvent(HomeEvent.Refresh) },
+                            onNavigateToFilteredList = onNavigateToFilteredList,
                         )
                     }
 
@@ -231,6 +232,7 @@ private fun CatalogContent(
     onTypeSelected: (AnimeType) -> Unit,
     onLoadMore: () -> Unit,
     onRefresh: () -> Unit,
+    onNavigateToFilteredList: (String, String, String) -> Unit = { _, _, _ -> },
 ) {
     val listState = rememberLazyListState()
     var showSortSheet by remember { mutableStateOf(false) }
@@ -265,6 +267,7 @@ private fun CatalogContent(
                     selectedType = state.selectedType,
                     onTypeSelected = onTypeSelected,
                     onSortClick = { showSortSheet = true },
+                    onSectionClick = onNavigateToFilteredList,
                 )
             }
             items(rows, key = { it.first().id }) { row ->
@@ -447,6 +450,7 @@ private fun FilterBar(
     selectedType: AnimeType?,
     onTypeSelected: (AnimeType) -> Unit,
     onSortClick: () -> Unit,
+    onSectionClick: (String, String, String) -> Unit = { _, _, _ -> },
 ) {
     val bgColor = MaterialTheme.colorScheme.background
 
@@ -474,6 +478,45 @@ private fun FilterBar(
             contentPadding = PaddingValues(start = 12.dp, end = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // Section chips: Онгоинги, Анонсы
+            item(key = "ongoing") {
+                FilterChip(
+                    selected = false,
+                    onClick = { onSectionClick("path", "ongoing/", "Онгоинги") },
+                    label = {
+                        Text("Онгоинги", style = MaterialTheme.typography.labelLarge)
+                    },
+                    shape = RoundedCornerShape(20.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = false,
+                        borderColor = Color.Transparent,
+                    ),
+                )
+            }
+            item(key = "preview") {
+                FilterChip(
+                    selected = false,
+                    onClick = { onSectionClick("path", "preview/", "Анонсы") },
+                    label = {
+                        Text("Анонсы", style = MaterialTheme.typography.labelLarge)
+                    },
+                    shape = RoundedCornerShape(20.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = false,
+                        borderColor = Color.Transparent,
+                    ),
+                )
+            }
             items(AnimeType.entries.filter { it != AnimeType.UNKNOWN }) { type ->
                 val isSelected = selectedType == type
                 FilterChip(
