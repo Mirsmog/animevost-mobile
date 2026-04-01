@@ -121,44 +121,37 @@ fun AnimeCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (episodeCount.isNotEmpty() || hasStats) {
+            // Stats (rating, views) directly under title
+            if (hasStats) {
                 Spacer(modifier = Modifier.height(3.dp))
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    if (episodeCount.isNotEmpty()) {
-                        Text(
-                            text = episodeCount,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White.copy(alpha = 0.65f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
+                    if (anime.rating > 0) {
+                        StatBadge(
+                            icon = { Icon(Icons.Filled.Star, null, modifier = Modifier.size(10.dp), tint = OrangePrimary) },
+                            text = String.format("%.1f", anime.rating),
                         )
                     }
-                    // Stats: rating, views
-                    if (hasStats) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            if (anime.rating > 0) {
-                                StatBadge(
-                                    icon = { Icon(Icons.Filled.Star, null, modifier = Modifier.size(10.dp), tint = OrangePrimary) },
-                                    text = String.format("%.1f", anime.rating),
-                                )
-                            }
-                            if (anime.viewCount > 0) {
-                                StatBadge(
-                                    icon = { Icon(Icons.Outlined.Visibility, null, modifier = Modifier.size(10.dp), tint = Color.White.copy(alpha = 0.6f)) },
-                                    text = formatCount(anime.viewCount),
-                                )
-                            }
-                        }
+                    if (anime.viewCount > 0) {
+                        StatBadge(
+                            icon = { Icon(Icons.Outlined.Visibility, null, modifier = Modifier.size(10.dp), tint = Color.White.copy(alpha = 0.6f)) },
+                            text = formatCount(anime.viewCount),
+                        )
                     }
                 }
+            }
+            // Episode count at the bottom
+            if (episodeCount.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = episodeCount,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White.copy(alpha = 0.55f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

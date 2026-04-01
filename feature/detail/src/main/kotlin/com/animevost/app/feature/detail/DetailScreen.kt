@@ -15,12 +15,14 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -80,10 +82,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -96,7 +101,6 @@ import com.animevost.app.core.domain.model.VideoSource
 import com.animevost.app.core.ui.components.AnimeCard
 import com.animevost.app.core.ui.components.ErrorState
 import com.animevost.app.core.ui.components.LoadingState
-import com.animevost.app.core.ui.theme.AccentBlue
 import com.animevost.app.core.ui.theme.Bg0
 import com.animevost.app.core.ui.theme.Bg1
 import com.animevost.app.core.ui.theme.Bg2
@@ -151,9 +155,10 @@ fun DetailScreen(
 
     Scaffold(
         containerColor = Bg1,
+        contentWindowInsets = WindowInsets(0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { paddingValues ->
-        Box(modifier = Modifier.padding(paddingValues)) {
+    ) { _ ->
+        Box(modifier = Modifier.fillMaxSize()) {
             when {
                 state.isLoading -> LoadingState()
                 state.error != null -> ErrorState(
@@ -328,7 +333,10 @@ private fun DetailContent(
                 modifier = Modifier.animateContentSize(),
             )
             if (anime.description.length > 200) {
-                TextButton(onClick = onToggleDescription) {
+                TextButton(
+                    onClick = onToggleDescription,
+                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
+                ) {
                     Text(
                         text = if (isDescriptionExpanded) "Свернуть" else "Показать полностью",
                         color = OrangePrimary,
@@ -420,39 +428,51 @@ private fun DetailContent(
         }
 
         // ── Stats row ─────────────────────────────────────────────────
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     Icons.Filled.RemoveRedEye,
                     contentDescription = null,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(14.dp),
                     tint = TextSecondary,
                 )
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(5.dp))
                 Text(
-                    text = "${anime.viewCount}",
-                    style = MaterialTheme.typography.labelMedium,
+                    text = formatStatCount(anime.viewCount),
+                    style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary,
+                )
+                Spacer(Modifier.width(3.dp))
+                Text(
+                    text = "просмотров",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary.copy(alpha = 0.6f),
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     Icons.AutoMirrored.Filled.Comment,
                     contentDescription = null,
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(14.dp),
                     tint = TextSecondary,
                 )
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.width(5.dp))
                 Text(
-                    text = "${anime.commentCount}",
-                    style = MaterialTheme.typography.labelMedium,
+                    text = formatStatCount(anime.commentCount),
+                    style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary,
+                )
+                Spacer(Modifier.width(3.dp))
+                Text(
+                    text = "комментариев",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary.copy(alpha = 0.6f),
                 )
             }
         }
@@ -474,7 +494,7 @@ private fun DetailContent(
             onReply = onReplyToComment,
         )
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(24.dp).navigationBarsPadding())
     }
 }
 
@@ -853,7 +873,7 @@ private fun CommentsSection(
 
         if (hasMore && !isLoading) {
             TextButton(onClick = onLoadMore, modifier = Modifier.fillMaxWidth()) {
-                Text(text = "Показать ещё", color = AccentBlue)
+                Text(text = "Показать ещё", color = OrangePrimary)
             }
         }
 
@@ -929,7 +949,7 @@ private fun CommentEditor(
                     Text(
                         text = if (showPreview) "Редактор" else "Превью",
                         style = MaterialTheme.typography.labelSmall,
-                        color = AccentBlue,
+                        color = OrangePrimary,
                     )
                 }
             }
@@ -977,6 +997,7 @@ private fun CommentEditor(
                         cursorBrush = SolidColor(OrangePrimary),
                         enabled = !isAddingComment,
                         maxLines = 8,
+                        visualTransformation = EmojiTagVisualTransformation,
                     )
                 }
             }
@@ -1018,7 +1039,8 @@ private fun CommentEditor(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Formatting buttons group
+                // Formatting buttons group — active only when text is selected
+                val hasSelection = commentTextValue.selection.length > 0
                 Row(
                     modifier = Modifier
                         .background(Bg3, RoundedCornerShape(8.dp))
@@ -1026,15 +1048,15 @@ private fun CommentEditor(
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    FormatTextButton(label = "B", fontWeight = FontWeight.Bold) {
-                        applyFormat("[b]", "[/b]")
-                    }
-                    FormatTextButton(label = "I", fontStyle = FontStyle.Italic) {
-                        applyFormat("[i]", "[/i]")
-                    }
+                    FormatTextButton(
+                        label = "B",
+                        fontWeight = FontWeight.Bold,
+                        enabled = hasSelection,
+                    ) { applyFormat("[b]", "[/b]") }
                     FormatTextButton(
                         label = "S",
                         textDecoration = TextDecoration.LineThrough,
+                        enabled = hasSelection,
                     ) { applyFormat("[s]", "[/s]") }
 
                     // Spoiler button: eye icon + text
@@ -1042,7 +1064,7 @@ private fun CommentEditor(
                         modifier = Modifier
                             .height(32.dp)
                             .clip(RoundedCornerShape(6.dp))
-                            .clickable { applyFormat("[spoiler]", "[/spoiler]") }
+                            .then(if (hasSelection) Modifier.clickable { applyFormat("[spoiler]", "[/spoiler]") } else Modifier)
                             .padding(horizontal = 6.dp),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -1053,13 +1075,13 @@ private fun CommentEditor(
                             Icon(
                                 Icons.Filled.RemoveRedEye,
                                 contentDescription = null,
-                                tint = TextSecondary,
+                                tint = if (hasSelection) TextSecondary else TextSecondary.copy(alpha = 0.35f),
                                 modifier = Modifier.size(14.dp),
                             )
                             Text(
                                 text = "Спойлер",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = TextSecondary,
+                                color = if (hasSelection) TextSecondary else TextSecondary.copy(alpha = 0.35f),
                             )
                         }
                     }
@@ -1106,24 +1128,23 @@ private fun CommentEditor(
 private fun FormatTextButton(
     label: String,
     fontWeight: FontWeight? = null,
-    fontStyle: FontStyle? = null,
     textDecoration: TextDecoration? = null,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     Box(
         modifier = Modifier
             .size(32.dp)
             .clip(RoundedCornerShape(6.dp))
-            .clickable(onClick = onClick),
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium.copy(
                 fontWeight = fontWeight ?: FontWeight.Normal,
-                fontStyle = fontStyle ?: FontStyle.Normal,
                 textDecoration = textDecoration ?: TextDecoration.None,
-                color = TextPrimary,
+                color = if (enabled) TextPrimary else TextPrimary.copy(alpha = 0.3f),
             ),
         )
     }
@@ -1191,14 +1212,14 @@ private fun CommentItem(comment: Comment, onReply: (Comment) -> Unit) {
                         modifier = Modifier
                             .width(3.dp)
                             .fillMaxHeight()
-                            .background(AccentBlue),
+                            .background(OrangePrimary),
                     )
                     Column(modifier = Modifier.padding(8.dp)) {
                         Text(
                             text = "↩ ${comment.quotedAuthor}",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = AccentBlue,
+                            color = OrangePrimary,
                         )
                         if (comment.quotedText.isNotBlank()) {
                             Spacer(Modifier.height(2.dp))
@@ -1230,7 +1251,7 @@ private fun CommentItem(comment: Comment, onReply: (Comment) -> Unit) {
                 Text(
                     text = "Ответить",
                     style = MaterialTheme.typography.labelSmall,
-                    color = AccentBlue,
+                    color = OrangePrimary,
                 )
             }
         }
@@ -1308,4 +1329,56 @@ private fun RatingBar(
             }
         }
     }
+}
+
+private fun formatStatCount(count: Int): String = when {
+    count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0)
+    count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
+    else -> count.toString()
+}
+
+/**
+ * Replaces <!--smile:N--> tags with [:N:] in the visual display
+ * so the text field shows compact emoji tokens instead of raw HTML comments.
+ */
+private val EmojiTagVisualTransformation = VisualTransformation { text ->
+    val original = text.text
+    val regex = Regex("""<!--smile:(\d+)-->""")
+    val sb = StringBuilder()
+    val originalToTransformed = IntArray(original.length + 1)
+    val transformedToOriginal = mutableListOf<Int>()
+    var lastEnd = 0
+
+    for (match in regex.findAll(original)) {
+        val before = original.substring(lastEnd, match.range.first)
+        for (i in before.indices) {
+            originalToTransformed[lastEnd + i] = sb.length + i
+            transformedToOriginal.add(lastEnd + i)
+        }
+        sb.append(before)
+        val replacement = "[:${match.groupValues[1]}:]"
+        val startOriginal = match.range.first
+        for (i in match.value.indices) {
+            originalToTransformed[startOriginal + i] = sb.length
+        }
+        repeat(replacement.length) { transformedToOriginal.add(startOriginal) }
+        sb.append(replacement)
+        lastEnd = match.range.last + 1
+    }
+    val tail = original.substring(lastEnd)
+    for (i in tail.indices) {
+        originalToTransformed[lastEnd + i] = sb.length + i
+        transformedToOriginal.add(lastEnd + i)
+    }
+    sb.append(tail)
+    originalToTransformed[original.length] = sb.length
+    transformedToOriginal.add(original.length)
+
+    val offsetMapping = object : OffsetMapping {
+        override fun originalToTransformed(offset: Int): Int =
+            originalToTransformed.getOrElse(offset) { sb.length }
+        override fun transformedToOriginal(offset: Int): Int =
+            transformedToOriginal.getOrElse(offset) { original.length }
+    }
+    TransformedText(AnnotatedString(sb.toString()), offsetMapping)
 }
