@@ -11,6 +11,9 @@ import com.animevost.app.core.network.AnimeVostApi
 import com.animevost.app.core.network.DleEndpoints
 import com.animevost.app.core.network.HtmlFetcher
 import com.animevost.app.core.network.SessionCookieJar
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -29,6 +32,13 @@ class AuthRepositoryImpl @Inject constructor(
         val KEY_USER_ID = intPreferencesKey("auth_user_id")
     }
 
+    // Initialise synchronously from the cookie jar so the first emission is correct
+    private val _isLoggedInFlow = MutableStateFlow(
+        cookieJar.getCookieValue("animevost.org", "dle_user_id")
+            .let { id -> id != null && id != "deleted" },
+    )
+    override val isLoggedInFlow: Flow<Boolean> = _isLoggedInFlow.asStateFlow()
+
     override suspend fun login(username: String, password: String): User {
         val body = api.login(username, password).string()
         if (body.contains("Ошибка авторизации") || body.contains("berrors")) {
@@ -40,6 +50,7 @@ class AuthRepositoryImpl @Inject constructor(
             prefs[KEY_USERNAME] = username
             prefs[KEY_USER_ID] = userId
         }
+        _isLoggedInFlow.value = true
         return User(id = userId, name = username, avatarUrl = "", isLoggedIn = true)
     }
 
@@ -71,6 +82,7 @@ class AuthRepositoryImpl @Inject constructor(
             prefs.remove(KEY_USERNAME)
             prefs.remove(KEY_USER_ID)
         }
+        _isLoggedInFlow.value = false
     }
 
     override suspend fun getCurrentUser(): User? {

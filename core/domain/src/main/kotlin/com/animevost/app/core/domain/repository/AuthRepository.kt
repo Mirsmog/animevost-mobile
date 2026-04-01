@@ -1,6 +1,7 @@
 package com.animevost.app.core.domain.repository
 
 import com.animevost.app.core.domain.model.User
+import kotlinx.coroutines.flow.Flow
 
 /** Handles authentication operations (login, register, logout, session). */
 interface AuthRepository {
@@ -18,4 +19,7 @@ interface AuthRepository {
 
     /** Returns `true` if a valid session exists. */
     suspend fun isLoggedIn(): Boolean
+
+    /** Reactive stream of the authenticated state. Emits `true` after login, `false` after logout. */
+    val isLoggedInFlow: Flow<Boolean>
 }
