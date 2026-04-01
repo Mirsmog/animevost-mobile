@@ -131,11 +131,20 @@ class AnimeListParser @Inject constructor() {
                 ?.let { TYPE_SLUG_MAP[it] } ?: ""
 
         fun splitTitle(raw: String): Triple<String, String, String> {
-            val episodeMatch = EPISODE_BRACKET.find(raw)
-            val episodeInfo = episodeMatch?.groupValues?.get(1).orEmpty()
-            val withoutEpisodes = raw.replace(EPISODE_BRACKET, "").trim()
+            val allBrackets = Regex("""\[([^\]]+)]""").findAll(raw)
+                .map { it.groupValues[1] }.toList()
+            val isAnnouncement = allBrackets.any { it.equals("Анонс", ignoreCase = true) }
+            val episodePart = allBrackets.lastOrNull { !it.equals("Анонс", ignoreCase = true) }
 
-            val parts = withoutEpisodes.split(" / ", limit = 2)
+            val episodeInfo = when {
+                isAnnouncement && episodePart != null -> "Анонс · $episodePart"
+                isAnnouncement -> "Анонс"
+                episodePart != null -> episodePart
+                else -> ""
+            }
+
+            val withoutBrackets = raw.replace(Regex("""\s*\[[^\]]+]"""), "").trim()
+            val parts = withoutBrackets.split(" / ", limit = 2)
             val title = parts[0].trim()
             val titleOriginal = if (parts.size > 1) parts[1].trim() else ""
 
