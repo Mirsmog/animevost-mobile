@@ -6,6 +6,7 @@ import com.animevost.app.core.data.download.EpisodeDownloader
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.Comment
 import com.animevost.app.core.domain.model.Episode
+import com.animevost.app.core.domain.model.VideoSource
 import com.animevost.app.core.domain.usecase.AddCommentUseCase
 import com.animevost.app.core.domain.usecase.DownloadEpisodeUseCase
 import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
@@ -46,6 +47,12 @@ data class DetailUiState(
     val isAddingComment: Boolean = false,
     val commentsPage: Int = 1,
     val hasMoreComments: Boolean = false,
+    // Download quality sheet
+    val downloadEpisodePending: Episode? = null,
+    val downloadSources: List<VideoSource> = emptyList(),
+    val isLoadingDownloadSources: Boolean = false,
+    // Episode pagination
+    val episodeRangeStart: Int = 0,
 )
 
 sealed interface DetailEvent {
@@ -60,6 +67,12 @@ sealed interface DetailEvent {
     data class UpdateCommentTextValue(val value: TextFieldValue) : DetailEvent
     data class ReplyToComment(val comment: Comment) : DetailEvent
     data object SubmitComment : DetailEvent
+    // Download quality sheet
+    data class ShowDownloadSheet(val episode: Episode) : DetailEvent
+    data object HideDownloadSheet : DetailEvent
+    data class DownloadWithQuality(val source: VideoSource) : DetailEvent
+    // Episode pagination
+    data class SelectEpisodeRange(val start: Int) : DetailEvent
 }
 
 sealed interface DetailEffect {
@@ -104,6 +117,10 @@ class DetailViewModel @Inject constructor(
             is DetailEvent.UpdateCommentTextValue -> _uiState.update { it.copy(commentTextValue = event.value) }
             is DetailEvent.ReplyToComment -> replyToComment(event.comment)
             is DetailEvent.SubmitComment -> submitComment()
+            is DetailEvent.ShowDownloadSheet -> showDownloadSheet(event.episode)
+            is DetailEvent.HideDownloadSheet -> hideDownloadSheet()
+            is DetailEvent.DownloadWithQuality -> downloadWithQuality(event.source)
+            is DetailEvent.SelectEpisodeRange -> _uiState.update { it.copy(episodeRangeStart = event.start) }
         }
     }
 
@@ -150,6 +167,41 @@ class DetailViewModel @Inject constructor(
                         ),
                     )
                 }
+        }
+    }
+
+    private fun showDownloadSheet(episode: Episode) {
+        _uiState.update { it.copy(isLoadingDownloadSources = true, downloadEpisodePending = episode) }
+        viewModelScope.launch {
+            downloadEpisodeUseCase(episode.videoId)
+                .onSuccess { sources ->
+                    _uiState.update { it.copy(downloadSources = sources, isLoadingDownloadSources = false) }
+                }
+                .onError { _, msg ->
+                    _uiState.update { it.copy(isLoadingDownloadSources = false, downloadEpisodePending = null) }
+                    _effect.emit(DetailEffect.ShowSnackbar("Ошибка: ${msg ?: "не удалось загрузить источники"}"))
+                }
+        }
+    }
+
+    private fun hideDownloadSheet() {
+        _uiState.update {
+            it.copy(downloadEpisodePending = null, downloadSources = emptyList(), isLoadingDownloadSources = false)
+        }
+    }
+
+    private fun downloadWithQuality(source: VideoSource) {
+        val episode = _uiState.value.downloadEpisodePending ?: return
+        val animeTitle = _uiState.value.anime?.title ?: "Anime"
+        val downloadUrl = source.downloadUrl.ifBlank { source.url }
+        episodeDownloader.download(
+            url = downloadUrl,
+            fileName = "$animeTitle - ${episode.name}",
+            title = "$animeTitle — ${episode.name}",
+        )
+        hideDownloadSheet()
+        viewModelScope.launch {
+            _effect.emit(DetailEffect.ShowSnackbar("Загрузка начата: ${episode.name}"))
         }
     }
 

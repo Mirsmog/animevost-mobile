@@ -2,6 +2,8 @@ package com.animevost.app.feature.detail
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -17,14 +20,20 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -37,8 +46,7 @@ import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -51,14 +59,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -71,7 +78,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
@@ -83,10 +92,21 @@ import coil.compose.AsyncImage
 import com.animevost.app.core.domain.model.AnimeDetail
 import com.animevost.app.core.domain.model.Comment
 import com.animevost.app.core.domain.model.Episode
+import com.animevost.app.core.domain.model.VideoSource
 import com.animevost.app.core.ui.components.AnimeCard
 import com.animevost.app.core.ui.components.ErrorState
 import com.animevost.app.core.ui.components.LoadingState
+import com.animevost.app.core.ui.theme.AccentBlue
+import com.animevost.app.core.ui.theme.Bg0
+import com.animevost.app.core.ui.theme.Bg1
+import com.animevost.app.core.ui.theme.Bg2
+import com.animevost.app.core.ui.theme.Bg3
+import com.animevost.app.core.ui.theme.Bg4
+import com.animevost.app.core.ui.theme.OrangePrimary
+import com.animevost.app.core.ui.theme.TextPrimary
+import com.animevost.app.core.ui.theme.TextSecondary
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetailScreen(
     animeUrl: String,
@@ -111,7 +131,26 @@ fun DetailScreen(
         }
     }
 
+    // Download quality bottom sheet
+    val downloadEpisodePending = state.downloadEpisodePending
+    if (downloadEpisodePending != null) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { viewModel.onEvent(DetailEvent.HideDownloadSheet) },
+            sheetState = sheetState,
+            containerColor = Bg2,
+        ) {
+            DownloadQualitySheet(
+                episode = downloadEpisodePending,
+                sources = state.downloadSources,
+                isLoading = state.isLoadingDownloadSources,
+                onDownload = { source -> viewModel.onEvent(DetailEvent.DownloadWithQuality(source)) },
+            )
+        }
+    }
+
     Scaffold(
+        containerColor = Bg1,
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues)) {
@@ -127,6 +166,7 @@ fun DetailScreen(
                     isLoggedIn = state.isLoggedIn,
                     userRating = state.userRating,
                     isDescriptionExpanded = state.isDescriptionExpanded,
+                    episodeRangeStart = state.episodeRangeStart,
                     comments = state.comments,
                     isLoadingComments = state.isLoadingComments,
                     commentTextValue = state.commentTextValue,
@@ -139,8 +179,11 @@ fun DetailScreen(
                     onPlayEpisode = { episode, index ->
                         onPlayEpisode(episode, state.anime!!.episodes, index)
                     },
-                    onDownloadEpisode = { episode ->
-                        viewModel.onEvent(DetailEvent.DownloadEpisode(episode))
+                    onShowDownloadSheet = { episode ->
+                        viewModel.onEvent(DetailEvent.ShowDownloadSheet(episode))
+                    },
+                    onSelectEpisodeRange = { start ->
+                        viewModel.onEvent(DetailEvent.SelectEpisodeRange(start))
                     },
                     onGenreClick = onGenreClick,
                     onRelatedClick = onRelatedClick,
@@ -154,7 +197,9 @@ fun DetailScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+// ── Main content ──────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun DetailContent(
     anime: AnimeDetail,
@@ -162,6 +207,7 @@ private fun DetailContent(
     isLoggedIn: Boolean,
     userRating: Int,
     isDescriptionExpanded: Boolean,
+    episodeRangeStart: Int,
     comments: List<Comment>,
     isLoadingComments: Boolean,
     commentTextValue: TextFieldValue,
@@ -172,7 +218,8 @@ private fun DetailContent(
     onRate: (Int) -> Unit,
     onToggleDescription: () -> Unit,
     onPlayEpisode: (Episode, Int) -> Unit,
-    onDownloadEpisode: (Episode) -> Unit,
+    onShowDownloadSheet: (Episode) -> Unit,
+    onSelectEpisodeRange: (Int) -> Unit,
     onGenreClick: (String) -> Unit,
     onRelatedClick: (String) -> Unit,
     onLoadMoreComments: () -> Unit,
@@ -183,113 +230,40 @@ private fun DetailContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(Bg1)
             .verticalScroll(rememberScrollState()),
     ) {
-        // --- Immersive header with poster ---
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(0.75f),
-        ) {
-            AsyncImage(
-                model = anime.posterUrl,
-                contentDescription = anime.title,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
-            // Gradient overlay
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color.Black.copy(alpha = 0.3f),
-                                Color.Black.copy(alpha = 0.85f),
-                            ),
-                            startY = 0f,
-                            endY = Float.POSITIVE_INFINITY,
-                        ),
-                    ),
-            )
-            // Top bar
-            TopAppBar(
-                title = { },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Назад",
-                            tint = Color.White,
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onToggleFavorite) {
-                        Icon(
-                            if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                            contentDescription = "Избранное",
-                            tint = if (isFavorite) MaterialTheme.colorScheme.primary else Color.White,
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
-                ),
-            )
-            // Title over poster
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(16.dp),
-            ) {
-                Text(
-                    text = anime.title,
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = Color.White,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (anime.titleOriginal.isNotBlank()) {
-                    Text(
-                        text = anime.titleOriginal,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.7f),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-        }
+        // ── Immersive poster header ──────────────────────────────────
+        PosterHeader(
+            anime = anime,
+            isFavorite = isFavorite,
+            onBack = onBack,
+            onToggleFavorite = onToggleFavorite,
+        )
 
-        // --- Info section ---
+        // ── Info section ─────────────────────────────────────────────
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
             InfoRow(anime)
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Rating stars
+            Spacer(Modifier.height(8.dp))
             RatingBar(
                 rating = anime.rating,
                 userRating = userRating,
                 isLoggedIn = isLoggedIn,
                 onRate = onRate,
             )
+            Spacer(Modifier.height(16.dp))
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // ── Primary CTA: Watch ────────────────────────────
+            // Primary CTA: Watch
             if (anime.episodes.isNotEmpty()) {
-                androidx.compose.material3.Button(
+                Button(
                     onClick = { onPlayEpisode(anime.episodes.first(), 0) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp),
                     shape = RoundedCornerShape(12.dp),
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = OrangePrimary,
+                        contentColor = Color.Black,
                     ),
                 ) {
                     Icon(
@@ -297,14 +271,14 @@ private fun DetailContent(
                         contentDescription = null,
                         modifier = Modifier.size(20.dp),
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(Modifier.width(8.dp))
                     Text(
                         text = "Смотреть",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                     )
                 }
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(Modifier.height(12.dp))
             }
 
             // Genre chips
@@ -324,30 +298,31 @@ private fun DetailContent(
                         },
                         shape = RoundedCornerShape(16.dp),
                         colors = FilterChipDefaults.filterChipColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            containerColor = Bg3,
+                            labelColor = TextSecondary,
                         ),
                         border = FilterChipDefaults.filterChipBorder(
                             enabled = true,
                             selected = false,
-                            borderColor = androidx.compose.ui.graphics.Color.Transparent,
+                            borderColor = Color.Transparent,
                         ),
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
 
             // Description
             Text(
                 text = "Описание",
                 style = MaterialTheme.typography.titleLarge,
+                color = TextPrimary,
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(Modifier.height(4.dp))
             Text(
                 text = anime.description,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = TextSecondary,
                 maxLines = if (isDescriptionExpanded) Int.MAX_VALUE else 4,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.animateContentSize(),
@@ -356,21 +331,22 @@ private fun DetailContent(
                 TextButton(onClick = onToggleDescription) {
                     Text(
                         text = if (isDescriptionExpanded) "Свернуть" else "Показать полностью",
-                        color = MaterialTheme.colorScheme.primary,
+                        color = OrangePrimary,
                     )
                 }
             }
         }
 
-        // --- Related anime ---
+        // ── Related anime ─────────────────────────────────────────────
         if (anime.relatedAnime.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = "Похожие",
                 style = MaterialTheme.typography.titleLarge,
+                color = TextPrimary,
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(Modifier.height(8.dp))
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -385,18 +361,19 @@ private fun DetailContent(
             }
         }
 
-        // --- Это аниме состоит из ---
+        // ── Series parts ──────────────────────────────────────────────
         if (anime.relatedSeries.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = Bg4)
+            Spacer(Modifier.height(16.dp))
             Text(
                 text = "Это аниме состоит из:",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
+                color = TextPrimary,
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(Modifier.height(8.dp))
             Column(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -406,20 +383,20 @@ private fun DetailContent(
                         Text(
                             text = "${index + 1}. ",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = TextSecondary,
                         )
                         Column {
                             Text(
                                 text = series.title,
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.primary,
+                                color = OrangePrimary,
                                 modifier = Modifier.clickable { onRelatedClick(series.url) },
                             )
                             if (series.description.isNotEmpty()) {
                                 Text(
                                     text = series.description,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = TextSecondary,
                                 )
                             }
                         }
@@ -428,91 +405,22 @@ private fun DetailContent(
             }
         }
 
-        // --- Episodes ---
+        // ── Episodes ──────────────────────────────────────────────────
         if (anime.episodes.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "Серии",
-                    style = MaterialTheme.typography.titleLarge,
-                )
-                Text(
-                    text = "${anime.episodes.size} эп.",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Column(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                anime.episodes.forEachIndexed { index, episode ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { onPlayEpisode(episode, index) }
-                            .padding(vertical = 10.dp, horizontal = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        // Episode number badge
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                text = "${index + 1}",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.secondary,
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = episode.name,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        // Download icon
-                        IconButton(
-                            onClick = { onDownloadEpisode(episode) },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(
-                                Icons.Filled.Download,
-                                contentDescription = "Скачать ${episode.name}",
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                    if (index < anime.episodes.lastIndex) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 56.dp),
-                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                        )
-                    }
-                }
-            }
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = Bg4)
+            Spacer(Modifier.height(12.dp))
+            EpisodesSection(
+                episodes = anime.episodes,
+                episodeRangeStart = episodeRangeStart,
+                onPlayEpisode = onPlayEpisode,
+                onShowDownloadSheet = onShowDownloadSheet,
+                onSelectEpisodeRange = onSelectEpisodeRange,
+            )
         }
 
-        // --- Actions row ---
-        Spacer(modifier = Modifier.height(16.dp))
+        // ── Stats row ─────────────────────────────────────────────────
+        Spacer(Modifier.height(16.dp))
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -524,13 +432,13 @@ private fun DetailContent(
                     Icons.Filled.RemoveRedEye,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = TextSecondary,
                 )
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(Modifier.width(4.dp))
                 Text(
                     text = "${anime.viewCount}",
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = TextSecondary,
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -538,22 +446,21 @@ private fun DetailContent(
                     Icons.AutoMirrored.Filled.Comment,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    tint = TextSecondary,
                 )
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(Modifier.width(4.dp))
                 Text(
                     text = "${anime.commentCount}",
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = TextSecondary,
                 )
             }
         }
 
-        // --- Comments section ---
-        Spacer(modifier = Modifier.height(16.dp))
-        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-        Spacer(modifier = Modifier.height(16.dp))
-
+        // ── Comments ──────────────────────────────────────────────────
+        Spacer(Modifier.height(16.dp))
+        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = Bg4)
+        Spacer(Modifier.height(16.dp))
         CommentsSection(
             comments = comments,
             isLoading = isLoadingComments,
@@ -567,9 +474,322 @@ private fun DetailContent(
             onReply = onReplyToComment,
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(Modifier.height(24.dp))
     }
 }
+
+// ── Poster Header ─────────────────────────────────────────────────────────────
+
+@Composable
+private fun PosterHeader(
+    anime: AnimeDetail,
+    isFavorite: Boolean,
+    onBack: () -> Unit,
+    onToggleFavorite: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(0.75f),
+    ) {
+        AsyncImage(
+            model = anime.posterUrl,
+            contentDescription = anime.title,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Crop,
+        )
+        // Gradient overlay
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.3f),
+                            Color.Black.copy(alpha = 0.9f),
+                        ),
+                    ),
+                ),
+        )
+
+        // Back button — top left with scrim backdrop
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .statusBarsPadding()
+                .padding(12.dp)
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Bg0.copy(alpha = 0.45f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Назад",
+                    tint = Color.White,
+                )
+            }
+        }
+
+        // Favorite button — top right with scrim backdrop
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(12.dp)
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Bg0.copy(alpha = 0.45f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            IconButton(onClick = onToggleFavorite, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                    contentDescription = "Избранное",
+                    tint = if (isFavorite) OrangePrimary else Color.White,
+                )
+            }
+        }
+
+        // Title at bottom
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(16.dp),
+        ) {
+            Text(
+                text = anime.title,
+                style = MaterialTheme.typography.headlineMedium,
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (anime.titleOriginal.isNotBlank()) {
+                Text(
+                    text = anime.titleOriginal,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.7f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+// ── Episodes Section ──────────────────────────────────────────────────────────
+
+@Composable
+private fun EpisodesSection(
+    episodes: List<Episode>,
+    episodeRangeStart: Int,
+    onPlayEpisode: (Episode, Int) -> Unit,
+    onShowDownloadSheet: (Episode) -> Unit,
+    onSelectEpisodeRange: (Int) -> Unit,
+) {
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Серии",
+                style = MaterialTheme.typography.titleLarge,
+                color = TextPrimary,
+            )
+            Text(
+                text = "${episodes.size} эп.",
+                style = MaterialTheme.typography.labelLarge,
+                color = TextSecondary,
+            )
+        }
+
+        // Range chips — only when more than 50 episodes
+        if (episodes.size > 50) {
+            Spacer(Modifier.height(8.dp))
+            val ranges = remember(episodes.size) { (0 until episodes.size step 50).toList() }
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(vertical = 4.dp),
+            ) {
+                items(ranges) { start ->
+                    val end = minOf(start + 50, episodes.size)
+                    FilterChip(
+                        selected = start == episodeRangeStart,
+                        onClick = { onSelectEpisodeRange(start) },
+                        label = {
+                            Text(
+                                text = "${start + 1}–$end",
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = OrangePrimary,
+                            selectedLabelColor = Color.Black,
+                            containerColor = Bg3,
+                            labelColor = TextSecondary,
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = start == episodeRangeStart,
+                            borderColor = Color.Transparent,
+                            selectedBorderColor = Color.Transparent,
+                        ),
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        val displayEpisodes = if (episodes.size > 50) {
+            val end = minOf(episodeRangeStart + 50, episodes.size)
+            episodes.subList(episodeRangeStart, end)
+        } else {
+            episodes
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            displayEpisodes.forEachIndexed { localIndex, episode ->
+                val globalIndex = if (episodes.size > 50) episodeRangeStart + localIndex else localIndex
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onPlayEpisode(episode, globalIndex) }
+                        .padding(vertical = 10.dp, horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(Bg3),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = "${globalIndex + 1}",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TextSecondary,
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = episode.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextPrimary,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    IconButton(
+                        onClick = { onShowDownloadSheet(episode) },
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.Download,
+                            contentDescription = "Скачать ${episode.name}",
+                            modifier = Modifier.size(18.dp),
+                            tint = TextSecondary,
+                        )
+                    }
+                }
+                if (localIndex < displayEpisodes.lastIndex) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 56.dp),
+                        color = Bg4,
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ── Download Quality Sheet ────────────────────────────────────────────────────
+
+@Composable
+private fun DownloadQualitySheet(
+    episode: Episode,
+    sources: List<VideoSource>,
+    isLoading: Boolean,
+    onDownload: (VideoSource) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(bottom = 32.dp),
+    ) {
+        Text(
+            text = "Выберите качество",
+            style = MaterialTheme.typography.titleMedium,
+            color = TextPrimary,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = episode.name,
+            style = MaterialTheme.typography.bodySmall,
+            color = TextSecondary,
+            modifier = Modifier.padding(top = 2.dp, bottom = 16.dp),
+        )
+
+        when {
+            isLoading -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(color = OrangePrimary)
+                }
+            }
+            sources.isEmpty() -> {
+                Text(
+                    text = "Нет доступных источников",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(vertical = 16.dp),
+                )
+            }
+            else -> {
+                sources.forEach { source ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Bg3)
+                            .clickable { onDownload(source) }
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Filled.Download,
+                            contentDescription = null,
+                            tint = OrangePrimary,
+                            modifier = Modifier.size(20.dp),
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = source.quality,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextPrimary,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+        }
+    }
+}
+
+// ── Comments Section ──────────────────────────────────────────────────────────
 
 @Composable
 private fun CommentsSection(
@@ -588,79 +808,197 @@ private fun CommentsSection(
         Text(
             text = "Комментарии (${comments.size})",
             style = MaterialTheme.typography.titleLarge,
+            color = TextPrimary,
         )
-
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(Modifier.height(12.dp))
 
         if (isLoggedIn) {
-            var showEmojiPicker by remember { mutableStateOf(false) }
+            CommentEditor(
+                commentTextValue = commentTextValue,
+                isAddingComment = isAddingComment,
+                onTextValueChange = onTextValueChange,
+                onSubmit = onSubmit,
+            )
+        } else {
+            Text(
+                text = "Войдите в аккаунт, чтобы оставить комментарий",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary,
+            )
+        }
 
-            fun applyFormat(openTag: String, closeTag: String) {
-                val sel = commentTextValue.selection
-                val newText: String
-                val newCursor: Int
-                if (sel.length > 0) {
-                    newText = commentTextValue.text.substring(0, sel.start) + openTag +
-                              commentTextValue.text.substring(sel.start, sel.end) + closeTag +
-                              commentTextValue.text.substring(sel.end)
-                    newCursor = sel.end + openTag.length + closeTag.length
-                } else {
-                    newText = commentTextValue.text.substring(0, sel.start) + openTag + closeTag +
-                              commentTextValue.text.substring(sel.start)
-                    newCursor = sel.start + openTag.length
-                }
-                onTextValueChange(commentTextValue.copy(
-                    text = newText,
-                    selection = androidx.compose.ui.text.TextRange(newCursor),
-                ))
+        Spacer(Modifier.height(12.dp))
+
+        // Flat comment list
+        comments.forEachIndexed { index, comment ->
+            CommentItem(comment = comment, onReply = onReply)
+            if (index < comments.lastIndex) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 40.dp),
+                    color = Bg4,
+                )
             }
+        }
 
-            fun insertAtCursor(insertion: String) {
-                val sel = commentTextValue.selection
-                val newText = commentTextValue.text.substring(0, sel.start) + insertion +
-                              commentTextValue.text.substring(sel.start)
-                val newCursor = sel.start + insertion.length
-                onTextValueChange(commentTextValue.copy(
-                    text = newText,
-                    selection = androidx.compose.ui.text.TextRange(newCursor),
-                ))
+        if (isLoading && comments.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(32.dp), color = OrangePrimary)
             }
+        }
 
-            // Formatting toolbar
+        if (hasMore && !isLoading) {
+            TextButton(onClick = onLoadMore, modifier = Modifier.fillMaxWidth()) {
+                Text(text = "Показать ещё", color = AccentBlue)
+            }
+        }
+
+        if (isLoading && comments.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = OrangePrimary)
+            }
+        }
+    }
+}
+
+// ── Comment Editor Card ───────────────────────────────────────────────────────
+
+@Composable
+private fun CommentEditor(
+    commentTextValue: TextFieldValue,
+    isAddingComment: Boolean,
+    onTextValueChange: (TextFieldValue) -> Unit,
+    onSubmit: () -> Unit,
+) {
+    var showEmojiPicker by remember { mutableStateOf(false) }
+    var showPreview by remember { mutableStateOf(false) }
+
+    fun applyFormat(openTag: String, closeTag: String) {
+        val sel = commentTextValue.selection
+        val newText: String
+        val newCursor: Int
+        if (sel.length > 0) {
+            newText = commentTextValue.text.substring(0, sel.start) + openTag +
+                    commentTextValue.text.substring(sel.start, sel.end) + closeTag +
+                    commentTextValue.text.substring(sel.end)
+            newCursor = sel.end + openTag.length + closeTag.length
+        } else {
+            newText = commentTextValue.text.substring(0, sel.start) + openTag + closeTag +
+                    commentTextValue.text.substring(sel.start)
+            newCursor = sel.start + openTag.length
+        }
+        onTextValueChange(commentTextValue.copy(text = newText, selection = TextRange(newCursor)))
+    }
+
+    fun insertAtCursor(insertion: String) {
+        val sel = commentTextValue.selection
+        val newText = commentTextValue.text.substring(0, sel.start) + insertion +
+                commentTextValue.text.substring(sel.start)
+        onTextValueChange(
+            commentTextValue.copy(
+                text = newText,
+                selection = TextRange(sel.start + insertion.length),
+            ),
+        )
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Bg2),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            // Preview toggle
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
             ) {
-                TextButton(onClick = { applyFormat("[b]", "[/b]") }) {
-                    Text("B", fontWeight = FontWeight.Bold)
-                }
-                TextButton(onClick = { applyFormat("[i]", "[/i]") }) {
-                    Text("I", style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic))
-                }
-                TextButton(onClick = { applyFormat("[s]", "[/s]") }) {
-                    Text("S", style = MaterialTheme.typography.bodyMedium.copy(textDecoration = TextDecoration.LineThrough))
-                }
-                TextButton(onClick = { applyFormat("[spoiler]", "[/spoiler]") }) {
-                    Text("Spoiler", style = MaterialTheme.typography.bodySmall)
-                }
-                Spacer(modifier = Modifier.weight(1f))
-                TextButton(onClick = { showEmojiPicker = !showEmojiPicker }) {
-                    Text("😊")
+                TextButton(
+                    onClick = { showPreview = !showPreview },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                ) {
+                    Text(
+                        text = if (showPreview) "Редактор" else "Превью",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = AccentBlue,
+                    )
                 }
             }
 
-            // Emoji picker
-            AnimatedVisibility(visible = showEmojiPicker) {
-                val emojiIds = (1..100).toList() + listOf(102)
-                LazyRow(
+            // Text input or preview
+            if (showPreview) {
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    contentPadding = PaddingValues(horizontal = 4.dp),
+                        .heightIn(min = 80.dp)
+                        .padding(bottom = 8.dp),
                 ) {
-                    items(emojiIds) { id ->
+                    if (commentTextValue.text.isBlank()) {
+                        Text(
+                            text = "Нет текста для предпросмотра",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary,
+                        )
+                    } else {
+                        CommentHtmlRenderer(
+                            html = commentTextValue.text,
+                            style = MaterialTheme.typography.bodyMedium.copy(color = TextPrimary),
+                        )
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 80.dp)
+                        .padding(bottom = 8.dp),
+                ) {
+                    if (commentTextValue.text.isEmpty()) {
+                        Text(
+                            text = "Написать комментарий…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary,
+                        )
+                    }
+                    BasicTextField(
+                        value = commentTextValue,
+                        onValueChange = onTextValueChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = TextPrimary),
+                        cursorBrush = SolidColor(OrangePrimary),
+                        enabled = !isAddingComment,
+                        maxLines = 8,
+                    )
+                }
+            }
+
+            // Emoji grid — shown above toolbar
+            AnimatedVisibility(
+                visible = showEmojiPicker,
+                enter = expandVertically(),
+                exit = shrinkVertically(),
+            ) {
+                val emojiIds = remember { (1..100).toList() + listOf(102) }
+                LazyVerticalGrid(
+                    columns = GridCells.Adaptive(40.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(160.dp)
+                        .padding(bottom = 8.dp),
+                    contentPadding = PaddingValues(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    gridItems(emojiIds) { id ->
                         AsyncImage(
                             model = "https://animevost.org/engine/data/emoticons/$id.gif",
                             contentDescription = "emoji $id",
@@ -672,98 +1010,145 @@ private fun CommentsSection(
                 }
             }
 
-            // Text field + Send button
+            HorizontalDivider(color = Bg4)
+            Spacer(Modifier.height(8.dp))
+
+            // Toolbar row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OutlinedTextField(
-                    value = commentTextValue,
-                    onValueChange = onTextValueChange,
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Написать комментарий…") },
-                    maxLines = 3,
-                    enabled = !isAddingComment,
-                )
+                // Formatting buttons group
+                Row(
+                    modifier = Modifier
+                        .background(Bg3, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FormatTextButton(label = "B", fontWeight = FontWeight.Bold) {
+                        applyFormat("[b]", "[/b]")
+                    }
+                    FormatTextButton(label = "I", fontStyle = FontStyle.Italic) {
+                        applyFormat("[i]", "[/i]")
+                    }
+                    FormatTextButton(
+                        label = "S",
+                        textDecoration = TextDecoration.LineThrough,
+                    ) { applyFormat("[s]", "[/s]") }
+
+                    // Spoiler button: eye icon + text
+                    Box(
+                        modifier = Modifier
+                            .height(32.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { applyFormat("[spoiler]", "[/spoiler]") }
+                            .padding(horizontal = 6.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.RemoveRedEye,
+                                contentDescription = null,
+                                tint = TextSecondary,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Text(
+                                text = "Спойлер",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextSecondary,
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.weight(1f))
+
+                // Emoji picker toggle
+                IconButton(
+                    onClick = { showEmojiPicker = !showEmojiPicker },
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        Icons.Outlined.EmojiEmotions,
+                        contentDescription = "Эмодзи",
+                        tint = if (showEmojiPicker) OrangePrimary else TextSecondary,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+
+                // Send button
                 IconButton(
                     onClick = onSubmit,
                     enabled = commentTextValue.text.isNotBlank() && !isAddingComment,
+                    modifier = Modifier.size(36.dp),
                 ) {
                     if (isAddingComment) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), color = OrangePrimary)
                     } else {
                         Icon(
                             Icons.AutoMirrored.Filled.Send,
                             contentDescription = "Отправить",
-                            tint = if (commentTextValue.text.isNotBlank()) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
+                            tint = if (commentTextValue.text.isNotBlank()) OrangePrimary else TextSecondary,
+                            modifier = Modifier.size(20.dp),
                         )
                     }
                 }
-            }
-        } else {
-            Text(
-                text = "Войдите в аккаунт, чтобы оставить комментарий",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Comment list
-        comments.forEach { comment ->
-            CommentItem(comment = comment, onReply = onReply)
-            Spacer(modifier = Modifier.height(8.dp))
-        }
-
-        // Loading / Load more
-        if (isLoading && comments.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 16.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator(modifier = Modifier.size(32.dp))
-            }
-        }
-
-        if (hasMore && !isLoading) {
-            TextButton(
-                onClick = onLoadMore,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text("Показать ещё")
-            }
-        }
-
-        if (isLoading && comments.isNotEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
             }
         }
     }
 }
 
 @Composable
-private fun CommentItem(comment: Comment, onReply: (Comment) -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
+private fun FormatTextButton(
+    label: String,
+    fontWeight: FontWeight? = null,
+    fontStyle: FontStyle? = null,
+    textDecoration: TextDecoration? = null,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontWeight = fontWeight ?: FontWeight.Normal,
+                fontStyle = fontStyle ?: FontStyle.Normal,
+                textDecoration = textDecoration ?: TextDecoration.None,
+                color = TextPrimary,
+            ),
+        )
+    }
+}
+
+// ── Comment Item — flat Reddit-style design ───────────────────────────────────
+
+@Composable
+private fun CommentItem(comment: Comment, onReply: (Comment) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .padding(vertical = 8.dp),
+    ) {
+        // Vertical thread line
+        Box(
+            modifier = Modifier
+                .width(2.dp)
+                .fillMaxHeight()
+                .background(Bg4),
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            // Header: avatar + author + date
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -772,58 +1157,56 @@ private fun CommentItem(comment: Comment, onReply: (Comment) -> Unit) {
                     model = comment.avatar,
                     contentDescription = comment.author,
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(28.dp)
                         .clip(CircleShape),
                     contentScale = ContentScale.Crop,
                 )
-                Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = comment.author,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                )
+                if (comment.date.isNotBlank()) {
                     Text(
-                        text = comment.author,
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
+                        text = comment.date,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary,
                     )
-                    if (comment.date.isNotBlank()) {
-                        Text(
-                            text = comment.date,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
 
-            // Reddit-style quote block
+            // Quote block
             if (comment.quotedAuthor.isNotBlank()) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 6.dp),
+                        .padding(bottom = 6.dp)
+                        .height(IntrinsicSize.Min)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Bg3),
                 ) {
-                    // Colored left border
                     Box(
                         modifier = Modifier
                             .width(3.dp)
                             .fillMaxHeight()
-                            .background(
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                                shape = androidx.compose.foundation.shape.RoundedCornerShape(2.dp),
-                            ),
+                            .background(AccentBlue),
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Column {
+                    Column(modifier = Modifier.padding(8.dp)) {
                         Text(
-                            text = comment.quotedAuthor,
+                            text = "↩ ${comment.quotedAuthor}",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = AccentBlue,
                         )
                         if (comment.quotedText.isNotBlank()) {
+                            Spacer(Modifier.height(2.dp))
                             Text(
                                 text = comment.quotedText,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 3,
+                                color = TextSecondary,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
                         }
@@ -831,23 +1214,30 @@ private fun CommentItem(comment: Comment, onReply: (Comment) -> Unit) {
                 }
             }
 
+            // Comment text
             if (comment.text.isNotBlank()) {
                 CommentHtmlRenderer(
                     html = comment.text,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.copy(color = TextPrimary),
                 )
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
+
+            // Compact reply button
+            TextButton(
+                onClick = { onReply(comment) },
+                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
             ) {
-                TextButton(onClick = { onReply(comment) }) {
-                    Text("Ответить", style = MaterialTheme.typography.labelSmall)
-                }
+                Text(
+                    text = "Ответить",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = AccentBlue,
+                )
             }
         }
     }
 }
+
+// ── Info helpers ──────────────────────────────────────────────────────────────
 
 @Composable
 private fun InfoRow(anime: AnimeDetail) {
@@ -867,11 +1257,12 @@ private fun InfoItem(label: String, value: String) {
         Text(
             text = "$label: ",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = TextSecondary,
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
+            color = TextPrimary,
         )
     }
 }
@@ -887,9 +1278,9 @@ private fun RatingBar(
         Text(
             text = String.format("%.1f", rating),
             style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.primary,
+            color = OrangePrimary,
         )
-        Spacer(modifier = Modifier.width(8.dp))
+        Spacer(Modifier.width(8.dp))
         if (isLoggedIn) {
             (1..5).forEach { star ->
                 IconButton(
@@ -899,11 +1290,7 @@ private fun RatingBar(
                     Icon(
                         imageVector = if (star <= userRating) Icons.Filled.Star else Icons.Filled.StarBorder,
                         contentDescription = "Оценка $star",
-                        tint = if (star <= userRating) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
+                        tint = if (star <= userRating) OrangePrimary else TextSecondary,
                         modifier = Modifier.size(24.dp),
                     )
                 }
@@ -913,7 +1300,7 @@ private fun RatingBar(
                 Icon(
                     imageVector = if (star <= rating.toInt()) Icons.Filled.Star else Icons.Filled.StarBorder,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    tint = TextSecondary.copy(alpha = 0.5f),
                     modifier = Modifier
                         .size(24.dp)
                         .padding(2.dp),
