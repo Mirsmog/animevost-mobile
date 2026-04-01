@@ -16,6 +16,9 @@ import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
 import com.animevost.app.core.domain.usecase.GetSkipSegmentsUseCase
 import com.animevost.app.core.domain.usecase.GetVideoUrlUseCase
 import com.animevost.app.core.data.repository.SkipRepositoryImpl
+import com.animevost.app.core.domain.model.WatchProgress
+import com.animevost.app.core.domain.repository.WatchProgressRepository
+import com.animevost.app.core.domain.util.Result
 import com.animevost.app.core.domain.util.onError
 import com.animevost.app.core.domain.util.onSuccess
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -37,6 +40,8 @@ data class PlayerUiState(
     val allEpisodes: List<Episode> = emptyList(),
     val currentEpisodeIndex: Int = 0,
     val skipSegments: List<SkipSegment> = emptyList(),
+    /** Position to seek to when the video finishes loading (cleared after use). */
+    val resumePositionMs: Long = 0L,
 ) {
     val hasPrevious: Boolean get() = currentEpisodeIndex > 0
     val hasNext: Boolean get() = currentEpisodeIndex < allEpisodes.lastIndex
@@ -47,8 +52,12 @@ data class PlayerUiState(
 
 sealed interface PlayerEvent {
     data class SelectQuality(val quality: String) : PlayerEvent
-    data object NextEpisode : PlayerEvent
-    data object PreviousEpisode : PlayerEvent
+    data class NextEpisode(val currentPositionMs: Long = 0L, val currentDurationMs: Long = 0L) : PlayerEvent
+    data class PreviousEpisode(val currentPositionMs: Long = 0L, val currentDurationMs: Long = 0L) : PlayerEvent
+    /** Called periodically from PlayerScreen to persist playback position. */
+    data class UpdateProgress(val positionMs: Long, val durationMs: Long) : PlayerEvent
+    /** Signal that resume position has been consumed (seek done). */
+    data object ResumeConsumed : PlayerEvent
 }
 
 @HiltViewModel
@@ -60,6 +69,7 @@ class PlayerViewModel @Inject constructor(
     private val getSkipSegmentsUseCase: GetSkipSegmentsUseCase,
     private val skipRepositoryImpl: SkipRepositoryImpl,
     private val dataStore: DataStore<Preferences>,
+    private val watchProgressRepository: WatchProgressRepository,
 ) : ViewModel() {
 
     private companion object {
@@ -86,51 +96,85 @@ class PlayerViewModel @Inject constructor(
     fun onEvent(event: PlayerEvent) {
         when (event) {
             is PlayerEvent.SelectQuality -> selectQuality(event.quality)
-            is PlayerEvent.NextEpisode -> navigateEpisode(1)
-            is PlayerEvent.PreviousEpisode -> navigateEpisode(-1)
+            is PlayerEvent.NextEpisode -> {
+                saveCurrentProgress(event.currentPositionMs, event.currentDurationMs)
+                navigateEpisode(1)
+            }
+            is PlayerEvent.PreviousEpisode -> {
+                saveCurrentProgress(event.currentPositionMs, event.currentDurationMs)
+                navigateEpisode(-1)
+            }
+            is PlayerEvent.UpdateProgress -> saveCurrentProgress(event.positionMs, event.durationMs)
+            is PlayerEvent.ResumeConsumed -> _uiState.update { it.copy(resumePositionMs = 0L) }
+        }
+    }
+
+    private fun saveCurrentProgress(positionMs: Long, durationMs: Long) {
+        val episode = _uiState.value.currentEpisode ?: return
+        val animeId = animePreview?.id ?: return
+        if (positionMs <= 0L) return
+        viewModelScope.launch {
+            watchProgressRepository.saveProgress(
+                WatchProgress(
+                    animeId = animeId,
+                    episodeVideoId = episode.videoId,
+                    episodeName = episode.name,
+                    episodeIndex = _uiState.value.currentEpisodeIndex,
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                ),
+            )
         }
     }
 
     private fun loadEpisodeList() {
         if (animeUrl.isBlank()) return
         viewModelScope.launch {
-            getAnimeDetailUseCase(animeUrl)
-                .onSuccess { detail ->
-                    val episodes = detail.episodes
-                    val currentIdx = episodes.indexOfFirst { it.videoId == videoId }
-                    animePreview = AnimePreview(
-                        id = detail.id,
-                        title = detail.title,
-                        titleOriginal = detail.titleOriginal,
-                        posterUrl = detail.posterUrl,
-                        episodeInfo = detail.episodeCount,
-                        url = animeUrl,
+            val result = getAnimeDetailUseCase(animeUrl)
+            result.onSuccess { detail ->
+                val episodes = detail.episodes
+                val currentIdx = episodes.indexOfFirst { it.videoId == videoId }
+                animePreview = AnimePreview(
+                    id = detail.id,
+                    title = detail.title,
+                    titleOriginal = detail.titleOriginal,
+                    posterUrl = detail.posterUrl,
+                    episodeInfo = detail.episodeCount,
+                    url = animeUrl,
+                )
+                animeYear = detail.year
+                animeType = detail.type.name
+                _uiState.update {
+                    it.copy(
+                        allEpisodes = episodes,
+                        currentEpisodeIndex = if (currentIdx >= 0) currentIdx else 0,
                     )
-                    animeYear = detail.year
-                    animeType = detail.type.name
-                    _uiState.update {
-                        it.copy(
-                            allEpisodes = episodes,
-                            currentEpisodeIndex = if (currentIdx >= 0) currentIdx else 0,
-                        )
-                    }
-                    // Record current episode in history after detail loaded
-                    val currentEp = _uiState.value.currentEpisode
-                    val preview = animePreview
-                    if (currentEp != null && preview != null) {
-                        addToHistoryUseCase(preview, currentEp)
-                    }
-                    // Resolve MAL ID for skip segments (once per anime)
-                    skipRepositoryImpl.resolveMalId(
-                        animeId = detail.id,
-                        titleOriginal = detail.titleOriginal,
-                        title = detail.title,
-                        year = detail.year,
-                        type = detail.type.name,
-                    )
-                    // Load skip segments for current episode
-                    loadSkipSegments(detail.id, _uiState.value.currentEpisode?.name ?: episodeName)
                 }
+                // Record current episode in history after detail loaded
+                val currentEp = _uiState.value.currentEpisode
+                val preview = animePreview
+                if (currentEp != null && preview != null) {
+                    addToHistoryUseCase(preview, currentEp)
+                }
+                // Resolve MAL ID for skip segments (once per anime)
+                skipRepositoryImpl.resolveMalId(
+                    animeId = detail.id,
+                    titleOriginal = detail.titleOriginal,
+                    title = detail.title,
+                    year = detail.year,
+                    type = detail.type.name,
+                )
+                // Load skip segments for current episode
+                loadSkipSegments(detail.id, _uiState.value.currentEpisode?.name ?: episodeName)
+            }
+            // Load resume position outside the inline lambda (suspend call)
+            if (result is com.animevost.app.core.domain.util.Result.Success) {
+                val detail = result.data
+                val savedProgress = watchProgressRepository.getProgress(detail.id, videoId)
+                if (savedProgress != null && savedProgress.positionMs > 0L && !savedProgress.isCompleted) {
+                    _uiState.update { it.copy(resumePositionMs = savedProgress.positionMs) }
+                }
+            }
             // ignore error — prev/next navigation just won't work
         }
     }

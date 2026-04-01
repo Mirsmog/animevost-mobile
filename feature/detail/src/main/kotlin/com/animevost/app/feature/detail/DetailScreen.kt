@@ -41,6 +41,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -172,6 +173,9 @@ fun DetailScreen(
                     userRating = state.userRating,
                     isDescriptionExpanded = state.isDescriptionExpanded,
                     episodeRangeStart = state.episodeRangeStart,
+                    watchedEpisodeIds = state.watchedEpisodeIds,
+                    continueEpisode = state.continueEpisode,
+                    continuePositionMs = state.continuePositionMs,
                     comments = state.comments,
                     isLoadingComments = state.isLoadingComments,
                     commentTextValue = state.commentTextValue,
@@ -183,8 +187,7 @@ fun DetailScreen(
                     onToggleDescription = { viewModel.onEvent(DetailEvent.ToggleDescription) },
                     onPlayEpisode = { episode, index ->
                         onPlayEpisode(episode, state.anime!!.episodes, index)
-                    },
-                    onShowDownloadSheet = { episode ->
+                    },                    onShowDownloadSheet = { episode ->
                         viewModel.onEvent(DetailEvent.ShowDownloadSheet(episode))
                     },
                     onSelectEpisodeRange = { start ->
@@ -213,6 +216,9 @@ private fun DetailContent(
     userRating: Int,
     isDescriptionExpanded: Boolean,
     episodeRangeStart: Int,
+    watchedEpisodeIds: Set<String>,
+    continueEpisode: Episode?,
+    continuePositionMs: Long,
     comments: List<Comment>,
     isLoadingComments: Boolean,
     commentTextValue: TextFieldValue,
@@ -258,10 +264,18 @@ private fun DetailContent(
             )
             Spacer(Modifier.height(16.dp))
 
-            // Primary CTA: Watch
+            // Primary CTA: Watch / Continue
             if (anime.episodes.isNotEmpty()) {
+                val isContinue = continueEpisode != null
                 Button(
-                    onClick = { onPlayEpisode(anime.episodes.first(), 0) },
+                    onClick = {
+                        if (isContinue) {
+                            val idx = anime.episodes.indexOf(continueEpisode)
+                            onPlayEpisode(continueEpisode!!, if (idx >= 0) idx else 0)
+                        } else {
+                            onPlayEpisode(anime.episodes.first(), 0)
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp),
@@ -278,9 +292,11 @@ private fun DetailContent(
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = "Смотреть",
+                        text = if (isContinue) "Продолжить • ${continueEpisode!!.name}" else "Смотреть",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 Spacer(Modifier.height(12.dp))
@@ -421,6 +437,7 @@ private fun DetailContent(
             EpisodesSection(
                 episodes = anime.episodes,
                 episodeRangeStart = episodeRangeStart,
+                watchedEpisodeIds = watchedEpisodeIds,
                 onPlayEpisode = onPlayEpisode,
                 onShowDownloadSheet = onShowDownloadSheet,
                 onSelectEpisodeRange = onSelectEpisodeRange,
@@ -606,6 +623,7 @@ private fun PosterHeader(
 private fun EpisodesSection(
     episodes: List<Episode>,
     episodeRangeStart: Int,
+    watchedEpisodeIds: Set<String>,
     onPlayEpisode: (Episode, Int) -> Unit,
     onShowDownloadSheet: (Episode) -> Unit,
     onSelectEpisodeRange: (Int) -> Unit,
@@ -676,6 +694,7 @@ private fun EpisodesSection(
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             displayEpisodes.forEachIndexed { localIndex, episode ->
                 val globalIndex = if (episodes.size > 50) episodeRangeStart + localIndex else localIndex
+                val isWatched = episode.videoId in watchedEpisodeIds
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -688,21 +707,30 @@ private fun EpisodesSection(
                         modifier = Modifier
                             .size(32.dp)
                             .clip(CircleShape)
-                            .background(Bg3),
+                            .background(if (isWatched) OrangePrimary.copy(alpha = 0.2f) else Bg3),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(
-                            text = "${globalIndex + 1}",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = TextSecondary,
-                        )
+                        if (isWatched) {
+                            Icon(
+                                Icons.Filled.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = OrangePrimary,
+                            )
+                        } else {
+                            Text(
+                                text = "${globalIndex + 1}",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TextSecondary,
+                            )
+                        }
                     }
                     Spacer(Modifier.width(12.dp))
                     Text(
                         text = episode.name,
                         style = MaterialTheme.typography.bodyMedium,
-                        color = TextPrimary,
+                        color = if (isWatched) TextSecondary else TextPrimary,
                         modifier = Modifier.weight(1f),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

@@ -10,6 +10,7 @@ import com.animevost.app.core.data.db.FavoriteDao
 import com.animevost.app.core.data.db.HistoryDao
 import com.animevost.app.core.data.db.MalMappingDao
 import com.animevost.app.core.data.db.SkipSegmentDao
+import com.animevost.app.core.data.db.WatchProgressDao
 import com.animevost.app.core.data.repository.AnimeRepositoryImpl
 import com.animevost.app.core.data.repository.AuthRepositoryImpl
 import com.animevost.app.core.data.repository.CommentRepositoryImpl
@@ -18,6 +19,7 @@ import com.animevost.app.core.data.repository.HistoryRepositoryImpl
 import com.animevost.app.core.data.repository.ScheduleRepositoryImpl
 import com.animevost.app.core.data.repository.SharedPrefsCookieStorage
 import com.animevost.app.core.data.repository.SkipRepositoryImpl
+import com.animevost.app.core.data.repository.WatchProgressRepositoryImpl
 import com.animevost.app.core.data.repository.VideoRepositoryImpl
 import com.animevost.app.core.domain.repository.AnimeRepository
 import com.animevost.app.core.domain.repository.AuthRepository
@@ -26,6 +28,7 @@ import com.animevost.app.core.domain.repository.FavoriteRepository
 import com.animevost.app.core.domain.repository.HistoryRepository
 import com.animevost.app.core.domain.repository.ScheduleRepository
 import com.animevost.app.core.domain.repository.SkipRepository
+import com.animevost.app.core.domain.repository.WatchProgressRepository
 import com.animevost.app.core.domain.repository.VideoRepository
 import com.animevost.app.core.network.CookieStorage
 import dagger.Binds
@@ -56,6 +59,9 @@ object DataProvidesModule {
 
     @Provides
     fun provideSkipSegmentDao(db: AppDatabase): SkipSegmentDao = db.skipSegmentDao()
+
+    @Provides
+    fun provideWatchProgressDao(db: AppDatabase): WatchProgressDao = db.watchProgressDao()
 
     @Provides
     @Singleton
@@ -101,6 +107,10 @@ abstract class DataBindsModule {
     @Binds
     @Singleton
     abstract fun bindSkipRepository(impl: SkipRepositoryImpl): SkipRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindWatchProgressRepository(impl: WatchProgressRepositoryImpl): WatchProgressRepository
 
     @Binds
     @Singleton

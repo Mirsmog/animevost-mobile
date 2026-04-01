@@ -13,8 +13,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         HistoryEntity::class,
         MalMappingEntity::class,
         SkipSegmentEntity::class,
+        WatchProgressEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -22,6 +23,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun historyDao(): HistoryDao
     abstract fun malMappingDao(): MalMappingDao
     abstract fun skipSegmentDao(): SkipSegmentDao
+    abstract fun watchProgressDao(): WatchProgressDao
 
     companion object {
         /**
@@ -53,9 +55,26 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `watch_progress` (
+                        `animeId` INTEGER NOT NULL,
+                        `episodeVideoId` TEXT NOT NULL,
+                        `episodeName` TEXT NOT NULL,
+                        `episodeIndex` INTEGER NOT NULL,
+                        `positionMs` INTEGER NOT NULL,
+                        `durationMs` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`animeId`, `episodeVideoId`)
+                    )""".trimIndent(),
+                )
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "animevost.db")
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
     }
 }
