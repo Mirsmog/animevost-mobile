@@ -12,6 +12,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -50,10 +52,24 @@ class ProfileViewModel @Inject constructor(
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
     init {
-        // Re-load profile on every auth state change (login → show profile, logout → show guest)
-        // MutableStateFlow emits the current value immediately, so this also covers the initial load.
+        // Re-load profile (user info + history) on every auth state change
         viewModelScope.launch {
             authRepository.isLoggedInFlow.collect { loadProfile() }
+        }
+        // Reactive favorites preview — re-subscribes on login/logout
+        viewModelScope.launch {
+            authRepository.isLoggedInFlow
+                .flatMapLatest { isLoggedIn ->
+                    if (isLoggedIn) {
+                        launch { favoriteRepository.loadRemoteFavorites() }
+                        favoriteRepository.getAllFavorites()
+                    } else {
+                        flowOf(emptyList())
+                    }
+                }
+                .collect { favorites ->
+                    _uiState.update { it.copy(favorites = favorites.take(8)) }
+                }
         }
     }
 
@@ -72,20 +88,11 @@ class ProfileViewModel @Inject constructor(
             try {
                 val isLoggedIn = authRepository.isLoggedIn()
                 val user = if (isLoggedIn) authRepository.getCurrentUser() else null
-
-                val favorites = if (isLoggedIn) {
-                    try { favoriteRepository.getFavorites(1) } catch (_: Exception) { emptyList() }
-                } else {
-                    emptyList()
-                }
-
                 val history = try { getWatchHistoryUseCase() } catch (_: Exception) { emptyList() }
-
                 _uiState.update {
                     it.copy(
                         user = user,
                         isLoggedIn = isLoggedIn,
-                        favorites = favorites,
                         history = history,
                         isLoading = false,
                     )
