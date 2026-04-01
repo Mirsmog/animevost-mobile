@@ -28,10 +28,12 @@ class FavoritesViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             favoriteRepository.getAllFavorites().collect { favorites ->
-                _uiState.update {
-                    it.copy(favorites = favorites, isLoading = false)
-                }
+                _uiState.update { it.copy(favorites = favorites, isLoading = false) }
             }
+        }
+        // Fetch fresh data from remote on every screen open (no-op when not logged in)
+        viewModelScope.launch {
+            favoriteRepository.loadRemoteFavorites()
         }
     }
 

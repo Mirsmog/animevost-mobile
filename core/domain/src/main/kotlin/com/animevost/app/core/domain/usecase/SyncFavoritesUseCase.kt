@@ -4,9 +4,9 @@ import com.animevost.app.core.domain.repository.FavoriteRepository
 import com.animevost.app.core.domain.util.Result
 import javax.inject.Inject
 
-/** Synchronises local favourites with the remote animevost server. */
+/** Merges local favorites with the remote server on login. */
 class SyncFavoritesUseCase @Inject constructor(
     private val favoriteRepository: FavoriteRepository,
 ) {
-    suspend operator fun invoke(): Result<Unit> = favoriteRepository.syncWithRemote()
+    suspend operator fun invoke(): Result<Unit> = favoriteRepository.syncOnLogin()
 }

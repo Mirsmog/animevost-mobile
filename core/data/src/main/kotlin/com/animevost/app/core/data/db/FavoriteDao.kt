@@ -33,4 +33,7 @@ interface FavoriteDao {
 
     @Query("SELECT newsId FROM favorites")
     suspend fun getAllIds(): List<Int>
+
+    @Query("DELETE FROM favorites")
+    suspend fun deleteAll()
 }
