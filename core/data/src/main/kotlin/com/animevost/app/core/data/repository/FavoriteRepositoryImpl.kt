@@ -148,7 +148,8 @@ class FavoriteRepositoryImpl @Inject constructor(
             allItems.addAll(items)
             page++
         }
-        return allItems
+        // Deduplicate by ID in case the same item appears across pages
+        return allItems.distinctBy { it.id }
     }
 
     private fun isLoggedIn(): Boolean =
