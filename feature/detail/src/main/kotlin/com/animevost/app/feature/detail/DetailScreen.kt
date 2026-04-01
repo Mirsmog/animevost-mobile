@@ -1,5 +1,6 @@
 package com.animevost.app.feature.detail
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -62,14 +63,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -123,7 +129,7 @@ fun DetailScreen(
                     isDescriptionExpanded = state.isDescriptionExpanded,
                     comments = state.comments,
                     isLoadingComments = state.isLoadingComments,
-                    commentText = state.commentText,
+                    commentTextValue = state.commentTextValue,
                     isAddingComment = state.isAddingComment,
                     hasMoreComments = state.hasMoreComments,
                     onBack = onBack,
@@ -139,8 +145,9 @@ fun DetailScreen(
                     onGenreClick = onGenreClick,
                     onRelatedClick = onRelatedClick,
                     onLoadMoreComments = { viewModel.onEvent(DetailEvent.LoadMoreComments) },
-                    onCommentTextChange = { viewModel.onEvent(DetailEvent.UpdateCommentText(it)) },
+                    onCommentTextValueChange = { viewModel.onEvent(DetailEvent.UpdateCommentTextValue(it)) },
                     onSubmitComment = { viewModel.onEvent(DetailEvent.SubmitComment) },
+                    onReplyToComment = { comment -> viewModel.onEvent(DetailEvent.ReplyToComment(comment)) },
                 )
             }
         }
@@ -157,7 +164,7 @@ private fun DetailContent(
     isDescriptionExpanded: Boolean,
     comments: List<Comment>,
     isLoadingComments: Boolean,
-    commentText: String,
+    commentTextValue: TextFieldValue,
     isAddingComment: Boolean,
     hasMoreComments: Boolean,
     onBack: () -> Unit,
@@ -169,8 +176,9 @@ private fun DetailContent(
     onGenreClick: (String) -> Unit,
     onRelatedClick: (String) -> Unit,
     onLoadMoreComments: () -> Unit,
-    onCommentTextChange: (String) -> Unit,
+    onCommentTextValueChange: (TextFieldValue) -> Unit,
     onSubmitComment: () -> Unit,
+    onReplyToComment: (Comment) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -550,12 +558,13 @@ private fun DetailContent(
             comments = comments,
             isLoading = isLoadingComments,
             isLoggedIn = isLoggedIn,
-            commentText = commentText,
+            commentTextValue = commentTextValue,
             isAddingComment = isAddingComment,
             hasMore = hasMoreComments,
             onLoadMore = onLoadMoreComments,
-            onTextChange = onCommentTextChange,
+            onTextValueChange = onCommentTextValueChange,
             onSubmit = onSubmitComment,
+            onReply = onReplyToComment,
         )
 
         Spacer(modifier = Modifier.height(24.dp))
@@ -567,12 +576,13 @@ private fun CommentsSection(
     comments: List<Comment>,
     isLoading: Boolean,
     isLoggedIn: Boolean,
-    commentText: String,
+    commentTextValue: TextFieldValue,
     isAddingComment: Boolean,
     hasMore: Boolean,
     onLoadMore: () -> Unit,
-    onTextChange: (String) -> Unit,
+    onTextValueChange: (TextFieldValue) -> Unit,
     onSubmit: () -> Unit,
+    onReply: (Comment) -> Unit,
 ) {
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         Text(
@@ -583,15 +593,94 @@ private fun CommentsSection(
         Spacer(modifier = Modifier.height(12.dp))
 
         if (isLoggedIn) {
-            // Add comment input
+            var showEmojiPicker by remember { mutableStateOf(false) }
+
+            fun applyFormat(openTag: String, closeTag: String) {
+                val sel = commentTextValue.selection
+                val newText: String
+                val newCursor: Int
+                if (sel.length > 0) {
+                    newText = commentTextValue.text.substring(0, sel.start) + openTag +
+                              commentTextValue.text.substring(sel.start, sel.end) + closeTag +
+                              commentTextValue.text.substring(sel.end)
+                    newCursor = sel.end + openTag.length + closeTag.length
+                } else {
+                    newText = commentTextValue.text.substring(0, sel.start) + openTag + closeTag +
+                              commentTextValue.text.substring(sel.start)
+                    newCursor = sel.start + openTag.length
+                }
+                onTextValueChange(commentTextValue.copy(
+                    text = newText,
+                    selection = androidx.compose.ui.text.TextRange(newCursor),
+                ))
+            }
+
+            fun insertAtCursor(insertion: String) {
+                val sel = commentTextValue.selection
+                val newText = commentTextValue.text.substring(0, sel.start) + insertion +
+                              commentTextValue.text.substring(sel.start)
+                val newCursor = sel.start + insertion.length
+                onTextValueChange(commentTextValue.copy(
+                    text = newText,
+                    selection = androidx.compose.ui.text.TextRange(newCursor),
+                ))
+            }
+
+            // Formatting toolbar
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = { applyFormat("[b]", "[/b]") }) {
+                    Text("B", fontWeight = FontWeight.Bold)
+                }
+                TextButton(onClick = { applyFormat("[i]", "[/i]") }) {
+                    Text("I", style = MaterialTheme.typography.bodyMedium.copy(fontStyle = FontStyle.Italic))
+                }
+                TextButton(onClick = { applyFormat("[s]", "[/s]") }) {
+                    Text("S", style = MaterialTheme.typography.bodyMedium.copy(textDecoration = TextDecoration.LineThrough))
+                }
+                TextButton(onClick = { applyFormat("[spoiler]", "[/spoiler]") }) {
+                    Text("Spoiler", style = MaterialTheme.typography.bodySmall)
+                }
+                Spacer(modifier = Modifier.weight(1f))
+                TextButton(onClick = { showEmojiPicker = !showEmojiPicker }) {
+                    Text("😊")
+                }
+            }
+
+            // Emoji picker
+            AnimatedVisibility(visible = showEmojiPicker) {
+                val emojiIds = (1..100).toList() + listOf(102)
+                LazyRow(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp),
+                ) {
+                    items(emojiIds) { id ->
+                        AsyncImage(
+                            model = "https://animevost.org/engine/data/emoticons/$id.gif",
+                            contentDescription = "emoji $id",
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clickable { insertAtCursor("<!--smile:$id-->") },
+                        )
+                    }
+                }
+            }
+
+            // Text field + Send button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedTextField(
-                    value = commentText,
-                    onValueChange = onTextChange,
+                    value = commentTextValue,
+                    onValueChange = onTextValueChange,
                     modifier = Modifier.weight(1f),
                     placeholder = { Text("Написать комментарий…") },
                     maxLines = 3,
@@ -599,7 +688,7 @@ private fun CommentsSection(
                 )
                 IconButton(
                     onClick = onSubmit,
-                    enabled = commentText.isNotBlank() && !isAddingComment,
+                    enabled = commentTextValue.text.isNotBlank() && !isAddingComment,
                 ) {
                     if (isAddingComment) {
                         CircularProgressIndicator(modifier = Modifier.size(24.dp))
@@ -607,7 +696,7 @@ private fun CommentsSection(
                         Icon(
                             Icons.AutoMirrored.Filled.Send,
                             contentDescription = "Отправить",
-                            tint = if (commentText.isNotBlank()) {
+                            tint = if (commentTextValue.text.isNotBlank()) {
                                 MaterialTheme.colorScheme.primary
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
@@ -628,7 +717,7 @@ private fun CommentsSection(
 
         // Comment list
         comments.forEach { comment ->
-            CommentItem(comment = comment)
+            CommentItem(comment = comment, onReply = onReply)
             Spacer(modifier = Modifier.height(8.dp))
         }
 
@@ -667,7 +756,7 @@ private fun CommentsSection(
 }
 
 @Composable
-private fun CommentItem(comment: Comment) {
+private fun CommentItem(comment: Comment, onReply: (Comment) -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -743,10 +832,18 @@ private fun CommentItem(comment: Comment) {
             }
 
             if (comment.text.isNotBlank()) {
-                Text(
-                    text = comment.text,
+                CommentHtmlRenderer(
+                    html = comment.text,
                     style = MaterialTheme.typography.bodyMedium,
                 )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(onClick = { onReply(comment) }) {
+                    Text("Ответить", style = MaterialTheme.typography.labelSmall)
+                }
             }
         }
     }

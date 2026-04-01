@@ -86,8 +86,8 @@ class CommentParser @Inject constructor() {
         titleQuote?.remove()
         quotedEl?.remove()
 
-        // Clean up DLE comment markers and excessive whitespace
-        val rawText = textEl.text().trim()
+        // Remove quote divs then get remaining HTML (preserving formatting tags)
+        val rawText = textEl.html().trim()
             .replace(Regex("<!--QuoteE?Begin.*?-->", RegexOption.DOT_MATCHES_ALL), "")
             .replace(Regex("<!--Quote.*?-->", RegexOption.DOT_MATCHES_ALL), "")
             .trim()
