@@ -30,10 +30,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.ui.theme.AccentPurple
 import com.animevost.app.core.ui.theme.OrangePrimary
@@ -47,6 +50,7 @@ fun AnimeCard(
 ) {
     val episodeCount = remember(anime.episodeInfo) { extractEpisodeCount(anime.episodeInfo) }
     val hasStats = anime.rating > 0 || anime.viewCount > 0 || anime.commentCount > 0
+    val context = LocalContext.current
 
     Box(
         modifier = modifier
@@ -55,7 +59,12 @@ fun AnimeCard(
             .aspectRatio(0.67f),
     ) {
         AsyncImage(
-            model = anime.posterUrl,
+            model = ImageRequest.Builder(context)
+                .data(anime.posterUrl)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .memoryCachePolicy(CachePolicy.ENABLED)
+                .crossfade(true)
+                .build(),
             contentDescription = anime.title,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
@@ -208,6 +217,7 @@ fun AnimeCardHorizontal(
     trailingContent: @Composable (() -> Unit)? = null,
 ) {
     val hasStats = anime.rating > 0 || anime.viewCount > 0 || anime.commentCount > 0
+    val context = LocalContext.current
 
     Row(
         modifier = modifier
@@ -218,7 +228,12 @@ fun AnimeCardHorizontal(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncImage(
-            model = anime.posterUrl,
+            model = ImageRequest.Builder(context)
+                .data(anime.posterUrl)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .memoryCachePolicy(CachePolicy.ENABLED)
+                .crossfade(true)
+                .build(),
             contentDescription = anime.title,
             modifier = Modifier
                 .size(width = 56.dp, height = 80.dp)
@@ -302,6 +317,7 @@ fun AnimeCardFeatured(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -310,7 +326,12 @@ fun AnimeCardFeatured(
             .clickable(onClick = onClick),
     ) {
         AsyncImage(
-            model = anime.posterUrl,
+            model = ImageRequest.Builder(context)
+                .data(anime.posterUrl)
+                .diskCachePolicy(CachePolicy.ENABLED)
+                .memoryCachePolicy(CachePolicy.ENABLED)
+                .crossfade(true)
+                .build(),
             contentDescription = anime.title,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,

@@ -1,6 +1,7 @@
 package com.animevost.app.core.network.parser
 
 import com.animevost.app.core.domain.model.AnimePreview
+import com.animevost.app.core.network.DleEndpoints
 import org.jsoup.Jsoup
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -9,7 +10,8 @@ import javax.inject.Singleton
 class FavoritesParser @Inject constructor() {
 
     fun parse(html: String): List<AnimePreview> {
-        val doc = Jsoup.parse(html)
+        // Pass BASE_URL so that absUrl() resolves relative src/href to absolute URLs
+        val doc = Jsoup.parse(html, DleEndpoints.BASE_URL)
         // Each user favorite is wrapped in <div class="shortstory"> which contains
         // <a class="shortstoryShare" id="fav-id-{id}"> — use this as the authoritative source
         // to avoid picking up unrelated links (nav menu, "recent" sections, etc.)
@@ -19,10 +21,11 @@ class FavoritesParser @Inject constructor() {
                 val id = shareLink.id().removePrefix("fav-id-").toIntOrNull()
                     ?: return@mapNotNull null
                 val titleLink = block.selectFirst("h2 a") ?: return@mapNotNull null
-                val href = titleLink.attr("href")
+                val href = titleLink.absUrl("href").ifEmpty { titleLink.attr("href") }
                 val text = titleLink.text().trim()
                 val (title, titleOriginal, episodeInfo) = parseText(text)
-                val posterUrl = block.selectFirst("img.imgRadius")?.attr("src") ?: ""
+                val posterImg = block.selectFirst("img.imgRadius")
+                val posterUrl = posterImg?.absUrl("src")?.ifEmpty { posterImg.attr("src") } ?: ""
                 AnimePreview(
                     id = id,
                     title = title,
