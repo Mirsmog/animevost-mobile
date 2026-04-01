@@ -29,10 +29,16 @@ interface AnimeVostApi {
     suspend fun addComment(
         @Field("post_id") postId: Int,
         @Field("comments") text: String,
-        @Field("name") name: String = "",
-        @Field("editor_mode") editorMode: String = "html",
+        @Field("name") name: String,
+        @Field("mail") mail: String = "",
+        @Field("editor_mode") editorMode: String = "",
         @Field("skin") skin: String = DleEndpoints.DEFAULT_SKIN,
-    ): JsonObject
+        @Field("sec_code") secCode: String = "",
+        @Field("question_answer") questionAnswer: String = "",
+        @Field("recaptcha_response_field") recaptchaResponse: String = "",
+        @Field("recaptcha_challenge_field") recaptchaChallenge: String = "",
+        @Field("allow_subscribe") allowSubscribe: String = "0",
+    ): ResponseBody
 
     @GET(DleEndpoints.AJAX_FAVORITES)
     suspend fun toggleFavorite(

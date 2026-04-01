@@ -1,16 +1,13 @@
 package com.animevost.app.core.data.repository
 
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
 import com.animevost.app.core.domain.model.Comment
+import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.CommentRepository
 import com.animevost.app.core.domain.util.Result
 import com.animevost.app.core.network.AnimeVostApi
 import com.animevost.app.core.network.HtmlFetcher
 import com.animevost.app.core.network.parser.CommentParser
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -19,7 +16,7 @@ class CommentRepositoryImpl @Inject constructor(
     private val api: AnimeVostApi,
     private val htmlFetcher: HtmlFetcher,
     private val commentParser: CommentParser,
-    private val dataStore: DataStore<Preferences>,
+    private val authRepository: AuthRepository,
 ) : CommentRepository {
 
     override suspend fun getComments(newsId: Int, page: Int, url: String): Result<List<Comment>> {
@@ -35,14 +32,23 @@ class CommentRepositoryImpl @Inject constructor(
 
     override suspend fun addComment(newsId: Int, text: String): Result<Comment> {
         return try {
-            val username = dataStore.data
-                .map { it[AuthRepositoryImpl.KEY_USERNAME] }
-                .firstOrNull()
-                .orEmpty()
-            val response = api.addComment(newsId, text, username)
-            val comments = commentParser.parse(response)
-            val comment = comments.firstOrNull()
-                ?: Comment(id = 0, author = username, date = "", text = text, avatar = "")
+            val user = authRepository.getCurrentUser()
+                ?: return Result.Error(Exception("Не авторизован"), "Войдите в аккаунт")
+            val responseBody = api.addComment(
+                postId = newsId,
+                text = text,
+                name = user.name,
+            )
+            val responseText = responseBody.string()
+            if (responseText.contains("Hacking attempt", ignoreCase = true) ||
+                responseText.contains("error", ignoreCase = true) && responseText.length < 50
+            ) {
+                return Result.Error(Exception(responseText), responseText)
+            }
+            // Parse newly added comment from response HTML; fall back to a synthetic comment
+            val parsed = commentParser.parseCommentsHtml(responseText)
+            val comment = parsed.firstOrNull()
+                ?: Comment(id = 0, author = user.name, date = "", text = text, avatar = "")
             Result.Success(comment)
         } catch (e: CancellationException) {
             throw e
