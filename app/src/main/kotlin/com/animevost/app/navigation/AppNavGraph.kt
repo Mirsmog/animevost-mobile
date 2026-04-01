@@ -28,6 +28,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.animevost.app.MainViewModel
 import com.animevost.app.feature.auth.LoginScreen
 import com.animevost.app.feature.auth.RegisterScreen
+import com.animevost.app.feature.catalog.CatalogScreen
 import com.animevost.app.feature.catalog.FilteredListScreen
 import com.animevost.app.feature.detail.DetailScreen
 import com.animevost.app.feature.home.HomeScreen
@@ -120,6 +121,15 @@ fun AppNavGraph() {
                 FavoritesScreen(
                     onAnimeClick = { url ->
                         navController.navigate(NavRoutes.animeDetail(url))
+                    },
+                )
+            }
+            composable(Screen.Catalog.route) {
+                CatalogScreen(
+                    onNavigateToFilteredList = { filterType, filterValue, filterLabel ->
+                        navController.navigate(
+                            NavRoutes.filteredList(filterType, filterValue, filterLabel),
+                        )
                     },
                 )
             }

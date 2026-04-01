@@ -38,6 +38,7 @@ import coil.compose.AsyncImage
 import coil.request.CachePolicy
 import coil.request.ImageRequest
 import com.animevost.app.core.domain.model.AnimePreview
+import com.animevost.app.core.ui.theme.AccentBlue
 import com.animevost.app.core.ui.theme.AccentPurple
 import com.animevost.app.core.ui.theme.OrangePrimary
 
@@ -81,30 +82,30 @@ fun AnimeCard(
                     ),
                 ),
         )
-        // Type badge — top right
-        if (anime.type.isNotEmpty()) {
-            Text(
-                text = anime.type,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(6.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
-                        shape = RoundedCornerShape(4.dp),
-                    )
-                    .padding(horizontal = 5.dp, vertical = 2.dp),
-            )
-        }
-        // Announcement badge — top left
-        if (isAnnouncement(anime.episodeInfo)) {
-            AnnouncementBadge(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(6.dp),
-            )
+        // Type badge + Announcement badge — top right, same row
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            if (isAnnouncement(anime.episodeInfo)) {
+                AnnouncementBadge()
+            }
+            if (anime.type.isNotEmpty()) {
+                Text(
+                    text = anime.type,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier
+                        .background(
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                            shape = RoundedCornerShape(4.dp),
+                        )
+                        .padding(horizontal = 5.dp, vertical = 2.dp),
+                )
+            }
         }
         // Title + stats at bottom
         Column(
@@ -120,40 +121,42 @@ fun AnimeCard(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (episodeCount.isNotEmpty()) {
+            if (episodeCount.isNotEmpty() || hasStats) {
                 Spacer(modifier = Modifier.height(3.dp))
-                Text(
-                    text = episodeCount,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.65f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            // Stats row: rating, views, comments
-            if (hasStats) {
-                Spacer(modifier = Modifier.height(4.dp))
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    if (anime.rating > 0) {
-                        StatBadge(
-                            icon = { Icon(Icons.Filled.Star, null, modifier = Modifier.size(10.dp), tint = OrangePrimary) },
-                            text = String.format("%.1f", anime.rating),
+                    if (episodeCount.isNotEmpty()) {
+                        Text(
+                            text = episodeCount,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White.copy(alpha = 0.65f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
                         )
                     }
-                    if (anime.viewCount > 0) {
-                        StatBadge(
-                            icon = { Icon(Icons.Outlined.Visibility, null, modifier = Modifier.size(10.dp), tint = Color.White.copy(alpha = 0.6f)) },
-                            text = formatCount(anime.viewCount),
-                        )
-                    }
-                    if (anime.commentCount > 0) {
-                        StatBadge(
-                            icon = { Icon(Icons.Outlined.ChatBubbleOutline, null, modifier = Modifier.size(10.dp), tint = Color.White.copy(alpha = 0.6f)) },
-                            text = formatCount(anime.commentCount),
-                        )
+                    // Stats: rating, views
+                    if (hasStats) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (anime.rating > 0) {
+                                StatBadge(
+                                    icon = { Icon(Icons.Filled.Star, null, modifier = Modifier.size(10.dp), tint = OrangePrimary) },
+                                    text = String.format("%.1f", anime.rating),
+                                )
+                            }
+                            if (anime.viewCount > 0) {
+                                StatBadge(
+                                    icon = { Icon(Icons.Outlined.Visibility, null, modifier = Modifier.size(10.dp), tint = Color.White.copy(alpha = 0.6f)) },
+                                    text = formatCount(anime.viewCount),
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -201,7 +204,7 @@ private fun AnnouncementBadge(modifier: Modifier = Modifier) {
         color = Color.White,
         modifier = modifier
             .background(
-                color = AccentPurple.copy(alpha = 0.9f),
+                color = AccentBlue.copy(alpha = 0.9f),
                 shape = RoundedCornerShape(4.dp),
             )
             .padding(horizontal = 5.dp, vertical = 2.dp),

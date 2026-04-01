@@ -33,7 +33,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -117,7 +116,6 @@ private fun DaySelector(
 
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Box(
                     modifier = Modifier
@@ -143,17 +141,21 @@ private fun DaySelector(
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         },
                     )
+                    // Dot inside circle at bottom-center
+                    if (isToday) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 5.dp)
+                                .size(5.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                                    else MaterialTheme.colorScheme.primary
+                                ),
+                        )
+                    }
                 }
-                // Orange dot under today's day
-                Box(
-                    modifier = Modifier
-                        .size(4.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (isToday) MaterialTheme.colorScheme.primary
-                            else Color.Transparent,
-                        ),
-                )
             }
         }
     }
