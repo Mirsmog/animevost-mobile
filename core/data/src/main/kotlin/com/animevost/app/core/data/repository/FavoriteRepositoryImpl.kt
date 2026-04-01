@@ -65,21 +65,18 @@ class FavoriteRepositoryImpl @Inject constructor(
                 val remoteIds = remoteItems.map { it.id }.toSet()
                 val localIds = favoriteDao.getAllIds().toSet()
 
-                // Pull remote-only → insert into local DB (partial data, no poster)
+                // Remote is the source of truth when logged in:
+                // 1. Pull remote-only items → insert into local DB
                 val toPull = remoteItems.filter { it.id !in localIds }
                 toPull.forEach { favoriteDao.insert(it.toFavoriteEntity()) }
 
-                // Push local-only → add to remote server
-                val toPush = localIds - remoteIds
-                toPush.forEach { id ->
-                    try {
-                        htmlFetcher.fetch(DleEndpoints.BASE_URL + DleEndpoints.FAVORITES_ADD + id)
-                    } catch (e: Exception) {
-                        Timber.w(e, "Failed to push favorite id=$id to remote")
-                    }
-                }
+                // 2. Delete local items not present on remote (stale / incorrectly synced)
+                //    New favorites added in-app are immediately mirrored via mirrorToRemote(),
+                //    so any local-only item here is considered stale.
+                val toDelete = localIds - remoteIds
+                toDelete.forEach { favoriteDao.deleteByNewsId(it) }
 
-                Timber.d("Favorites sync: pulled=${toPull.size}, pushed=${toPush.size}")
+                Timber.d("Favorites sync: pulled=${toPull.size}, deleted=${toDelete.size}")
                 Result.Success(Unit)
             } catch (e: CancellationException) {
                 throw e
