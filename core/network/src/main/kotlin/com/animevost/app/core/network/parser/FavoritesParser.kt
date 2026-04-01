@@ -10,29 +10,28 @@ class FavoritesParser @Inject constructor() {
 
     fun parse(html: String): List<AnimePreview> {
         val doc = Jsoup.parse(html)
-        return doc.select("a[href*=\"/tip/\"]")
-            .filter { it.attr("abs:href").contains("animevost.org/tip/") }
-            .mapNotNull { element ->
-                val href = element.attr("href")
-                val id = extractId(href) ?: return@mapNotNull null
-                val text = element.text().trim()
+        // Each user favorite is wrapped in <div class="shortstory"> which contains
+        // <a class="shortstoryShare" id="fav-id-{id}"> — use this as the authoritative source
+        // to avoid picking up unrelated links (nav menu, "recent" sections, etc.)
+        return doc.select("div.shortstory")
+            .mapNotNull { block ->
+                val shareLink = block.selectFirst("a.shortstoryShare") ?: return@mapNotNull null
+                val id = shareLink.id().removePrefix("fav-id-").toIntOrNull()
+                    ?: return@mapNotNull null
+                val titleLink = block.selectFirst("h2 a") ?: return@mapNotNull null
+                val href = titleLink.attr("href")
+                val text = titleLink.text().trim()
                 val (title, titleOriginal, episodeInfo) = parseText(text)
+                val posterUrl = block.selectFirst("img.imgRadius")?.attr("src") ?: ""
                 AnimePreview(
                     id = id,
                     title = title,
                     titleOriginal = titleOriginal,
-                    posterUrl = "",
+                    posterUrl = posterUrl,
                     episodeInfo = episodeInfo,
                     url = href,
                 )
             }
-            .distinctBy { it.id }
-    }
-
-    private fun extractId(url: String): Int? {
-        // URL format: /tip/{type}/{id}-{slug}.html
-        val segment = url.substringAfterLast("/").substringBefore(".")
-        return segment.substringBefore("-").toIntOrNull()
     }
 
     private fun parseText(text: String): Triple<String, String, String> {
