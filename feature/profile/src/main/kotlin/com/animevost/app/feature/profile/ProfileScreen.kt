@@ -57,6 +57,7 @@ import com.animevost.app.core.ui.components.SectionHeader
 fun ProfileScreen(
     onNavigateToLogin: () -> Unit,
     onAnimeClick: (String) -> Unit,
+    onNavigateToFavorites: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -93,6 +94,7 @@ fun ProfileScreen(
                 state = state,
                 onLogout = { viewModel.onEvent(ProfileEvent.Logout) },
                 onAnimeClick = onAnimeClick,
+                onNavigateToFavorites = onNavigateToFavorites,
                 modifier = Modifier.padding(innerPadding),
             )
         }
@@ -159,6 +161,7 @@ private fun LoggedInContent(
     state: ProfileUiState,
     onLogout: () -> Unit,
     onAnimeClick: (String) -> Unit,
+    onNavigateToFavorites: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -205,6 +208,20 @@ private fun LoggedInContent(
                             fontWeight = FontWeight.Bold,
                         )
                     }
+                    TextButton(onClick = onLogout) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Logout,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            "Выйти",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                 }
             }
         }
@@ -215,8 +232,8 @@ private fun LoggedInContent(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
                 SectionHeader(
                     title = "Продолжить просмотр",
-                    actionLabel = "Все →",
-                    onAction = { /* TODO: full history screen */ },
+                    actionLabel = null,
+                    onAction = null,
                 )
             }
             item {
@@ -235,9 +252,9 @@ private fun LoggedInContent(
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
                 )
                 SectionHeader(
-                    title = "Избранное",
-                    actionLabel = "Все ${state.favorites.size} →",
-                    onAction = { /* TODO: full favorites screen */ },
+                    title = "Избранное ${state.favorites.size}",
+                    actionLabel = "Все →",
+                    onAction = onNavigateToFavorites,
                 )
             }
             item {
@@ -279,32 +296,6 @@ private fun LoggedInContent(
             }
         }
 
-        // Logout
-        item {
-            HorizontalDivider(
-                modifier = Modifier.padding(top = 16.dp),
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-            )
-            TextButton(
-                onClick = onLogout,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.Logout,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    "Выйти",
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-            }
-        }
     }
 }
 

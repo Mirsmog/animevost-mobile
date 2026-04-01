@@ -134,6 +134,11 @@ fun AppNavGraph() {
                 ProfileScreen(
                     onNavigateToLogin = { navController.navigate(NavRoutes.LOGIN) },
                     onAnimeClick = { url -> navController.navigate(NavRoutes.animeDetail(url)) },
+                    onNavigateToFavorites = {
+                        navController.navigate(Screen.Favorites.route) {
+                            launchSingleTop = true
+                        }
+                    },
                 )
             }
             composable(
