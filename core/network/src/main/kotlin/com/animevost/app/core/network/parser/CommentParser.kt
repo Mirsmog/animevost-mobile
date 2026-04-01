@@ -4,6 +4,7 @@ import com.animevost.app.core.domain.model.Comment
 import com.animevost.app.core.network.DleEndpoints
 import com.google.gson.JsonObject
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Element
 import javax.inject.Inject
 
 class CommentParser @Inject constructor() {
@@ -31,20 +32,66 @@ class CommentParser @Inject constructor() {
                 val date = el.selectFirst(".commentFinalData")
                     ?.ownText()?.trim().orEmpty()
 
-                val text = el.selectFirst("[id^=comm-id-]")
-                    ?.text()?.trim()
-                    ?: el.selectFirst(".commentFinalText")
-                        ?.text()?.trim()
-                    .orEmpty()
-
                 val avatar = el.selectFirst(".commentFinalAva img")
                     ?.let { img ->
                         img.absUrl("src").ifEmpty { AnimeListParser.resolveUrl(img.attr("src")) }
                     }.orEmpty()
 
-                if (author.isEmpty() && text.isEmpty()) return@mapNotNull null
+                val (quotedAuthor, quotedText, commentText) = parseTextContent(el)
 
-                Comment(id = id, author = author, date = date, text = text, avatar = avatar)
+                if (author.isEmpty() && commentText.isEmpty()) return@mapNotNull null
+
+                Comment(
+                    id = id,
+                    author = author,
+                    date = date,
+                    text = commentText,
+                    avatar = avatar,
+                    quotedAuthor = quotedAuthor,
+                    quotedText = quotedText,
+                )
             }
+    }
+
+    /**
+     * Parses the text content element extracting:
+     * - quotedAuthor: who was cited (from div.titlequote "Цитата: Username")
+     * - quotedText: the cited text (from div.quote)
+     * - remaining comment text after stripping the quote block
+     *
+     * DLE quote HTML:
+     * <!--QuoteBegin USERNAME-->
+     * <div class="titlequote">Цитата: USERNAME</div>
+     * <div class="quote"><!--QuoteEBegin-->QUOTED TEXT<!--QuoteEnd--></div>
+     * <!--QuoteEEnd-->
+     * ACTUAL REPLY TEXT
+     */
+    private fun parseTextContent(el: Element): Triple<String, String, String> {
+        val textEl = el.selectFirst("[id^=comm-id-]")
+            ?: el.selectFirst(".commentFinalText")
+            ?: return Triple("", "", "")
+
+        // Extract quote block
+        val titleQuote = textEl.selectFirst(".titlequote")
+        val quotedEl = textEl.selectFirst(".quote")
+
+        val quotedAuthor = titleQuote?.text()
+            ?.replace("Цитата:", "")
+            ?.replace("Quote:", "")
+            ?.trim().orEmpty()
+
+        val quotedText = quotedEl?.text()?.trim().orEmpty()
+
+        // Remove quote divs then get remaining text
+        titleQuote?.remove()
+        quotedEl?.remove()
+
+        // Clean up DLE comment markers and excessive whitespace
+        val rawText = textEl.text().trim()
+            .replace(Regex("<!--QuoteE?Begin.*?-->", RegexOption.DOT_MATCHES_ALL), "")
+            .replace(Regex("<!--Quote.*?-->", RegexOption.DOT_MATCHES_ALL), "")
+            .trim()
+
+        return Triple(quotedAuthor, quotedText, rawText)
     }
 }

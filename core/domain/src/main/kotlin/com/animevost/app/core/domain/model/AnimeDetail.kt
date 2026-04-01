@@ -22,6 +22,7 @@ data class AnimeDetail(
     val voteCount: Int,
     val viewCount: Int,
     val commentCount: Int,
+    val totalCommentPages: Int,
     val description: String,
     val publishDate: String,
     val categories: List<String>,

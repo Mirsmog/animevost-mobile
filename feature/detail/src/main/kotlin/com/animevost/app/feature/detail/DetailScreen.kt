@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -702,10 +703,51 @@ private fun CommentItem(comment: Comment) {
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = comment.text,
-                style = MaterialTheme.typography.bodyMedium,
-            )
+
+            // Reddit-style quote block
+            if (comment.quotedAuthor.isNotBlank()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp),
+                ) {
+                    // Colored left border
+                    Box(
+                        modifier = Modifier
+                            .width(3.dp)
+                            .fillMaxHeight()
+                            .background(
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(2.dp),
+                            ),
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            text = comment.quotedAuthor,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                        if (comment.quotedText.isNotBlank()) {
+                            Text(
+                                text = comment.quotedText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (comment.text.isNotBlank()) {
+                Text(
+                    text = comment.text,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
     }
 }

@@ -21,8 +21,15 @@ class CommentRepositoryImpl @Inject constructor(
 
     override suspend fun getComments(newsId: Int, page: Int, url: String): Result<List<Comment>> {
         return try {
-            val html = htmlFetcher.fetch(url)
-            Result.Success(commentParser.parseCommentsHtml(html))
+            if (page <= 1) {
+                // Page 1: comments are already embedded in the detail page HTML
+                val html = htmlFetcher.fetch(url)
+                Result.Success(commentParser.parseCommentsHtml(html))
+            } else {
+                // Page 2+: use AJAX endpoint
+                val response = api.getComments(page, newsId)
+                Result.Success(commentParser.parse(response))
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
