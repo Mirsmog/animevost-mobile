@@ -3,11 +3,14 @@ package com.animevost.app.feature.profile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.animevost.app.core.domain.model.AnimePreview
+import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.FavoriteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -20,6 +23,7 @@ data class FavoritesUiState(
 @HiltViewModel
 class FavoritesViewModel @Inject constructor(
     private val favoriteRepository: FavoriteRepository,
+    private val authRepository: AuthRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FavoritesUiState())
@@ -27,13 +31,18 @@ class FavoritesViewModel @Inject constructor(
 
     init {
         viewModelScope.launch {
-            favoriteRepository.getAllFavorites().collect { favorites ->
-                _uiState.update { it.copy(favorites = favorites, isLoading = false) }
-            }
-        }
-        // Fetch fresh data from remote on every screen open (no-op when not logged in)
-        viewModelScope.launch {
-            favoriteRepository.loadRemoteFavorites()
+            // Re-subscribe to the correct flow (remote vs local) whenever auth state changes
+            authRepository.isLoggedInFlow
+                .flatMapLatest { isLoggedIn ->
+                    if (isLoggedIn) {
+                        // Load fresh data from remote (fire-and-forget)
+                        launch { favoriteRepository.loadRemoteFavorites() }
+                    }
+                    favoriteRepository.getAllFavorites()
+                }
+                .collect { favorites ->
+                    _uiState.update { it.copy(favorites = favorites, isLoading = false) }
+                }
         }
     }
 
