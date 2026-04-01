@@ -12,6 +12,7 @@ import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
 import com.animevost.app.core.domain.usecase.GetCommentsUseCase
 import com.animevost.app.core.domain.usecase.RateAnimeUseCase
 import com.animevost.app.core.domain.usecase.ToggleFavoriteUseCase
+import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.FavoriteRepository
 import com.animevost.app.core.domain.util.onError
 import com.animevost.app.core.domain.util.onSuccess
@@ -22,6 +23,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -32,6 +35,7 @@ data class DetailUiState(
     val isLoading: Boolean = false,
     val error: String? = null,
     val isFavorite: Boolean = false,
+    val isLoggedIn: Boolean = false,
     val userRating: Int = 0,
     val isDescriptionExpanded: Boolean = false,
     val comments: List<Comment> = emptyList(),
@@ -69,6 +73,7 @@ class DetailViewModel @Inject constructor(
     private val rateAnimeUseCase: RateAnimeUseCase,
     private val getCommentsUseCase: GetCommentsUseCase,
     private val addCommentUseCase: AddCommentUseCase,
+    private val authRepository: AuthRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DetailUiState())
@@ -76,6 +81,12 @@ class DetailViewModel @Inject constructor(
 
     private val _effect = MutableSharedFlow<DetailEffect>()
     val effect: SharedFlow<DetailEffect> = _effect.asSharedFlow()
+
+    init {
+        authRepository.isLoggedInFlow
+            .onEach { loggedIn -> _uiState.update { it.copy(isLoggedIn = loggedIn) } }
+            .launchIn(viewModelScope)
+    }
 
     fun onEvent(event: DetailEvent) {
         when (event) {
@@ -140,6 +151,10 @@ class DetailViewModel @Inject constructor(
 
     private fun rateAnime(rating: Int) {
         val anime = _uiState.value.anime ?: return
+        if (!_uiState.value.isLoggedIn) {
+            viewModelScope.launch { _effect.emit(DetailEffect.ShowSnackbar("Войдите в аккаунт чтобы оценить")) }
+            return
+        }
         viewModelScope.launch {
             _uiState.update { it.copy(userRating = rating) }
             rateAnimeUseCase(anime.id, rating)
@@ -220,6 +235,10 @@ class DetailViewModel @Inject constructor(
 
     private fun submitComment() {
         val anime = _uiState.value.anime ?: return
+        if (!_uiState.value.isLoggedIn) {
+            viewModelScope.launch { _effect.emit(DetailEffect.ShowSnackbar("Войдите в аккаунт чтобы комментировать")) }
+            return
+        }
         val text = _uiState.value.commentText.trim()
         if (text.isBlank()) return
         viewModelScope.launch {

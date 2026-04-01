@@ -105,7 +105,13 @@ class AnimeRepositoryImpl @Inject constructor(
     override suspend fun submitRating(newsId: Int, rating: Int): Result<Double> {
         return try {
             val response = api.submitRating(rating, newsId)
-            Result.Success(response.get("rating")?.asDouble ?: 0.0)
+            // "rating" field is an HTML string like:
+            // <li class="current-rating" style="width:80%;">80</li>
+            // Extract the numeric text content (0-100) and convert to 0-5 scale
+            val ratingHtml = response.get("rating")?.asString.orEmpty()
+            val percent = Regex("""current-rating[^>]*>(\d+)<""")
+                .find(ratingHtml)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
+            Result.Success(percent / 20.0)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

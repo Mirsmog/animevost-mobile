@@ -44,5 +44,5 @@ object DleEndpoints {
     const val MEDIA_THUMBNAIL_BASE = "https://media.aniland.org/img/"
 
     // Default DLE skin parameter
-    const val DEFAULT_SKIN = "flavor"
+    const val DEFAULT_SKIN = "AnimeVostNext5"
 }

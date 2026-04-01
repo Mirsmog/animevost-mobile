@@ -117,6 +117,7 @@ fun DetailScreen(
                 state.anime != null -> DetailContent(
                     anime = state.anime!!,
                     isFavorite = state.isFavorite,
+                    isLoggedIn = state.isLoggedIn,
                     userRating = state.userRating,
                     isDescriptionExpanded = state.isDescriptionExpanded,
                     comments = state.comments,
@@ -150,6 +151,7 @@ fun DetailScreen(
 private fun DetailContent(
     anime: AnimeDetail,
     isFavorite: Boolean,
+    isLoggedIn: Boolean,
     userRating: Int,
     isDescriptionExpanded: Boolean,
     comments: List<Comment>,
@@ -262,6 +264,7 @@ private fun DetailContent(
             RatingBar(
                 rating = anime.rating,
                 userRating = userRating,
+                isLoggedIn = isLoggedIn,
                 onRate = onRate,
             )
 
@@ -545,6 +548,7 @@ private fun DetailContent(
         CommentsSection(
             comments = comments,
             isLoading = isLoadingComments,
+            isLoggedIn = isLoggedIn,
             commentText = commentText,
             isAddingComment = isAddingComment,
             hasMore = hasMoreComments,
@@ -561,6 +565,7 @@ private fun DetailContent(
 private fun CommentsSection(
     comments: List<Comment>,
     isLoading: Boolean,
+    isLoggedIn: Boolean,
     commentText: String,
     isAddingComment: Boolean,
     hasMore: Boolean,
@@ -576,38 +581,46 @@ private fun CommentsSection(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Add comment input
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OutlinedTextField(
-                value = commentText,
-                onValueChange = onTextChange,
-                modifier = Modifier.weight(1f),
-                placeholder = { Text("Написать комментарий…") },
-                maxLines = 3,
-                enabled = !isAddingComment,
-            )
-            IconButton(
-                onClick = onSubmit,
-                enabled = commentText.isNotBlank() && !isAddingComment,
+        if (isLoggedIn) {
+            // Add comment input
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                if (isAddingComment) {
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                } else {
-                    Icon(
-                        Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Отправить",
-                        tint = if (commentText.isNotBlank()) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
+                OutlinedTextField(
+                    value = commentText,
+                    onValueChange = onTextChange,
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Написать комментарий…") },
+                    maxLines = 3,
+                    enabled = !isAddingComment,
+                )
+                IconButton(
+                    onClick = onSubmit,
+                    enabled = commentText.isNotBlank() && !isAddingComment,
+                ) {
+                    if (isAddingComment) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    } else {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Отправить",
+                            tint = if (commentText.isNotBlank()) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
                 }
             }
+        } else {
+            Text(
+                text = "Войдите в аккаунт, чтобы оставить комментарий",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         Spacer(modifier = Modifier.height(12.dp))
@@ -728,6 +741,7 @@ private fun InfoItem(label: String, value: String) {
 private fun RatingBar(
     rating: Double,
     userRating: Int,
+    isLoggedIn: Boolean,
     onRate: (Int) -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -737,20 +751,33 @@ private fun RatingBar(
             color = MaterialTheme.colorScheme.primary,
         )
         Spacer(modifier = Modifier.width(8.dp))
-        (1..5).forEach { star ->
-            IconButton(
-                onClick = { onRate(star) },
-                modifier = Modifier.size(28.dp),
-            ) {
+        if (isLoggedIn) {
+            (1..5).forEach { star ->
+                IconButton(
+                    onClick = { onRate(star) },
+                    modifier = Modifier.size(28.dp),
+                ) {
+                    Icon(
+                        imageVector = if (star <= userRating) Icons.Filled.Star else Icons.Filled.StarBorder,
+                        contentDescription = "Оценка $star",
+                        tint = if (star <= userRating) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+        } else {
+            (1..5).forEach { star ->
                 Icon(
-                    imageVector = if (star <= userRating) Icons.Filled.Star else Icons.Filled.StarBorder,
-                    contentDescription = "Оценка $star",
-                    tint = if (star <= userRating) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                    modifier = Modifier.size(24.dp),
+                    imageVector = if (star <= rating.toInt()) Icons.Filled.Star else Icons.Filled.StarBorder,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier
+                        .size(24.dp)
+                        .padding(2.dp),
                 )
             }
         }
