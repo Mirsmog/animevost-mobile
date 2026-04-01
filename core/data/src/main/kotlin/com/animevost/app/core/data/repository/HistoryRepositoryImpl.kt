@@ -15,7 +15,10 @@ class HistoryRepositoryImpl @Inject constructor(
 ) : HistoryRepository {
 
     override suspend fun getHistory(): List<AnimePreview> {
-        return historyDao.getAllList().map { it.toAnimePreview() }
+        // Deduplicate by animeId keeping the most-recent watch entry per anime
+        return historyDao.getAllList()
+            .distinctBy { it.animeId }
+            .map { it.toAnimePreview() }
     }
 
     override suspend fun addToHistory(anime: AnimePreview, episode: Episode) {
