@@ -252,8 +252,8 @@ private fun LoggedInContent(
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
                 )
                 SectionHeader(
-                    title = "Избранное ${state.favorites.size}",
-                    actionLabel = "Все →",
+                    title = "Избранное",
+                    actionLabel = "Все",
                     onAction = onNavigateToFavorites,
                 )
             }
