@@ -78,10 +78,13 @@ class AuthRepositoryImpl @Inject constructor(
             // Server-side logout is best-effort; always clear local session
         }
         cookieJar.clear()
-        dataStore.edit { prefs ->
-            prefs.remove(KEY_USERNAME)
-            prefs.remove(KEY_USER_ID)
-        }
+        try {
+            dataStore.edit { prefs ->
+                prefs.remove(KEY_USERNAME)
+                prefs.remove(KEY_USER_ID)
+            }
+        } catch (_: Exception) { }
+        // Always emit false — even if dataStore.edit above failed
         _isLoggedInFlow.value = false
     }
 

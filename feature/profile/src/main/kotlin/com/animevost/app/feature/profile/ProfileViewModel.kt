@@ -105,10 +105,10 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 logoutUseCase()
-                _uiState.update {
-                    ProfileUiState()
-                }
-            } catch (_: Exception) { }
+            } catch (_: Exception) {
+                // Server-side logout is best-effort; always clear local state below
+            }
+            _uiState.update { ProfileUiState() }
         }
     }
 }
