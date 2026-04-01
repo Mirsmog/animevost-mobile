@@ -15,6 +15,8 @@ import com.animevost.app.core.domain.usecase.RateAnimeUseCase
 import com.animevost.app.core.domain.usecase.ToggleFavoriteUseCase
 import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.FavoriteRepository
+import com.animevost.app.core.domain.model.WatchProgress
+import com.animevost.app.core.domain.repository.WatchProgressRepository
 import com.animevost.app.core.domain.util.onError
 import com.animevost.app.core.domain.util.onSuccess
 import androidx.compose.ui.text.TextRange
@@ -51,6 +53,10 @@ data class DetailUiState(
     val downloadEpisodePending: Episode? = null,
     val downloadSources: List<VideoSource> = emptyList(),
     val isLoadingDownloadSources: Boolean = false,
+    // Watch progress
+    val watchedEpisodeIds: Set<String> = emptySet(),
+    val continueEpisode: Episode? = null,
+    val continuePositionMs: Long = 0L,
     // Episode pagination
     val episodeRangeStart: Int = 0,
 )
@@ -90,6 +96,7 @@ class DetailViewModel @Inject constructor(
     private val getCommentsUseCase: GetCommentsUseCase,
     private val addCommentUseCase: AddCommentUseCase,
     private val authRepository: AuthRepository,
+    private val watchProgressRepository: WatchProgressRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DetailUiState())
@@ -128,17 +135,35 @@ class DetailViewModel @Inject constructor(
         if (_uiState.value.isLoading) return
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null, animeUrl = url) }
-            getAnimeDetailUseCase(url)
-                .onSuccess { anime ->
-                    val isFav = favoriteRepository.isFavorite(anime.id)
-                    _uiState.update { it.copy(anime = anime, isFavorite = isFav, isLoading = false) }
-                    loadComments()
+            val result = getAnimeDetailUseCase(url)
+            result.onSuccess { anime ->
+                val isFav = favoriteRepository.isFavorite(anime.id)
+                _uiState.update { it.copy(anime = anime, isFavorite = isFav, isLoading = false) }
+                loadComments()
+            }
+            result.onError { _, msg ->
+                _uiState.update {
+                    it.copy(isLoading = false, error = msg ?: "Не удалось загрузить данные")
                 }
-                .onError { _, msg ->
-                    _uiState.update {
-                        it.copy(isLoading = false, error = msg ?: "Не удалось загрузить данные")
-                    }
-                }
+            }
+            // Load watch progress after anime is set (suspend call outside inline lambda)
+            val anime = _uiState.value.anime ?: return@launch
+            val allProgress = watchProgressRepository.getAllProgress(anime.id)
+            val watchedIds = allProgress
+                .filter { it.isCompleted }
+                .map { it.episodeVideoId }
+                .toSet()
+            val lastProgress = allProgress.maxByOrNull { it.updatedAt }
+            val continueEp = if (lastProgress != null && !lastProgress.isCompleted) {
+                anime.episodes.find { it.videoId == lastProgress.episodeVideoId }
+            } else null
+            _uiState.update {
+                it.copy(
+                    watchedEpisodeIds = watchedIds,
+                    continueEpisode = continueEp,
+                    continuePositionMs = if (continueEp != null) lastProgress?.positionMs ?: 0L else 0L,
+                )
+            }
         }
     }
 

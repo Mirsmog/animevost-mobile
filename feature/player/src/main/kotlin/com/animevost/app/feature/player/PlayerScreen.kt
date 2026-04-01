@@ -194,6 +194,15 @@ fun PlayerScreen(
         showAutoNext = false
     }
 
+    // Seek to saved resume position once the player becomes ready
+    LaunchedEffect(state.resumePositionMs) {
+        val resumeMs = state.resumePositionMs
+        if (resumeMs > 0L) {
+            exoPlayer.seekTo(resumeMs)
+            viewModel.onEvent(PlayerEvent.ResumeConsumed)
+        }
+    }
+
     // ── Player listener ──────────────────────────────────────────
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
@@ -210,18 +219,31 @@ fun PlayerScreen(
         }
         exoPlayer.addListener(listener)
         onDispose {
+            // Save final position before releasing
+            val pos = exoPlayer.currentPosition
+            val dur = exoPlayer.duration
+            if (pos > 0L) viewModel.onEvent(PlayerEvent.UpdateProgress(pos, dur))
             exoPlayer.removeListener(listener)
             exoPlayer.release()
         }
     }
 
-    // ── Position ticker (every 500 ms) ───────────────────────────
+    // ── Position ticker (every 500 ms) + progress save every 5 s ─
     LaunchedEffect(Unit) {
+        var saveCounter = 0
         while (true) {
             delay(500)
             currentPosition = exoPlayer.currentPosition
             val dur = exoPlayer.duration
             if (dur > 0) duration = dur
+            saveCounter++
+            if (saveCounter >= 10) { // every ~5 s
+                saveCounter = 0
+                val pos = exoPlayer.currentPosition
+                if (pos > 0L && dur > 0L) {
+                    viewModel.onEvent(PlayerEvent.UpdateProgress(pos, dur))
+                }
+            }
         }
     }
 
@@ -246,7 +268,7 @@ fun PlayerScreen(
             autoNextCountdown = i
         }
         if (showAutoNext) {
-            viewModel.onEvent(PlayerEvent.NextEpisode)
+            viewModel.onEvent(PlayerEvent.NextEpisode(exoPlayer.currentPosition, exoPlayer.duration))
             showAutoNext = false
         }
     }
@@ -476,7 +498,7 @@ fun PlayerScreen(
                 nextName = state.allEpisodes
                     .getOrNull(state.currentEpisodeIndex + 1)?.name ?: "",
                 onConfirm = {
-                    viewModel.onEvent(PlayerEvent.NextEpisode)
+                    viewModel.onEvent(PlayerEvent.NextEpisode(exoPlayer.currentPosition, exoPlayer.duration))
                     showAutoNext = false
                 },
                 onCancel = { showAutoNext = false },
@@ -528,8 +550,8 @@ fun PlayerScreen(
                 onPlayPause = {
                     if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
                 },
-                onPrevious = { viewModel.onEvent(PlayerEvent.PreviousEpisode) },
-                onNext = { viewModel.onEvent(PlayerEvent.NextEpisode) },
+                onPrevious = { viewModel.onEvent(PlayerEvent.PreviousEpisode(exoPlayer.currentPosition, exoPlayer.duration)) },
+                onNext = { viewModel.onEvent(PlayerEvent.NextEpisode(exoPlayer.currentPosition, exoPlayer.duration)) },
                 onSeekBack = {
                     exoPlayer.seekTo(maxOf(0L, exoPlayer.currentPosition - 10_000L))
                 },
