@@ -90,7 +90,6 @@ class HomeViewModel @Inject constructor(
             is HomeEvent.SelectSort         -> selectSort(event.sort)
             is HomeEvent.SelectType         -> selectType(event.type)
             HomeEvent.ToggleSearch          -> toggleSearch()
-            HomeEvent.SearchFocused         -> activateSearch()
             is HomeEvent.SearchQueryChanged -> onSearchQueryChanged(event.query)
             HomeEvent.SearchLoadMore        -> searchLoadMore()
         }
@@ -126,12 +125,6 @@ class HomeViewModel @Inject constructor(
     }
 
     // ── Search ────────────────────────────────────────────────────────────────
-
-    private fun activateSearch() {
-        if (!_uiState.value.isSearchActive) {
-            _uiState.update { it.copy(isSearchActive = true) }
-        }
-    }
 
     private fun toggleSearch() {
         val active = !_uiState.value.isSearchActive
