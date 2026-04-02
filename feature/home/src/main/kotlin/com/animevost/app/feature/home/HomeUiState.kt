@@ -41,6 +41,7 @@ sealed interface HomeEvent {
     data class SelectSort(val sort: SortOption) : HomeEvent
     data class SelectType(val type: AnimeType?) : HomeEvent
     data object ToggleSearch : HomeEvent
+    data object SearchFocused : HomeEvent
     data class SearchQueryChanged(val query: String) : HomeEvent
     data object SearchLoadMore : HomeEvent
 }

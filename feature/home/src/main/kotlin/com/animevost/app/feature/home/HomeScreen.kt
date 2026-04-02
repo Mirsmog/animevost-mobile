@@ -1,8 +1,13 @@
 package com.animevost.app.feature.home
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,7 +17,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -23,18 +27,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -43,13 +45,11 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -62,15 +62,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -86,18 +88,8 @@ import com.animevost.app.core.ui.components.HomeShimmer
 import com.animevost.app.core.ui.components.SortBottomSheet
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
-
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material3.Surface
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.res.painterResource
 import com.animevost.app.core.ui.R as UiR
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     onAnimeClick: (String) -> Unit,
@@ -105,118 +97,180 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
-    val context = LocalContext.current
-    val keyboardController = LocalSoftwareKeyboardController.current
-    val focusRequester = remember { FocusRequester() }
-
-    LaunchedEffect(state.isSearchActive) {
-        if (state.isSearchActive) focusRequester.requestFocus()
-    }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0),
-        topBar = {
-            TopAppBar(
-                title = {
-                    if (state.isSearchActive) {
-                        TextField(
-                            value = state.searchQuery,
-                            onValueChange = { viewModel.onEvent(HomeEvent.SearchQueryChanged(it)) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(end = 8.dp)
-                                .focusRequester(focusRequester),
-                            placeholder = { Text("Название аниме...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                            leadingIcon = {
-                                Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                            },
-                            trailingIcon = {
-                                if (state.searchQuery.isNotEmpty()) {
-                                    IconButton(onClick = { viewModel.onEvent(HomeEvent.SearchQueryChanged("")) }) {
-                                        Icon(Icons.Default.Close, "Очистить", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
-                                    }
-                                }
-                            },
-                            singleLine = true,
-                            shape = RoundedCornerShape(24.dp),
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                cursorColor = MaterialTheme.colorScheme.primary,
-                            ),
-                            textStyle = MaterialTheme.typography.bodyLarge,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = { keyboardController?.hide() }),
-                        )
-                    } else {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Image(
-                                painter = painterResource(id = UiR.drawable.animevost_logo),
-                                contentDescription = null,
-                                modifier = Modifier.size(38.dp),
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "AnimeVost",
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
-                },
-                actions = {
-                    if (state.isSearchActive) {
-                        IconButton(onClick = { viewModel.onEvent(HomeEvent.ToggleSearch) }) {
-                            Icon(Icons.Default.Close, "Закрыть поиск", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    } else {
-                        IconButton(onClick = { viewModel.onEvent(HomeEvent.ToggleSearch) }) {
-                            Icon(Icons.Default.Search, "Поиск", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
-            )
-        },
     ) { innerPadding ->
-        when {
-            state.isLoading && state.animeList.isEmpty() && !state.isSearchActive -> {
-                HomeShimmer(modifier = Modifier.padding(innerPadding))
-            }
-            state.error != null && state.animeList.isEmpty() && !state.isSearchActive -> {
-                ErrorState(
-                    message = state.error!!,
-                    onRetry = { viewModel.onEvent(HomeEvent.Refresh) },
-                    modifier = Modifier.padding(innerPadding),
-                )
-            }
-            else -> {
-                Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                    if (state.isSearchActive) {
-                        SearchContent(
-                            state = state,
-                            onAnimeClick = onAnimeClick,
-                            onLoadMore = { viewModel.onEvent(HomeEvent.SearchLoadMore) },
-                            onNavigateToFilteredList = onNavigateToFilteredList,
-                        )
-                    } else {
-                        CatalogContent(
-                            state = state,
-                            onAnimeClick = onAnimeClick,
-                            onSortSelected = { viewModel.onEvent(HomeEvent.SelectSort(it)) },
-                            onTypeSelected = { viewModel.onEvent(HomeEvent.SelectType(it)) },
-                            onLoadMore = { viewModel.onEvent(HomeEvent.LoadMore) },
-                            onRefresh = { viewModel.onEvent(HomeEvent.Refresh) },
-                            onNavigateToFilteredList = onNavigateToFilteredList,
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+        ) {
+            TopSearchBar(
+                isSearchActive = state.isSearchActive,
+                query = state.searchQuery,
+                onQueryChange = { viewModel.onEvent(HomeEvent.SearchQueryChanged(it)) },
+                onFocused = { viewModel.onEvent(HomeEvent.SearchFocused) },
+                onClose = { viewModel.onEvent(HomeEvent.ToggleSearch) },
+            )
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+            ) {
+                when {
+                    state.isLoading && state.animeList.isEmpty() && !state.isSearchActive -> HomeShimmer()
+                    state.error != null && state.animeList.isEmpty() && !state.isSearchActive -> {
+                        ErrorState(
+                            message = state.error!!,
+                            onRetry = { viewModel.onEvent(HomeEvent.Refresh) },
                         )
                     }
-
+                    state.isSearchActive -> SearchContent(
+                        state = state,
+                        onAnimeClick = onAnimeClick,
+                        onLoadMore = { viewModel.onEvent(HomeEvent.SearchLoadMore) },
+                        onNavigateToFilteredList = onNavigateToFilteredList,
+                    )
+                    else -> CatalogContent(
+                        state = state,
+                        onAnimeClick = onAnimeClick,
+                        onSortSelected = { viewModel.onEvent(HomeEvent.SelectSort(it)) },
+                        onTypeSelected = { viewModel.onEvent(HomeEvent.SelectType(it)) },
+                        onLoadMore = { viewModel.onEvent(HomeEvent.LoadMore) },
+                        onRefresh = { viewModel.onEvent(HomeEvent.Refresh) },
+                        onNavigateToFilteredList = onNavigateToFilteredList,
+                    )
                 }
             }
+        }
+    }
+}
+
+// ─── Permanent top search bar ─────────────────────────────────────────────────
+
+@Composable
+private fun TopSearchBar(
+    isSearchActive: Boolean,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onFocused: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(isSearchActive) {
+        if (isSearchActive) focusRequester.requestFocus()
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = 16.dp),
+    ) {
+        // Logo row — animates away when search is active
+        AnimatedVisibility(
+            visible = !isSearchActive,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut(),
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = 12.dp, bottom = 8.dp),
+            ) {
+                Image(
+                    painter = painterResource(UiR.drawable.animevost_logo),
+                    contentDescription = null,
+                    modifier = Modifier.size(30.dp),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "AnimeVost",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+
+        // Search field row — always visible
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(bottom = 10.dp),
+        ) {
+            AnimatedVisibility(
+                visible = isSearchActive,
+                enter = fadeIn(),
+                exit = fadeOut(),
+            ) {
+                IconButton(
+                    onClick = {
+                        keyboardController?.hide()
+                        onClose()
+                    },
+                    modifier = Modifier.padding(end = 4.dp),
+                ) {
+                    Icon(
+                        Icons.Default.ArrowBack,
+                        contentDescription = "Назад",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
+
+            TextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(focusRequester)
+                    .onFocusChanged { if (it.isFocused) onFocused() },
+                placeholder = {
+                    Text(
+                        "Искать аниме...",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
+                    )
+                },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { onQueryChange("") }) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Очистить",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                },
+                singleLine = true,
+                shape = RoundedCornerShape(12.dp),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    cursorColor = MaterialTheme.colorScheme.primary,
+                ),
+                textStyle = MaterialTheme.typography.bodyLarge,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { keyboardController?.hide() }),
+            )
         }
     }
 }
@@ -275,8 +329,17 @@ private fun CatalogContent(
             }
             if (state.isLoadingMore) {
                 item(key = "loading_more") {
-                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(modifier = Modifier.size(28.dp), color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 20.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(28.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            strokeWidth = 2.dp,
+                        )
                     }
                 }
             }
@@ -309,7 +372,11 @@ private fun SearchContent(
     when {
         state.isSearchLoading && state.searchResults.isEmpty() -> {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, strokeWidth = 3.dp, modifier = Modifier.size(36.dp))
+                CircularProgressIndicator(
+                    color = MaterialTheme.colorScheme.primary,
+                    strokeWidth = 3.dp,
+                    modifier = Modifier.size(36.dp),
+                )
             }
         }
 
@@ -318,10 +385,18 @@ private fun SearchContent(
             if (!hasNavData) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.Search, null, modifier = Modifier.size(56.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f))
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(56.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                        )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            text = if (state.searchQuery.isNotBlank() && state.searchQuery.trim().length < 4) "Введите минимум 4 символа" else "Введите название аниме",
+                            text = if (state.searchQuery.isNotBlank() && state.searchQuery.trim().length < 4)
+                                "Введите минимум 4 символа"
+                            else
+                                "Введите название аниме",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -353,7 +428,9 @@ private fun SearchContent(
                         }
                         item {
                             FlowRow(
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
@@ -398,12 +475,24 @@ private fun SearchContent(
 
         state.hasSearched && state.searchResults.isEmpty() -> {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(32.dp),
+                ) {
                     Text("😕", style = MaterialTheme.typography.headlineLarge)
                     Spacer(modifier = Modifier.height(12.dp))
-                    Text("Ничего не найдено", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "Ничего не найдено",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
                     Spacer(modifier = Modifier.height(6.dp))
-                    Text("По запросу «${state.searchQuery}» совпадений нет.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                    Text(
+                        "По запросу «${state.searchQuery}» совпадений нет.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
                 }
             }
         }
@@ -421,18 +510,39 @@ private fun SearchContent(
                 if (shouldLoadMore && state.canSearchLoadMore && !state.isSearchLoadingMore) onLoadMore()
             }
 
-            LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 80.dp),
+            ) {
                 item {
-                    Text("Результаты: ${state.searchResults.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                    Text(
+                        "Результаты: ${state.searchResults.size}",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
                 }
                 items(state.searchResults, key = { it.id }) { anime ->
                     AnimeCardHorizontal(anime = anime, onClick = { onAnimeClick(anime.url) })
-                    HorizontalDivider(modifier = Modifier.padding(start = 84.dp, end = 16.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 84.dp, end = 16.dp),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                    )
                 }
                 if (state.isSearchLoadingMore) {
                     item {
-                        Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp, modifier = Modifier.size(28.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(
+                                color = MaterialTheme.colorScheme.primary,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(28.dp),
+                            )
                         }
                     }
                 }
@@ -461,7 +571,6 @@ private fun FilterBar(
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // Type chips — horizontal scroll with soft right fade
         val fadeBrush = Brush.horizontalGradient(
             0.0f to Color.Black,
             0.88f to Color.Black,
@@ -478,14 +587,11 @@ private fun FilterBar(
             contentPadding = PaddingValues(start = 12.dp, end = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            // Section chips: Онгоинги, Анонсы
             item(key = "ongoing") {
                 FilterChip(
                     selected = false,
                     onClick = { onSectionClick("path", "ongoing/", "Онгоинги") },
-                    label = {
-                        Text("Онгоинги", style = MaterialTheme.typography.labelLarge)
-                    },
+                    label = { Text("Онгоинги", style = MaterialTheme.typography.labelLarge) },
                     shape = RoundedCornerShape(20.dp),
                     colors = FilterChipDefaults.filterChipColors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -502,9 +608,7 @@ private fun FilterBar(
                 FilterChip(
                     selected = false,
                     onClick = { onSectionClick("path", "preview/", "Анонсы") },
-                    label = {
-                        Text("Анонсы", style = MaterialTheme.typography.labelLarge)
-                    },
+                    label = { Text("Анонсы", style = MaterialTheme.typography.labelLarge) },
                     shape = RoundedCornerShape(20.dp),
                     colors = FilterChipDefaults.filterChipColors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -534,9 +638,9 @@ private fun FilterBar(
                     } else null,
                     shape = RoundedCornerShape(20.dp),
                     colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                        selectedLabelColor = MaterialTheme.colorScheme.primary,
-                        selectedLeadingIconColor = MaterialTheme.colorScheme.primary,
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = Color(0xFF111111),
+                        selectedLeadingIconColor = Color(0xFF111111),
                         containerColor = MaterialTheme.colorScheme.surfaceVariant,
                         labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     ),
@@ -544,25 +648,36 @@ private fun FilterBar(
                         enabled = true,
                         selected = isSelected,
                         borderColor = Color.Transparent,
-                        selectedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                        selectedBorderColor = Color.Transparent,
                     ),
                 )
             }
         }
 
-        // Sort button — circle icon
+        // Sort pill button showing current selection
         Surface(
             onClick = onSortClick,
-            shape = CircleShape,
+            shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier.padding(end = 12.dp).size(36.dp),
+            modifier = Modifier
+                .padding(end = 12.dp)
+                .height(32.dp),
         ) {
-            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 10.dp),
+            ) {
                 Icon(
-                    Icons.Filled.FilterList,
+                    Icons.Default.FilterList,
                     contentDescription = "Сортировка",
-                    modifier = Modifier.size(18.dp),
+                    modifier = Modifier.size(14.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    sortShortName(selectedSort, sortAscending),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -575,6 +690,17 @@ private fun typeShortName(type: AnimeType) = when (type) {
     else -> type.displayName
 }
 
+private fun sortShortName(sort: SortOption, ascending: Boolean): String {
+    val arrow = if (ascending) "↑" else "↓"
+    return when (sort) {
+        SortOption.DATE     -> "Дата $arrow"
+        SortOption.RATING   -> "Рейт $arrow"
+        SortOption.VIEWS    -> "Просм $arrow"
+        SortOption.COMMENTS -> "Комм $arrow"
+        SortOption.TITLE    -> "А-Я $arrow"
+    }
+}
+
 // ─── 2-column card row ────────────────────────────────────────────────────────
 
 @Composable
@@ -583,7 +709,9 @@ private fun AnimeGridRow(
     onAnimeClick: (String) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 3.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         items.forEach { anime ->
