@@ -4,7 +4,6 @@ build/
 
 # Gradle
 .gradle/
-gradle/wrapper/gradle-wrapper.jar
 local.properties
 
 # Android Studio / IntelliJ IDEA
@@ -27,3 +26,4 @@ local.properties
 # Google Services
 google-services.json
 todo.md
+animevost.jks

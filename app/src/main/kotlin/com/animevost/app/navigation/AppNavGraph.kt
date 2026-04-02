@@ -27,7 +27,6 @@ import androidx.navigation.navArgument
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.animevost.app.MainViewModel
 import com.animevost.app.feature.auth.LoginScreen
-import com.animevost.app.feature.auth.RegisterScreen
 import com.animevost.app.feature.catalog.FilteredListScreen
 import com.animevost.app.feature.detail.DetailScreen
 import com.animevost.app.feature.home.HomeScreen
@@ -190,21 +189,6 @@ fun AppNavGraph() {
             composable(NavRoutes.LOGIN) {
                 LoginScreen(
                     onLoginSuccess = { navController.popBackStack() },
-                    onNavigateToRegister = {
-                        navController.navigate(NavRoutes.REGISTER) {
-                            popUpTo(NavRoutes.LOGIN) { inclusive = true }
-                        }
-                    },
-                )
-            }
-            composable(NavRoutes.REGISTER) {
-                RegisterScreen(
-                    onRegisterSuccess = { navController.popBackStack() },
-                    onNavigateToLogin = {
-                        navController.navigate(NavRoutes.LOGIN) {
-                            popUpTo(NavRoutes.REGISTER) { inclusive = true }
-                        }
-                    },
                 )
             }
         }
