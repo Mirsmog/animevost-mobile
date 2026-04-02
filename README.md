@@ -4,6 +4,13 @@
 
 > Проект находится в активной разработке. Некоторые функции ещё не реализованы.
 
+<div align="center">
+  <img src="docs/screenshots/screen_4.jpg" width="22%">
+  <img src="docs/screenshots/screen_2.jpg" width="22%">
+  <img src="docs/screenshots/screen_1.jpg" width="22%">
+  <img src="docs/screenshots/screen_3.jpg" width="22%">
+</div>
+
 ## Возможности
 
 - Каталог аниме с сортировкой и фильтрацией по типу, жанру и году
