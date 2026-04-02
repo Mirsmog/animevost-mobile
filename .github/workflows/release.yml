@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Decode keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > ${{ github.workspace }}/keystore.jks
+
+      - name: Build release APKs
+        run: ./gradlew assembleRelease
+        env:
+          SIGNING_STORE_FILE: ${{ github.workspace }}/keystore.jks
+          SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Rename APKs
+        run: |
+          VERSION="${{ github.ref_name }}"
+          for apk in app/build/outputs/apk/release/*.apk; do
+            abi=$(basename "$apk" | sed 's/^app-//' | sed 's/-release\.apk$//')
+            mv "$apk" "app/build/outputs/apk/release/AnimeVost-${VERSION}-${abi}.apk"
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: AnimeVost ${{ github.ref_name }}
+          files: app/build/outputs/apk/release/AnimeVost-*.apk
+          body: |
+            ## Установка
+
+            Выберите APK под своё устройство:
+
+            | Файл | Устройство |
+            |---|---|
+            | `arm64-v8a` | Большинство современных Android-устройств |
+            | `armeabi-v7a` | Старые 32-битные устройства |
+            | `x86_64` | Эмуляторы |
+            | `universal` | Если не знаете какой выбрать |
+
+            > Перед установкой разрешите установку из неизвестных источников в настройках устройства.
