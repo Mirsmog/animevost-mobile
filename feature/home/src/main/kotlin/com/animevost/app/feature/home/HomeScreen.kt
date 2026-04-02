@@ -1,8 +1,13 @@
 package com.animevost.app.feature.home
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,7 +27,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -53,12 +60,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -346,93 +355,12 @@ private fun SearchContent(
         !state.hasSearched -> {
             val hasNavData = state.genres.isNotEmpty() || state.years.isNotEmpty()
             if (!hasNavData) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Default.Search,
-                            contentDescription = null,
-                            modifier = Modifier.size(56.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = if (state.searchQuery.isNotBlank() && state.searchQuery.trim().length < 4)
-                                "Введите минимум 4 символа"
-                            else
-                                "Введите название аниме",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                SearchHint(query = state.searchQuery)
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 80.dp),
-                ) {
-                    if (state.searchQuery.isNotBlank() && state.searchQuery.trim().length < 4) {
-                        item {
-                            Text(
-                                "Введите минимум 4 символа",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            )
-                        }
-                    }
-                    if (state.genres.isNotEmpty()) {
-                        item {
-                            Text(
-                                "Жанры",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 6.dp),
-                            )
-                        }
-                        item {
-                            FlowRow(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                state.genres.forEach { genre ->
-                                    SuggestionChip(
-                                        onClick = { onNavigateToFilteredList("genre", genre.url, genre.name) },
-                                        label = { Text(genre.name, style = MaterialTheme.typography.labelLarge) },
-                                        shape = RoundedCornerShape(16.dp),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    if (state.years.isNotEmpty()) {
-                        item {
-                            Text(
-                                "Год",
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 6.dp),
-                            )
-                        }
-                        item {
-                            LazyRow(
-                                contentPadding = PaddingValues(horizontal = 12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.fillMaxWidth(),
-                            ) {
-                                items(state.years) { year ->
-                                    SuggestionChip(
-                                        onClick = { onNavigateToFilteredList("year", year, year) },
-                                        label = { Text(year, style = MaterialTheme.typography.labelLarge) },
-                                        shape = RoundedCornerShape(16.dp),
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+                SearchBrowseContent(
+                    state = state,
+                    onNavigateToFilteredList = onNavigateToFilteredList,
+                )
             }
         }
 
@@ -479,12 +407,23 @@ private fun SearchContent(
                 contentPadding = PaddingValues(bottom = 80.dp),
             ) {
                 item {
-                    Text(
-                        "Результаты: ${state.searchResults.size}",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(4.dp, 14.dp)
+                                .clip(RoundedCornerShape(2.dp))
+                                .background(MaterialTheme.colorScheme.primary),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Результаты: ${state.searchResults.size}",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 }
                 items(state.searchResults, key = { it.id }) { anime ->
                     AnimeCardHorizontal(anime = anime, onClick = { onAnimeClick(anime.url) })
@@ -508,6 +447,211 @@ private fun SearchContent(
                     }
                 }
             }
+        }
+    }
+}
+
+// ─── Search: empty hint ───────────────────────────────────────────────────────
+
+@Composable
+private fun SearchHint(query: String) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                Icons.Default.Search,
+                contentDescription = null,
+                modifier = Modifier.size(56.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = if (query.isNotBlank() && query.trim().length < 4)
+                    "Введите минимум 4 символа"
+                else
+                    "Введите название аниме",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+// ─── Search: browse genres / years with tabs ──────────────────────────────────
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SearchBrowseContent(
+    state: HomeUiState,
+    onNavigateToFilteredList: (String, String, String) -> Unit,
+) {
+    val hasBoth = state.genres.isNotEmpty() && state.years.isNotEmpty()
+    var selectedTab by remember { mutableIntStateOf(0) }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Short-query warning
+        if (state.searchQuery.isNotBlank() && state.searchQuery.trim().length < 4) {
+            Text(
+                "Введите минимум 4 символа",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
+
+        // iOS-style segmented control — only when both data sets are available
+        if (hasBoth) {
+            SearchSegmentedControl(
+                tabs = listOf("Жанры", "Годы"),
+                selectedIndex = selectedTab,
+                onTabSelected = { selectedTab = it },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            )
+        }
+
+        // Animated tab content
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            AnimatedContent(
+                targetState = selectedTab,
+                transitionSpec = {
+                    val dir = if (targetState > initialState) 1 else -1
+                    slideInHorizontally { it * dir } togetherWith slideOutHorizontally { -it * dir }
+                },
+                modifier = Modifier.fillMaxSize(),
+                label = "browse_tab",
+            ) { tab ->
+                val showGenres = !hasBoth || tab == 0
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(bottom = 80.dp),
+                ) {
+                    if (showGenres && state.genres.isNotEmpty()) {
+                        if (!hasBoth) {
+                            BrowseSectionHeader("Жанры")
+                        }
+                        FlowRow(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            state.genres.forEach { genre ->
+                                GenreBrowseChip(
+                                    name = genre.name,
+                                    onClick = { onNavigateToFilteredList("genre", genre.url, genre.name) },
+                                )
+                            }
+                        }
+                    }
+                    if (!showGenres && state.years.isNotEmpty()) {
+                        if (!hasBoth) {
+                            BrowseSectionHeader("Год выхода")
+                        }
+                        FlowRow(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            state.years.forEach { year ->
+                                YearBrowseTile(
+                                    year = year,
+                                    onClick = { onNavigateToFilteredList("year", year, year) },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchSegmentedControl(
+    tabs: List<String>,
+    selectedIndex: Int,
+    onTabSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(3.dp),
+    ) {
+        tabs.forEachIndexed { index, title ->
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        if (selectedIndex == index) MaterialTheme.colorScheme.surface
+                        else Color.Transparent,
+                    )
+                    .clickable { onTabSelected(index) }
+                    .padding(vertical = 8.dp),
+            ) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (selectedIndex == index) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (selectedIndex == index)
+                        MaterialTheme.colorScheme.onSurface
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BrowseSectionHeader(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
+private fun GenreBrowseChip(name: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Text(
+            name,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun YearBrowseTile(year: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.width(72.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 10.dp)) {
+            Text(
+                year,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
         }
     }
 }
