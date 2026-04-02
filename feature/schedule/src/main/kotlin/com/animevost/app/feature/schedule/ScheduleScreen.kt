@@ -5,23 +5,20 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -30,9 +27,11 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -76,20 +75,35 @@ fun ScheduleScreen(
                 onDaySelected = { viewModel.onEvent(ScheduleEvent.SelectDay(it)) },
             )
 
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+
             when {
-                state.isLoading -> {
-                    LoadingState()
-                }
-                state.error != null -> {
-                    ErrorState(
-                        message = state.error!!,
-                        onRetry = { viewModel.onEvent(ScheduleEvent.Refresh) },
-                    )
-                }
-                state.scheduleItems.isEmpty() -> {
-                    EmptyScheduleState(dayName = state.selectedDay.fullName)
-                }
+                state.isLoading -> LoadingState()
+                state.error != null -> ErrorState(
+                    message = state.error!!,
+                    onRetry = { viewModel.onEvent(ScheduleEvent.Refresh) },
+                )
+                state.scheduleItems.isEmpty() -> EmptyScheduleState(state.selectedDay.fullName)
                 else -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = state.selectedDay.fullName,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Text(
+                            text = "${state.scheduleItems.size} аниме",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     ScheduleList(
                         items = state.scheduleItems,
                         onItemClick = onAnimeClick,
@@ -105,59 +119,62 @@ private fun DaySelector(
     selectedDay: DayTab,
     onDaySelected: (DayTab) -> Unit,
 ) {
-    LazyRow(
-        modifier = Modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    val today = remember { DayTab.fromToday() }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 10.dp),
     ) {
-        items(DayTab.entries) { day ->
-            val isSelected = day == selectedDay
-            val isToday = day == DayTab.fromToday()
-
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(
-                            when {
-                                isSelected -> MaterialTheme.colorScheme.primary
-                                isToday -> MaterialTheme.colorScheme.primaryContainer
-                                else -> MaterialTheme.colorScheme.surfaceVariant
-                            },
-                        )
-                        .clickable { onDaySelected(day) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = day.shortName,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
-                        color = when {
-                            isSelected -> MaterialTheme.colorScheme.onPrimary
-                            isToday -> MaterialTheme.colorScheme.onPrimaryContainer
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                    // Dot inside circle at bottom-center
-                    if (isToday) {
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = 5.dp)
-                                .size(5.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (isSelected) MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
-                                    else MaterialTheme.colorScheme.primary
-                                ),
-                        )
-                    }
-                }
-            }
+        DayTab.entries.forEach { day ->
+            DayChip(
+                day = day,
+                isSelected = day == selectedDay,
+                isToday = day == today,
+                onClick = { onDaySelected(day) },
+                modifier = Modifier.weight(1f),
+            )
         }
+    }
+}
+
+@Composable
+private fun DayChip(
+    day: DayTab,
+    isSelected: Boolean,
+    isToday: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .clip(MaterialTheme.shapes.medium)
+            .clickable { onClick() }
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Text(
+            text = day.shortName,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+            color = when {
+                isSelected -> MaterialTheme.colorScheme.primary
+                isToday -> MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            },
+        )
+        Box(
+            modifier = Modifier
+                .size(5.dp)
+                .clip(CircleShape)
+                .background(
+                    when {
+                        isSelected -> MaterialTheme.colorScheme.primary
+                        isToday -> MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                        else -> Color.Transparent
+                    },
+                ),
+        )
     }
 }
 
@@ -166,62 +183,62 @@ private fun ScheduleList(
     items: List<ScheduleItem>,
     onItemClick: (String) -> Unit,
 ) {
-    LazyColumn(
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        items(items, key = { it.url }) { item ->
-            ScheduleItemCard(
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        itemsIndexed(items, key = { _, item -> item.url }) { index, item ->
+            ScheduleItemRow(
                 item = item,
                 onClick = { onItemClick(item.url) },
             )
+            if (index < items.lastIndex) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(start = 82.dp),
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun ScheduleItemCard(
+private fun ScheduleItemRow(
     item: ScheduleItem,
     onClick: () -> Unit,
 ) {
-    Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        shape = RoundedCornerShape(12.dp),
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (item.time.isNotBlank()) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                ) {
-                    Text(
-                        text = item.time,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-            }
+        Text(
+            text = item.time.ifBlank { "—" },
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = if (item.time.isNotBlank()) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.outline
+            },
+            modifier = Modifier.width(48.dp),
+        )
 
-            Text(
-                text = item.title,
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-        }
+        Text(
+            text = item.title,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -231,14 +248,16 @@ private fun EmptyScheduleState(dayName: String) {
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             Text(
                 text = "📅",
                 style = MaterialTheme.typography.headlineLarge,
             )
-            Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = "Нет аниме на $dayName",
+                text = "На $dayName ничего нет",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

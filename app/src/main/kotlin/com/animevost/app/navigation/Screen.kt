@@ -39,7 +39,6 @@ object NavRoutes {
     const val ANIME_DETAIL = "anime_detail/{url}"
     const val PLAYER = "player/{videoId}/{episodeName}/{animeUrl}"
     const val LOGIN = "login"
-    const val REGISTER = "register"
 
     fun filteredList(filterType: String, filterValue: String, filterLabel: String): String =
         "filtered_list/$filterType/${Uri.encode(filterValue)}/${Uri.encode(filterLabel)}"
