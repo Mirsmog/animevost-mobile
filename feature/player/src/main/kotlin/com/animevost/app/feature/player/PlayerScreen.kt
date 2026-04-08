@@ -6,6 +6,7 @@ import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.view.WindowManager
 import androidx.annotation.OptIn
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -14,6 +15,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -36,6 +38,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -71,6 +74,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -98,9 +103,16 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import com.animevost.app.core.domain.model.SkipSegment
 import com.animevost.app.core.domain.model.SkipType
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 private enum class SeekSide { BACK, FORWARD }
 
@@ -124,9 +136,14 @@ fun PlayerScreen(
 
     // ── UI state ─────────────────────────────────────────────────
     var controlsVisible by remember { mutableStateOf(true) }
-    var seekAnimSide by remember { mutableStateOf<SeekSide?>(null) }
     var showSeekPreview by remember { mutableStateOf(false) }
     var seekPreviewMs by remember { mutableLongStateOf(0L) }
+
+    // ── YouTube-style accumulated seek ───────────────────────────
+    val seekScope = rememberCoroutineScope()
+    // Signed: positive = forward, negative = backward
+    var seekAccum by remember { mutableLongStateOf(0L) }
+    var seekJob by remember { mutableStateOf<Job?>(null) }
 
     // ── Auto-next ────────────────────────────────────────────────
     var showAutoNext by remember { mutableStateOf(false) }
@@ -134,6 +151,11 @@ fun PlayerScreen(
 
     // ── Speed boost (tap + hold) ────────────────────────────────
     var isSpeedBoosting by remember { mutableStateOf(false) }
+
+    // ── Speed lock (persistent speed without holding) ─────────
+    var isSpeedLocked by remember { mutableStateOf(false) }
+    var lockedSpeed by remember { mutableFloatStateOf(2.0f) }
+    var showSpeedPopup by remember { mutableStateOf(false) }
 
     // ── Skip segment state ───────────────────────────────────
     val activeSkip = state.skipSegments.firstOrNull { seg ->
@@ -255,11 +277,6 @@ fun PlayerScreen(
         }
     }
 
-    // ── Seek animation dismiss (600 ms) ──────────────────────────
-    LaunchedEffect(seekAnimSide) {
-        if (seekAnimSide != null) { delay(600); seekAnimSide = null }
-    }
-
     // ── Auto-next countdown ──────────────────────────────────────
     LaunchedEffect(showAutoNext) {
         if (!showAutoNext) return@LaunchedEffect
@@ -307,7 +324,7 @@ fun PlayerScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(Unit) {
+                .pointerInput(isSpeedLocked, lockedSpeed) {
                     kotlinx.coroutines.coroutineScope {
                         // Tap + hold = 2x speed / double-tap = seek ±10s / single-tap = toggle
                         launch {
@@ -326,18 +343,24 @@ fun PlayerScreen(
                                             } != null
 
                                         if (!releasedQuickly) {
-                                            isSpeedBoosting = true
-                                            exoPlayer.setPlaybackParameters(
-                                                PlaybackParameters(2.0f),
-                                            )
-                                            haptic.performHapticFeedback(
-                                                HapticFeedbackType.LongPress,
-                                            )
-                                            tryAwaitRelease()
-                                            isSpeedBoosting = false
-                                            exoPlayer.setPlaybackParameters(
-                                                PlaybackParameters(1.0f),
-                                            )
+                                            if (!isSpeedLocked) {
+                                                isSpeedBoosting = true
+                                                exoPlayer.setPlaybackParameters(
+                                                    PlaybackParameters(2.0f),
+                                                )
+                                                haptic.performHapticFeedback(
+                                                    HapticFeedbackType.LongPress,
+                                                )
+                                                tryAwaitRelease()
+                                                isSpeedBoosting = false
+                                                exoPlayer.setPlaybackParameters(
+                                                    PlaybackParameters(
+                                                        if (isSpeedLocked) lockedSpeed else 1.0f
+                                                    ),
+                                                )
+                                            } else {
+                                                tryAwaitRelease()
+                                            }
                                         }
                                     } else {
                                         tryAwaitRelease()
@@ -354,15 +377,18 @@ fun PlayerScreen(
                                     lastTapUpMs = 0L
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     if (offset.x < size.width / 2) {
-                                        exoPlayer.seekTo(
-                                            maxOf(0L, exoPlayer.currentPosition - 10_000L),
-                                        )
-                                        seekAnimSide = SeekSide.BACK
+                                        seekAccum -= 10_000L
                                     } else {
+                                        seekAccum += 10_000L
+                                    }
+                                    seekJob?.cancel()
+                                    seekJob = seekScope.launch {
+                                        delay(600)
+                                        val accum = seekAccum
                                         exoPlayer.seekTo(
-                                            minOf(duration, exoPlayer.currentPosition + 10_000L),
+                                            (exoPlayer.currentPosition + accum).coerceIn(0L, duration)
                                         )
-                                        seekAnimSide = SeekSide.FORWARD
+                                        seekAccum = 0L
                                     }
                                 },
                             )
@@ -405,15 +431,17 @@ fun PlayerScreen(
                 },
         )
 
-        // ── Seek ±10 s pill overlays ─────────────────────────────
+        // ── Seek overlays ────────────────────────────────────────
         SeekAnimOverlay(
-            visible = seekAnimSide == SeekSide.BACK,
+            visible = seekAccum < 0,
             isForward = false,
+            seekMs = -seekAccum,
             modifier = Modifier.align(Alignment.CenterStart),
         )
         SeekAnimOverlay(
-            visible = seekAnimSide == SeekSide.FORWARD,
+            visible = seekAccum > 0,
             isForward = true,
+            seekMs = seekAccum,
             modifier = Modifier.align(Alignment.CenterEnd),
         )
 
@@ -438,20 +466,35 @@ fun PlayerScreen(
             }
         }
 
-        // ── Speed boost indicator ────────────────────────────────
+        // ── Speed boost / lock indicator ────────────────────────
         AnimatedVisibility(
-            visible = isSpeedBoosting,
+            visible = isSpeedBoosting || isSpeedLocked,
             enter = fadeIn(tween(100)),
             exit = fadeOut(tween(200)),
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp),
         ) {
-            Box(
+            Row(
                 modifier = Modifier
                     .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { showSpeedPopup = true }
                     .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                if (isSpeedLocked) {
+                    Icon(
+                        Icons.Filled.Lock,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
                 Text(
-                    text = "▶▶ 2x",
+                    text = if (isSpeedBoosting && !isSpeedLocked) "▶▶ 2x"
+                           else formatSpeed(lockedSpeed),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -564,17 +607,48 @@ fun PlayerScreen(
                 onSelectQuality = { viewModel.onEvent(PlayerEvent.SelectQuality(it)) },
             )
         }
+
+        // ── Speed picker popup (on top of everything) ────────────
+        if (showSpeedPopup) {
+            SpeedPickerPopup(
+                selectedSpeed = lockedSpeed,
+                isLocked = isSpeedLocked,
+                onSpeedSelect = { speed ->
+                    lockedSpeed = speed
+                    if (isSpeedLocked) {
+                        exoPlayer.setPlaybackParameters(PlaybackParameters(speed))
+                    }
+                },
+                onLockToggle = {
+                    if (isSpeedLocked) {
+                        isSpeedLocked = false
+                        exoPlayer.setPlaybackParameters(PlaybackParameters(1.0f))
+                    } else {
+                        isSpeedLocked = true
+                        exoPlayer.setPlaybackParameters(PlaybackParameters(lockedSpeed))
+                    }
+                    showSpeedPopup = false
+                },
+                onDismiss = { showSpeedPopup = false },
+            )
+        }
     }
 }
 
-// ─── Seek ±10 s pill animation ────────────────────────────────────────────────
+// ─── Seek pill animation (YouTube-style accumulated) ─────────────────────────
 
 @Composable
 private fun SeekAnimOverlay(
     visible: Boolean,
     isForward: Boolean,
+    seekMs: Long,
     modifier: Modifier = Modifier,
 ) {
+    // Keep last non-zero value so the fade-out doesn't flash "0 сек"
+    var displaySecs by remember { mutableIntStateOf(0) }
+    val secs = (seekMs / 1000).toInt()
+    if (secs > 0) displaySecs = secs
+
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(tween(80)),
@@ -602,12 +676,21 @@ private fun SeekAnimOverlay(
                     tint = Color.White,
                     modifier = Modifier.size(40.dp),
                 )
-                Text(
-                    text = if (isForward) "+10 сек" else "−10 сек",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                )
+                AnimatedContent(
+                    targetState = displaySecs,
+                    transitionSpec = {
+                        slideInVertically { -it } + fadeIn(tween(120)) togetherWith
+                            slideOutVertically { it } + fadeOut(tween(80))
+                    },
+                    label = "seek_secs",
+                ) { s ->
+                    Text(
+                        text = if (isForward) "+${s} сек" else "−${s} сек",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
         }
     }
@@ -989,6 +1072,137 @@ private fun SkipButton(
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.Bold,
         )
+    }
+}
+
+// ─── Speed picker popup ───────────────────────────────────────────────────────
+
+private val speedOptions = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f, 4.0f, 5.0f)
+
+private fun formatSpeed(speed: Float): String =
+    if (speed % 1f == 0f) "${speed.toInt()}x" else "${speed}x"
+
+@Composable
+private fun SpeedPickerPopup(
+    selectedSpeed: Float,
+    isLocked: Boolean,
+    onSpeedSelect: (Float) -> Unit,
+    onLockToggle: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val initialIndex = speedOptions.indexOf(selectedSpeed).coerceAtLeast(0)
+    var sliderIndex by remember(selectedSpeed) { mutableFloatStateOf(initialIndex.toFloat()) }
+    val currentSpeed = speedOptions[sliderIndex.roundToInt()]
+
+    // Fullscreen overlay — no Dialog window, so centering is always exact
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.55f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onDismiss,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .widthIn(min = 260.dp, max = 380.dp)
+                .background(Color(0xF0111118), RoundedCornerShape(20.dp))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {},
+                )
+                .padding(horizontal = 24.dp, vertical = 20.dp),
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = "Скорость",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = Color.White.copy(alpha = 0.5f),
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = formatSpeed(currentSpeed),
+                    style = MaterialTheme.typography.displaySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Slider(
+                    value = sliderIndex,
+                    onValueChange = { raw ->
+                        sliderIndex = raw
+                        onSpeedSelect(speedOptions[raw.roundToInt()])
+                    },
+                    valueRange = 0f..(speedOptions.size - 1).toFloat(),
+                    steps = speedOptions.size - 2,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = SliderDefaults.colors(
+                        thumbColor = MaterialTheme.colorScheme.primary,
+                        activeTrackColor = MaterialTheme.colorScheme.primary,
+                        inactiveTrackColor = Color.White.copy(alpha = 0.2f),
+                        activeTickColor = Color.Transparent,
+                        inactiveTickColor = Color.Transparent,
+                    ),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = formatSpeed(speedOptions.first()),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.4f),
+                    )
+                    Text(
+                        text = formatSpeed(speedOptions.last()),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.4f),
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            if (isLocked) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                            else Color.White.copy(alpha = 0.05f),
+                            RoundedCornerShape(10.dp),
+                        )
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onLockToggle,
+                        )
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Icon(
+                        imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                        contentDescription = null,
+                        tint = if (isLocked) MaterialTheme.colorScheme.primary
+                               else Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.size(20.dp),
+                    )
+                    Text(
+                        text = if (isLocked) "Отключить закрепление" else "Закрепить скорость",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (isLocked) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (isLocked) MaterialTheme.colorScheme.primary
+                                else Color.White.copy(alpha = 0.6f),
+                    )
+                }
+            }
+        }
     }
 }
 
