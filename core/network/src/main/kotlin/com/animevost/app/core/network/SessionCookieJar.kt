@@ -50,6 +50,29 @@ class SessionCookieJar @Inject constructor(
         }.find { it.name == name && it.expiresAt >= now }?.value
     }
 
+    /**
+     * Returns the value of cookie [name] from ANY animevost or mirror domain.
+     * Needed because login may happen via a mirror (e.g. v13.vost.pw) and the
+     * cookie is saved under that domain, not under "animevost.org".
+     */
+    fun getCookieValueAnyAnimevost(name: String): String? = synchronized(lock) {
+        val now = System.currentTimeMillis()
+        val domains = memoryCache.keys.filter { d ->
+            d.contains("animevost") || d.contains("vost.pw")
+        }.ifEmpty {
+            // Nothing in memory — try loading primary domain from storage
+            listOf("animevost.org")
+        }
+        for (domain in domains) {
+            val cookies = memoryCache.getOrPut(domain) {
+                storage.loadCookies(domain).toMutableList()
+            }
+            val value = cookies.find { it.name == name && it.expiresAt >= now }?.value
+            if (value != null) return value
+        }
+        return null
+    }
+
     fun clear() {
         memoryCache.clear()
         storage.clearCookies()

@@ -34,7 +34,7 @@ class AuthRepositoryImpl @Inject constructor(
 
     // Initialise synchronously from the cookie jar so the first emission is correct
     private val _isLoggedInFlow = MutableStateFlow(
-        cookieJar.getCookieValue("animevost.org", "dle_user_id")
+        cookieJar.getCookieValueAnyAnimevost("dle_user_id")
             .let { id -> id != null && id != "deleted" },
     )
     override val isLoggedInFlow: Flow<Boolean> = _isLoggedInFlow.asStateFlow()
@@ -44,7 +44,7 @@ class AuthRepositoryImpl @Inject constructor(
         if (body.contains("Ошибка авторизации") || body.contains("berrors")) {
             throw IllegalArgumentException("Неверный логин или пароль")
         }
-        val userId = cookieJar.getCookieValue("animevost.org", "dle_user_id")
+        val userId = cookieJar.getCookieValueAnyAnimevost("dle_user_id")
             ?.toIntOrNull() ?: 0
         dataStore.edit { prefs ->
             prefs[KEY_USERNAME] = username
@@ -92,7 +92,7 @@ class AuthRepositoryImpl @Inject constructor(
         val username = dataStore.data
             .map { it[KEY_USERNAME] }
             .firstOrNull() ?: return null
-        val cookieUserId = cookieJar.getCookieValue("animevost.org", "dle_user_id")
+        val cookieUserId = cookieJar.getCookieValueAnyAnimevost("dle_user_id")
         if (cookieUserId == null || cookieUserId == "deleted") return null
         val userId = dataStore.data
             .map { it[KEY_USER_ID] }
