@@ -1,17 +1,16 @@
 package com.animevost.app.core.network.parser
 
 import com.animevost.app.core.domain.model.AnimePreview
-import com.animevost.app.core.network.DleEndpoints
+import com.animevost.app.core.network.EndpointResolver
 import org.jsoup.Jsoup
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
-class FavoritesParser @Inject constructor() {
+class FavoritesParser @Inject constructor(private val resolver: EndpointResolver) {
 
     fun parse(html: String): List<AnimePreview> {
-        // Pass BASE_URL so that absUrl() resolves relative src/href to absolute URLs
-        val doc = Jsoup.parse(html, DleEndpoints.BASE_URL)
+        val doc = Jsoup.parse(html, resolver.currentBaseUrl)
         // Each user favorite is wrapped in <div class="shortstory"> which contains
         // <a class="shortstoryShare" id="fav-id-{id}"> — use this as the authoritative source
         // to avoid picking up unrelated links (nav menu, "recent" sections, etc.)

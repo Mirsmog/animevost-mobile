@@ -5,6 +5,7 @@ import com.animevost.app.core.domain.model.AnimeType
 import com.animevost.app.core.domain.model.Genre
 import com.animevost.app.core.domain.model.RelatedSeries
 import com.animevost.app.core.network.DleEndpoints
+import com.animevost.app.core.network.EndpointResolver
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -12,6 +13,7 @@ import javax.inject.Inject
 
 class AnimeDetailParser @Inject constructor(
     private val episodeParser: EpisodeParser,
+    private val resolver: EndpointResolver,
 ) {
 
     companion object {
@@ -34,7 +36,7 @@ class AnimeDetailParser @Inject constructor(
     }
 
     fun parse(html: String, url: String = ""): AnimeDetail {
-        val doc = Jsoup.parse(html, DleEndpoints.BASE_URL)
+        val doc = Jsoup.parse(html, resolver.currentBaseUrl)
         val story = doc.selectFirst(SHORT_STORY) ?: doc
 
         val rawTitle = story.selectFirst(STORY_HEAD_H1)?.text()?.trim().orEmpty()
@@ -43,7 +45,7 @@ class AnimeDetailParser @Inject constructor(
         val content = story.selectFirst(STORY_CONTENT) ?: story
 
         val posterUrl = content.selectFirst("img")?.let { img ->
-            img.absUrl("src").ifEmpty { AnimeListParser.resolveUrl(img.attr("src")) }
+            img.absUrl("src").ifEmpty { AnimeListParser.resolveUrl(img.attr("src"), resolver.currentBaseUrl) }
         }.orEmpty()
 
         val year = extractField(content, "Год выхода")
@@ -133,7 +135,7 @@ class AnimeDetailParser @Inject constructor(
                     Genre(
                         id = 0,
                         name = a.text().trim(),
-                        url = a.absUrl("href").ifEmpty { AnimeListParser.resolveUrl(a.attr("href")) },
+                        url = a.absUrl("href").ifEmpty { AnimeListParser.resolveUrl(a.attr("href"), resolver.currentBaseUrl) },
                     )
                 }
             }
