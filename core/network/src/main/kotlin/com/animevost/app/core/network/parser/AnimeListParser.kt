@@ -3,14 +3,15 @@ package com.animevost.app.core.network.parser
 import com.animevost.app.core.domain.model.AnimeListResult
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.network.DleEndpoints
+import com.animevost.app.core.network.EndpointResolver
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import javax.inject.Inject
 
-class AnimeListParser @Inject constructor() {
+class AnimeListParser @Inject constructor(private val resolver: EndpointResolver) {
 
     fun parse(html: String): AnimeListResult {
-        val doc = Jsoup.parse(html, DleEndpoints.BASE_URL)
+        val doc = Jsoup.parse(html, resolver.currentBaseUrl)
         val items = doc.select(SHORT_STORY).mapNotNull { block -> parseBlock(block) }
 
         val currentPage = doc.select(ACTIVE_PAGE_SELECTOR)
@@ -43,7 +44,7 @@ class AnimeListParser @Inject constructor() {
 
         val img = block.selectFirst(STORY_CONTENT_IMG)
         val posterUrl = img?.let {
-            it.absUrl("src").ifEmpty { resolveUrl(it.attr("src")) }
+            it.absUrl("src").ifEmpty { resolveUrl(it.attr("src"), resolver.currentBaseUrl) }
         }.orEmpty()
 
         // Best-effort extraction of rating / views / comments from shortstory block
@@ -151,7 +152,7 @@ class AnimeListParser @Inject constructor() {
             return Triple(title, titleOriginal, episodeInfo)
         }
 
-        fun resolveUrl(path: String): String =
-            if (path.startsWith("/")) "${DleEndpoints.BASE_URL.trimEnd('/')}$path" else path
+        fun resolveUrl(path: String, baseUrl: String = DleEndpoints.BASE_URL): String =
+            if (path.startsWith("/")) "${baseUrl.trimEnd('/')}$path" else path
     }
 }

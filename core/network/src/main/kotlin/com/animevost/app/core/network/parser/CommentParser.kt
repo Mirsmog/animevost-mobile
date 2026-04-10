@@ -1,13 +1,13 @@
 package com.animevost.app.core.network.parser
 
 import com.animevost.app.core.domain.model.Comment
-import com.animevost.app.core.network.DleEndpoints
+import com.animevost.app.core.network.EndpointResolver
 import com.google.gson.JsonObject
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import javax.inject.Inject
 
-class CommentParser @Inject constructor() {
+class CommentParser @Inject constructor(private val resolver: EndpointResolver) {
 
     fun parse(response: JsonObject): List<Comment> {
         val commentsHtml = response.get("comments")?.asString ?: return emptyList()
@@ -15,7 +15,7 @@ class CommentParser @Inject constructor() {
     }
 
     fun parseCommentsHtml(html: String): List<Comment> {
-        val doc = Jsoup.parse(html, DleEndpoints.BASE_URL)
+        val doc = Jsoup.parse(html, resolver.currentBaseUrl)
 
         return doc.select("[id^=comment-id-]")
             .mapNotNull { el ->
@@ -34,7 +34,7 @@ class CommentParser @Inject constructor() {
 
                 val avatar = el.selectFirst(".commentFinalAva img")
                     ?.let { img ->
-                        img.absUrl("src").ifEmpty { AnimeListParser.resolveUrl(img.attr("src")) }
+                        img.absUrl("src").ifEmpty { AnimeListParser.resolveUrl(img.attr("src"), resolver.currentBaseUrl) }
                     }.orEmpty()
 
                 val (quotedAuthor, quotedText, commentText) = parseTextContent(el)
