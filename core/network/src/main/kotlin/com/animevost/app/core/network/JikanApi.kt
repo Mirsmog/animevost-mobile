@@ -20,7 +20,6 @@ data class JikanAnime(
     val mal_id: Int,
     val title: String = "",
     val title_japanese: String? = null,
-    val title_english: String? = null,
     val type: String? = null,
     val year: Int? = null,
 )

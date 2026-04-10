@@ -234,10 +234,6 @@ fun PlayerScreen(
                     showAutoNext = true
                     autoNextCountdown = 5
                 }
-                if (playbackState == Player.STATE_READY) {
-                    val dur = exoPlayer.duration
-                    if (dur > 0L) viewModel.onEvent(PlayerEvent.VideoReady(dur))
-                }
             }
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
