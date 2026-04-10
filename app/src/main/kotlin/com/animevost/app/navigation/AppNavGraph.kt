@@ -24,8 +24,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.compose.runtime.collectAsState
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.animevost.app.MainViewModel
+import com.animevost.app.UpdateState
+import com.animevost.app.update.UpdateDialog
 import com.animevost.app.feature.auth.LoginScreen
 import com.animevost.app.feature.catalog.FilteredListScreen
 import com.animevost.app.feature.detail.DetailScreen
@@ -37,7 +40,8 @@ import com.animevost.app.feature.schedule.ScheduleScreen
 
 @Composable
 fun AppNavGraph() {
-    hiltViewModel<MainViewModel>()
+    val mainViewModel = hiltViewModel<MainViewModel>()
+    val updateState by mainViewModel.updateState.collectAsState()
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
@@ -192,5 +196,16 @@ fun AppNavGraph() {
                 )
             }
         }
+    }
+
+    if (updateState !is UpdateState.Idle) {
+        UpdateDialog(
+            state = updateState,
+            onDownload = {
+                val available = updateState as? UpdateState.Available ?: return@UpdateDialog
+                mainViewModel.startDownload(available.info)
+            },
+            onDismiss = mainViewModel::dismissUpdate,
+        )
     }
 }
