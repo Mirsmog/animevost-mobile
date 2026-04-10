@@ -192,20 +192,27 @@ class SkipRepositoryImpl @Inject constructor(
 
     private fun scoreCandidate(query: String, anime: JikanAnime, yearInt: Int?, type: String?): Double {
         val titleScore = maxOf(
-            jaccardSimilarity(query, anime.title),
-            jaccardSimilarity(query, anime.title_english ?: ""),
-            jaccardSimilarity(query, anime.title_japanese ?: ""),
+            titleSimilarity(query, anime.title),
+            titleSimilarity(query, anime.title_english ?: ""),
+            titleSimilarity(query, anime.title_japanese ?: ""),
         )
         val yearBonus = if (yearInt != null && anime.year == yearInt) 0.2 else 0.0
         val typeBonus = if (type != null && anime.type?.equals(type, ignoreCase = true) == true) 0.1 else 0.0
         return titleScore + yearBonus + typeBonus
     }
 
-    private fun jaccardSimilarity(a: String, b: String): Double {
+    /**
+     * Dice coefficient (Sørensen–Dice): 2|A∩B| / (|A| + |B|).
+     * More lenient than Jaccard when the query is a short subset of a longer title,
+     * e.g. "Re:Zero" (2 tokens) vs "Re:Zero - Starting Life in Another World" (7 tokens)
+     * scores 0.44 instead of Jaccard's 0.29.
+     */
+    private fun titleSimilarity(a: String, b: String): Double {
         val tokensA = a.lowercase().split(Regex("\\W+")).filter { it.length > 1 }.toSet()
         val tokensB = b.lowercase().split(Regex("\\W+")).filter { it.length > 1 }.toSet()
         if (tokensA.isEmpty() || tokensB.isEmpty()) return 0.0
-        return tokensA.intersect(tokensB).size.toDouble() / tokensA.union(tokensB).size
+        val intersection = tokensA.intersect(tokensB).size.toDouble()
+        return 2.0 * intersection / (tokensA.size + tokensB.size)
     }
 
     private suspend fun getCachedMalId(animeId: Int): Int? {
