@@ -12,6 +12,7 @@ import com.animevost.app.core.data.db.MalMappingDao
 import com.animevost.app.core.data.db.SkipSegmentDao
 import com.animevost.app.core.data.db.WatchProgressDao
 import com.animevost.app.core.data.repository.AnimeRepositoryImpl
+import com.animevost.app.core.data.repository.UpdateRepositoryImpl
 import com.animevost.app.core.data.repository.AuthRepositoryImpl
 import com.animevost.app.core.data.repository.CommentRepositoryImpl
 import com.animevost.app.core.data.repository.FavoriteRepositoryImpl
@@ -22,6 +23,7 @@ import com.animevost.app.core.data.repository.SkipRepositoryImpl
 import com.animevost.app.core.data.repository.WatchProgressRepositoryImpl
 import com.animevost.app.core.data.repository.VideoRepositoryImpl
 import com.animevost.app.core.domain.repository.AnimeRepository
+import com.animevost.app.core.domain.repository.UpdateRepository
 import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.CommentRepository
 import com.animevost.app.core.domain.repository.FavoriteRepository
@@ -115,4 +117,8 @@ abstract class DataBindsModule {
     @Binds
     @Singleton
     abstract fun bindCookieStorage(impl: SharedPrefsCookieStorage): CookieStorage
+
+    @Binds
+    @Singleton
+    abstract fun bindUpdateRepository(impl: UpdateRepositoryImpl): UpdateRepository
 }
