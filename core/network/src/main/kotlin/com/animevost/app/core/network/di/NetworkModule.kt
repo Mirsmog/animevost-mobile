@@ -2,6 +2,7 @@ package com.animevost.app.core.network.di
 
 import com.animevost.app.core.network.AniSkipApi
 import com.animevost.app.core.network.AnimeVostApi
+import com.animevost.app.core.network.BaseUrlInterceptor
 import com.animevost.app.core.network.CookieStorage
 import com.animevost.app.core.network.DleEndpoints
 import com.animevost.app.core.network.HtmlFetcher
@@ -39,12 +40,23 @@ object NetworkModule {
 
     @Provides
     @Singleton
+    @Named("resolver")
+    fun provideResolverOkHttpClient(): OkHttpClient =
+        OkHttpClient.Builder()
+            .connectTimeout(4, TimeUnit.SECONDS)
+            .readTimeout(4, TimeUnit.SECONDS)
+            .build()
+
+    @Provides
+    @Singleton
     fun provideOkHttpClient(
         loggingInterceptor: HttpLoggingInterceptor,
         cookieJar: SessionCookieJar,
+        baseUrlInterceptor: BaseUrlInterceptor,
     ): OkHttpClient {
         return OkHttpClient.Builder()
             .cookieJar(cookieJar)
+            .addInterceptor(baseUrlInterceptor)
             .addInterceptor(loggingInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)

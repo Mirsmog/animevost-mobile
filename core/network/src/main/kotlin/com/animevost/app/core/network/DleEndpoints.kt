@@ -2,7 +2,9 @@ package com.animevost.app.core.network
 
 object DleEndpoints {
     const val BASE_URL = "https://animevost.org/"
-    const val MIRROR_URL = "https://v12.vost.pw/"
+    const val MIRROR_URL = "https://v13.vost.pw/"
+    const val MIRROR_JSON_URL =
+        "https://raw.githubusercontent.com/Mirsmog/animevost-mobile/main/mirror.json"
 
     // HTML pages (scraped with Jsoup)
     const val MAIN_PAGE = ""
