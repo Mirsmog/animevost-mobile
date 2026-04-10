@@ -22,4 +22,7 @@ interface AnimeRepository {
 
     /** Retrieves genres and years for navigation menus. */
     suspend fun getNavData(): Result<NavData>
+
+    /** Fetches a random anime URL from the site. */
+    suspend fun getRandomAnimeUrl(): Result<String>
 }

@@ -12,6 +12,7 @@ import com.animevost.app.core.network.HtmlFetcher
 import com.animevost.app.core.network.parser.AnimeDetailParser
 import com.animevost.app.core.network.parser.AnimeListParser
 import com.animevost.app.core.network.parser.NavigationParser
+import com.animevost.app.core.network.parser.RandomAnimeParser
 import com.animevost.app.core.network.parser.SearchParser
 import kotlinx.coroutines.CancellationException
 import javax.inject.Inject
@@ -24,6 +25,7 @@ class AnimeRepositoryImpl @Inject constructor(
     private val animeDetailParser: AnimeDetailParser,
     private val searchParser: SearchParser,
     private val navigationParser: NavigationParser,
+    private val randomAnimeParser: RandomAnimeParser,
     private val api: AnimeVostApi,
 ) : AnimeRepository {
 
@@ -112,6 +114,19 @@ class AnimeRepositoryImpl @Inject constructor(
             val percent = Regex("""current-rating[^>]*>(\d+)<""")
                 .find(ratingHtml)?.groupValues?.get(1)?.toDoubleOrNull() ?: 0.0
             Result.Success(percent / 20.0)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.Error(e, e.message)
+        }
+    }
+
+    override suspend fun getRandomAnimeUrl(): Result<String> {
+        return try {
+            val html = htmlFetcher.fetch(DleEndpoints.BASE_URL + "get_random_post.php")
+            val href = randomAnimeParser.parse(html)
+                ?: return Result.Error(message = "No link in random post response")
+            Result.Success(href)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
