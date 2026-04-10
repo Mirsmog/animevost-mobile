@@ -24,14 +24,14 @@ jobs:
           fi
 
           MIRROR_URL=$(echo "$CONTENT" | python3 -c "
-import sys, re
-content = sys.stdin.read()
-match = re.search(r'interDub.*?href=\"(https?://[^\"]*vost\.pw[^\"]*)\"', content, re.DOTALL)
-if match:
-    print(match.group(1).rstrip('/'))
-else:
-    print('')
-")
+          import sys, re
+          content = sys.stdin.read()
+          match = re.search(r'interDub.*?href=\"(https?://[^\"]*vost\.pw[^\"]*)\"', content, re.DOTALL)
+          if match:
+              print(match.group(1).rstrip('/'))
+          else:
+              print('')
+          ")
 
           if [ -z "$MIRROR_URL" ]; then
             echo "::error::Could not find mirror URL in page"
@@ -47,13 +47,13 @@ else:
           TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
           CURRENT_MIRROR=$(python3 -c "
-import json
-try:
-    with open('mirror.json') as f:
-        print(json.load(f).get('mirror', ''))
-except Exception:
-    print('')
-")
+          import json
+          try:
+              with open('mirror.json') as f:
+                  print(json.load(f).get('mirror', ''))
+          except Exception:
+              print('')
+          ")
 
           if [ "$CURRENT_MIRROR" = "$MIRROR_URL" ]; then
             echo "Mirror URL unchanged ($MIRROR_URL), nothing to commit"
@@ -61,16 +61,16 @@ except Exception:
           fi
 
           python3 -c "
-import json
-data = {
-    'primary': 'https://animevost.org',
-    'mirror': '$MIRROR_URL',
-    'updated_at': '$TIMESTAMP'
-}
-with open('mirror.json', 'w') as f:
-    json.dump(data, f, indent=2)
-    f.write('\n')
-"
+          import json
+          data = {
+              'primary': 'https://animevost.org',
+              'mirror': '$MIRROR_URL',
+              'updated_at': '$TIMESTAMP'
+          }
+          with open('mirror.json', 'w') as f:
+              json.dump(data, f, indent=2)
+              f.write('\n')
+          "
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
