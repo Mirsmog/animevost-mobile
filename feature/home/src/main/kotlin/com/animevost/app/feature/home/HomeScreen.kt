@@ -33,7 +33,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Casino
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
@@ -110,9 +112,38 @@ fun HomeScreen(
         if (state.isSearchActive) focusRequester.requestFocus()
     }
 
+    LaunchedEffect(state.randomAnimeUrl) {
+        state.randomAnimeUrl?.let { url ->
+            onAnimeClick(url)
+            viewModel.onEvent(HomeEvent.ConsumedRandomAnime)
+        }
+    }
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         contentWindowInsets = WindowInsets(0),
+        floatingActionButton = {
+            if (!state.isSearchActive) {
+                FloatingActionButton(
+                    onClick = { viewModel.onEvent(HomeEvent.RandomAnime) },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                ) {
+                    if (state.isLoadingRandom) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.5.dp,
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.Casino,
+                            contentDescription = "Случайное аниме",
+                        )
+                    }
+                }
+            }
+        },
         topBar = {
             TopAppBar(
                 title = {

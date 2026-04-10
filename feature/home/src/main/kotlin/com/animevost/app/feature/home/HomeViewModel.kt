@@ -7,6 +7,7 @@ import com.animevost.app.core.domain.model.SortOption
 import com.animevost.app.core.domain.usecase.GetAnimeListUseCase
 import com.animevost.app.core.domain.usecase.GetNavDataUseCase
 import com.animevost.app.core.domain.usecase.SearchAnimeUseCase
+import com.animevost.app.core.domain.repository.AnimeRepository
 import com.animevost.app.core.domain.util.BasePaginatedViewModel
 import com.animevost.app.core.domain.util.Result
 import com.animevost.app.core.domain.util.onError
@@ -29,6 +30,7 @@ class HomeViewModel @Inject constructor(
     private val getAnimeListUseCase: GetAnimeListUseCase,
     private val searchAnimeUseCase: SearchAnimeUseCase,
     private val getNavDataUseCase: GetNavDataUseCase,
+    private val animeRepository: AnimeRepository,
 ) : BasePaginatedViewModel<AnimePreview>() {
 
     // Filter state backing fields — read by fetchPage, updated by selectSort/selectType.
@@ -92,6 +94,8 @@ class HomeViewModel @Inject constructor(
             HomeEvent.ToggleSearch          -> toggleSearch()
             is HomeEvent.SearchQueryChanged -> onSearchQueryChanged(event.query)
             HomeEvent.SearchLoadMore        -> searchLoadMore()
+            HomeEvent.RandomAnime           -> loadRandomAnime()
+            HomeEvent.ConsumedRandomAnime   -> _uiState.update { it.copy(randomAnimeUrl = null) }
         }
     }
 
@@ -189,6 +193,16 @@ class HomeViewModel @Inject constructor(
                 .onError { _, msg ->
                     _uiState.update { it.copy(isSearchLoadingMore = false, searchError = msg ?: "Ошибка загрузки") }
                 }
+        }
+    }
+
+    private fun loadRandomAnime() {
+        if (_uiState.value.isLoadingRandom) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoadingRandom = true) }
+            animeRepository.getRandomAnimeUrl()
+                .onSuccess { url -> _uiState.update { it.copy(isLoadingRandom = false, randomAnimeUrl = url) } }
+                .onError { _, _ -> _uiState.update { it.copy(isLoadingRandom = false) } }
         }
     }
 

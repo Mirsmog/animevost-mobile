@@ -31,6 +31,8 @@ data class HomeUiState(
     // ── Nav data (genres / years for search browsing) ─────────────────────────
     val genres: List<Genre> = emptyList(),
     val years: List<String> = emptyList(),
+    val isLoadingRandom: Boolean = false,
+    val randomAnimeUrl: String? = null,
 )
 
 sealed interface HomeEvent {
@@ -43,4 +45,6 @@ sealed interface HomeEvent {
     data object ToggleSearch : HomeEvent
     data class SearchQueryChanged(val query: String) : HomeEvent
     data object SearchLoadMore : HomeEvent
+    data object RandomAnime : HomeEvent
+    data object ConsumedRandomAnime : HomeEvent
 }
