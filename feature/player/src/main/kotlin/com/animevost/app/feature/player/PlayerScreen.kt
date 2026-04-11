@@ -234,6 +234,10 @@ fun PlayerScreen(
                     showAutoNext = true
                     autoNextCountdown = 5
                 }
+                if (playbackState == Player.STATE_READY) {
+                    val dur = exoPlayer.duration
+                    if (dur > 0L) viewModel.onEvent(PlayerEvent.VideoReady(dur))
+                }
             }
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
@@ -344,20 +348,23 @@ fun PlayerScreen(
 
                                         if (!releasedQuickly) {
                                             if (!isSpeedLocked) {
-                                                isSpeedBoosting = true
-                                                exoPlayer.setPlaybackParameters(
-                                                    PlaybackParameters(2.0f),
-                                                )
-                                                haptic.performHapticFeedback(
-                                                    HapticFeedbackType.LongPress,
-                                                )
-                                                tryAwaitRelease()
-                                                isSpeedBoosting = false
-                                                exoPlayer.setPlaybackParameters(
-                                                    PlaybackParameters(
-                                                        if (isSpeedLocked) lockedSpeed else 1.0f
-                                                    ),
-                                                )
+                                                try {
+                                                    isSpeedBoosting = true
+                                                    exoPlayer.setPlaybackParameters(
+                                                        PlaybackParameters(2.0f),
+                                                    )
+                                                    haptic.performHapticFeedback(
+                                                        HapticFeedbackType.LongPress,
+                                                    )
+                                                    tryAwaitRelease()
+                                                } finally {
+                                                    isSpeedBoosting = false
+                                                    exoPlayer.setPlaybackParameters(
+                                                        PlaybackParameters(
+                                                            if (isSpeedLocked) lockedSpeed else 1.0f
+                                                        ),
+                                                    )
+                                                }
                                             } else {
                                                 tryAwaitRelease()
                                             }

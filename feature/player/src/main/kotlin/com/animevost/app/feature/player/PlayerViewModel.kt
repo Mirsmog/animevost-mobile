@@ -22,6 +22,7 @@ import com.animevost.app.core.domain.util.Result
 import com.animevost.app.core.domain.util.onError
 import com.animevost.app.core.domain.util.onSuccess
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -58,6 +59,8 @@ sealed interface PlayerEvent {
     data class UpdateProgress(val positionMs: Long, val durationMs: Long) : PlayerEvent
     /** Signal that resume position has been consumed (seek done). */
     data object ResumeConsumed : PlayerEvent
+    /** Fired once per episode when ExoPlayer reaches STATE_READY with a known duration. */
+    data class VideoReady(val durationMs: Long) : PlayerEvent
 }
 
 @HiltViewModel
@@ -86,6 +89,16 @@ class PlayerViewModel @Inject constructor(
     private var animePreview: AnimePreview? = null
     private var animeYear: String? = null
     private var animeType: String? = null
+    /** Cancels previous skip-load to avoid stale results overwriting fresh ones. */
+    private var skipLoadJob: Job? = null
+    /** videoId of the episode for which we already fired a duration-aware load. */
+    private var durationFiredForVideoId: String? = null
+    /**
+     * Duration received from VideoReady before resolveMalId completed.
+     * Stored as (videoId, durationMs) so loadEpisodeList can consume it with the
+     * correct episode length once the MAL ID is actually in the database.
+     */
+    private var pendingVideoReady: Pair<String, Long>? = null
 
     init {
         val episode = Episode(name = episodeName, videoId = videoId, thumbnailUrl = "")
@@ -106,6 +119,7 @@ class PlayerViewModel @Inject constructor(
             }
             is PlayerEvent.UpdateProgress -> saveCurrentProgress(event.positionMs, event.durationMs)
             is PlayerEvent.ResumeConsumed -> _uiState.update { it.copy(resumePositionMs = 0L) }
+            is PlayerEvent.VideoReady -> onVideoReady(event.durationMs)
         }
     }
 
@@ -164,8 +178,15 @@ class PlayerViewModel @Inject constructor(
                     year = detail.year,
                     type = detail.type.name,
                 )
-                // Load skip segments for current episode
-                loadSkipSegments(detail.id, _uiState.value.currentEpisode?.name ?: episodeName)
+                // Load skip segments. If VideoReady fired during the Jikan lookup above,
+                // use the real duration so AniSkip gets accurate episode-length info.
+                val ep = _uiState.value.currentEpisode
+                val pending = pendingVideoReady
+                val durationForLoad = if (pending != null && ep != null && pending.first == ep.videoId) {
+                    durationFiredForVideoId = pending.first
+                    pending.second
+                } else 0L
+                loadSkipSegments(detail.id, ep?.name ?: episodeName, durationForLoad)
             }
             // Load resume position outside the inline lambda (suspend call)
             if (result is com.animevost.app.core.domain.util.Result.Success) {
@@ -179,15 +200,29 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    private fun loadSkipSegments(animeId: Int, episodeName: String) {
-        viewModelScope.launch {
-            getSkipSegmentsUseCase(animeId, episodeName)
+    private fun loadSkipSegments(animeId: Int, episodeName: String, durationMs: Long = 0L) {
+        skipLoadJob?.cancel()
+        skipLoadJob = viewModelScope.launch {
+            getSkipSegmentsUseCase(animeId, episodeName, durationMs)
                 .onSuccess { segments -> _uiState.update { it.copy(skipSegments = segments) } }
             // ignore error — skip segments just won't be available
         }
     }
 
+    private fun onVideoReady(durationMs: Long) {
+        if (durationMs <= 0L) return
+        val episode = _uiState.value.currentEpisode ?: return
+        if (durationFiredForVideoId == episode.videoId) return
+        // Always store the duration so loadEpisodeList can use it after resolveMalId completes.
+        pendingVideoReady = episode.videoId to durationMs
+        val animeId = animePreview?.id ?: return
+        durationFiredForVideoId = episode.videoId
+        loadSkipSegments(animeId, episode.name, durationMs)
+    }
+
     private fun loadVideo(episode: Episode, allEpisodes: List<Episode>, index: Int) {
+        durationFiredForVideoId = null
+        pendingVideoReady = null
         viewModelScope.launch {
             _uiState.update {
                 it.copy(

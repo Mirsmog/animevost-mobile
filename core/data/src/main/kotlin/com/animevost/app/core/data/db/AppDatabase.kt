@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SkipSegmentEntity::class,
         WatchProgressEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -72,9 +72,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Clears stale MAL ID mappings so the improved resolver re-fetches them. */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DELETE FROM mal_mapping")
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "animevost.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
     }
 }
