@@ -13,4 +13,7 @@ interface SkipSegmentDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSegment(segment: SkipSegmentEntity)
+
+    @Query("DELETE FROM skip_segments WHERE animeId = :animeId AND source = 'ANISKIP'")
+    suspend fun deleteAniSkipSegments(animeId: Int)
 }

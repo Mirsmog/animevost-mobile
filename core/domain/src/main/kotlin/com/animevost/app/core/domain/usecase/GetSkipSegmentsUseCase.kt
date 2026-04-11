@@ -9,6 +9,10 @@ import javax.inject.Inject
 class GetSkipSegmentsUseCase @Inject constructor(
     private val repository: SkipRepository,
 ) {
-    suspend operator fun invoke(animeId: Int, episodeName: String): Result<List<SkipSegment>> =
-        repository.getSkipSegments(animeId, episodeName)
+    suspend operator fun invoke(
+        animeId: Int,
+        episodeName: String,
+        episodeLengthMs: Long = 0L,
+    ): Result<List<SkipSegment>> =
+        repository.getSkipSegments(animeId, episodeName, episodeLengthMs)
 }
