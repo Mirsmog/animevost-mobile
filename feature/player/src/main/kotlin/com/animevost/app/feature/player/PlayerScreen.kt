@@ -20,8 +20,10 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
@@ -381,43 +383,6 @@ fun PlayerScreen(
             }
         }
 
-        // ── Speed boost / lock indicator ────────────────────────
-        AnimatedVisibility(
-            visible = isSpeedBoosting || (isSpeedLocked && controlsVisible),
-            enter = fadeIn(tween(100)),
-            exit = fadeOut(tween(200)),
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp),
-        ) {
-            Row(
-                modifier = Modifier
-                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                    ) { showSpeedPopup = true }
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (isSpeedLocked) {
-                    Icon(
-                        Icons.Filled.Lock,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(14.dp),
-                    )
-                }
-                Text(
-                    text = if (isSpeedBoosting) {
-                        val boostSpeed = if (isSpeedLocked) (lockedSpeed * 2f).coerceAtMost(5f) else 2.0f
-                        "▶▶ ${formatSpeed(boostSpeed)}"
-                    } else formatSpeed(lockedSpeed),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                )
-            }
-        }
-
         // ── Buffering spinner ────────────────────────────────────
         if (isBuffering) {
             CircularProgressIndicator(
@@ -498,6 +463,54 @@ fun PlayerScreen(
                 onSeek = { fraction -> exoPlayer.seekTo((fraction * duration).toLong()) },
                 onSelectQuality = { viewModel.onEvent(PlayerEvent.SelectQuality(it)) },
             )
+        }
+
+        // ── Speed boost / lock badge (above controls overlay) ────
+        AnimatedVisibility(
+            visible = isSpeedBoosting || (isSpeedLocked && controlsVisible),
+            enter = fadeIn(tween(100)),
+            exit = fadeOut(tween(200)),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp),
+        ) {
+            Box {
+                Row(
+                    modifier = Modifier
+                        .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { showSpeedPopup = true }
+                        .padding(horizontal = 14.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = if (isSpeedBoosting) {
+                            val boostSpeed = if (isSpeedLocked) (lockedSpeed * 2f).coerceAtMost(5f) else 2.0f
+                            "▶▶ ${formatSpeed(boostSpeed)}"
+                        } else formatSpeed(lockedSpeed),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                    )
+                }
+                if (isSpeedLocked) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = 5.dp, y = (-5).dp)
+                            .size(13.dp)
+                            .background(MaterialTheme.colorScheme.primary, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Filled.Lock,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(8.dp),
+                        )
+                    }
+                }
+            }
         }
 
         // ── Speed picker popup (on top of everything) ────────────
