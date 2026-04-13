@@ -272,20 +272,19 @@ fun PlayerScreen(
                                                 tryAwaitRelease()
                                             } != null
                                         if (!releasedQuickly) {
-                                            if (!isSpeedLocked) {
-                                                try {
-                                                    isSpeedBoosting = true
-                                                    exoPlayer.setPlaybackParameters(PlaybackParameters(2.0f))
-                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                    tryAwaitRelease()
-                                                } finally {
-                                                    isSpeedBoosting = false
-                                                    exoPlayer.setPlaybackParameters(
-                                                        PlaybackParameters(if (isSpeedLocked) lockedSpeed else 1.0f),
-                                                    )
-                                                }
-                                            } else {
+                                            val boostSpeed = if (isSpeedLocked) {
+                                                (lockedSpeed * 2f).coerceAtMost(5f)
+                                            } else 2.0f
+                                            try {
+                                                isSpeedBoosting = true
+                                                exoPlayer.setPlaybackParameters(PlaybackParameters(boostSpeed))
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 tryAwaitRelease()
+                                            } finally {
+                                                isSpeedBoosting = false
+                                                exoPlayer.setPlaybackParameters(
+                                                    PlaybackParameters(if (isSpeedLocked) lockedSpeed else 1.0f),
+                                                )
                                             }
                                         }
                                     } else {
@@ -384,7 +383,7 @@ fun PlayerScreen(
 
         // ── Speed boost / lock indicator ────────────────────────
         AnimatedVisibility(
-            visible = isSpeedBoosting || isSpeedLocked,
+            visible = isSpeedBoosting || (isSpeedLocked && controlsVisible),
             enter = fadeIn(tween(100)),
             exit = fadeOut(tween(200)),
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp),
@@ -408,7 +407,10 @@ fun PlayerScreen(
                     )
                 }
                 Text(
-                    text = if (isSpeedBoosting && !isSpeedLocked) "▶▶ 2x" else formatSpeed(lockedSpeed),
+                    text = if (isSpeedBoosting) {
+                        val boostSpeed = if (isSpeedLocked) (lockedSpeed * 2f).coerceAtMost(5f) else 2.0f
+                        "▶▶ ${formatSpeed(boostSpeed)}"
+                    } else formatSpeed(lockedSpeed),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
