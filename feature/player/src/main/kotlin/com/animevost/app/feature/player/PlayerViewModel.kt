@@ -9,20 +9,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.Episode
-import com.animevost.app.core.domain.model.SkipSegment
 import com.animevost.app.core.domain.model.VideoSource
 import com.animevost.app.core.domain.usecase.AddToHistoryUseCase
 import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
-import com.animevost.app.core.domain.usecase.GetSkipSegmentsUseCase
 import com.animevost.app.core.domain.usecase.GetVideoUrlUseCase
-import com.animevost.app.core.data.repository.SkipRepositoryImpl
 import com.animevost.app.core.domain.model.WatchProgress
 import com.animevost.app.core.domain.repository.WatchProgressRepository
-import com.animevost.app.core.domain.util.Result
 import com.animevost.app.core.domain.util.onError
 import com.animevost.app.core.domain.util.onSuccess
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -40,7 +35,6 @@ data class PlayerUiState(
     val error: String? = null,
     val allEpisodes: List<Episode> = emptyList(),
     val currentEpisodeIndex: Int = 0,
-    val skipSegments: List<SkipSegment> = emptyList(),
     /** Position to seek to when the video finishes loading (cleared after use). */
     val resumePositionMs: Long = 0L,
 ) {
@@ -59,8 +53,6 @@ sealed interface PlayerEvent {
     data class UpdateProgress(val positionMs: Long, val durationMs: Long) : PlayerEvent
     /** Signal that resume position has been consumed (seek done). */
     data object ResumeConsumed : PlayerEvent
-    /** Fired once per episode when ExoPlayer reaches STATE_READY with a known duration. */
-    data class VideoReady(val durationMs: Long) : PlayerEvent
 }
 
 @HiltViewModel
@@ -69,8 +61,6 @@ class PlayerViewModel @Inject constructor(
     private val getVideoUrlUseCase: GetVideoUrlUseCase,
     private val getAnimeDetailUseCase: GetAnimeDetailUseCase,
     private val addToHistoryUseCase: AddToHistoryUseCase,
-    private val getSkipSegmentsUseCase: GetSkipSegmentsUseCase,
-    private val skipRepositoryImpl: SkipRepositoryImpl,
     private val dataStore: DataStore<Preferences>,
     private val watchProgressRepository: WatchProgressRepository,
 ) : ViewModel() {
@@ -87,18 +77,6 @@ class PlayerViewModel @Inject constructor(
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
     private var animePreview: AnimePreview? = null
-    private var animeYear: String? = null
-    private var animeType: String? = null
-    /** Cancels previous skip-load to avoid stale results overwriting fresh ones. */
-    private var skipLoadJob: Job? = null
-    /** videoId of the episode for which we already fired a duration-aware load. */
-    private var durationFiredForVideoId: String? = null
-    /**
-     * Duration received from VideoReady before resolveMalId completed.
-     * Stored as (videoId, durationMs) so loadEpisodeList can consume it with the
-     * correct episode length once the MAL ID is actually in the database.
-     */
-    private var pendingVideoReady: Pair<String, Long>? = null
 
     init {
         val episode = Episode(name = episodeName, videoId = videoId, thumbnailUrl = "")
@@ -119,7 +97,6 @@ class PlayerViewModel @Inject constructor(
             }
             is PlayerEvent.UpdateProgress -> saveCurrentProgress(event.positionMs, event.durationMs)
             is PlayerEvent.ResumeConsumed -> _uiState.update { it.copy(resumePositionMs = 0L) }
-            is PlayerEvent.VideoReady -> onVideoReady(event.durationMs)
         }
     }
 
@@ -156,39 +133,18 @@ class PlayerViewModel @Inject constructor(
                     episodeInfo = detail.episodeCount,
                     url = animeUrl,
                 )
-                animeYear = detail.year
-                animeType = detail.type.name
                 _uiState.update {
                     it.copy(
                         allEpisodes = episodes,
                         currentEpisodeIndex = if (currentIdx >= 0) currentIdx else 0,
                     )
                 }
-                // Record current episode in history after detail loaded
                 val currentEp = _uiState.value.currentEpisode
                 val preview = animePreview
                 if (currentEp != null && preview != null) {
                     addToHistoryUseCase(preview, currentEp)
                 }
-                // Resolve MAL ID for skip segments (once per anime)
-                skipRepositoryImpl.resolveMalId(
-                    animeId = detail.id,
-                    titleOriginal = detail.titleOriginal,
-                    title = detail.title,
-                    year = detail.year,
-                    type = detail.type.name,
-                )
-                // Load skip segments. If VideoReady fired during the Jikan lookup above,
-                // use the real duration so AniSkip gets accurate episode-length info.
-                val ep = _uiState.value.currentEpisode
-                val pending = pendingVideoReady
-                val durationForLoad = if (pending != null && ep != null && pending.first == ep.videoId) {
-                    durationFiredForVideoId = pending.first
-                    pending.second
-                } else 0L
-                loadSkipSegments(detail.id, ep?.name ?: episodeName, durationForLoad)
             }
-            // Load resume position outside the inline lambda (suspend call)
             if (result is com.animevost.app.core.domain.util.Result.Success) {
                 val detail = result.data
                 val savedProgress = watchProgressRepository.getProgress(detail.id, videoId)
@@ -196,40 +152,16 @@ class PlayerViewModel @Inject constructor(
                     _uiState.update { it.copy(resumePositionMs = savedProgress.positionMs) }
                 }
             }
-            // ignore error — prev/next navigation just won't work
         }
-    }
-
-    private fun loadSkipSegments(animeId: Int, episodeName: String, durationMs: Long = 0L) {
-        skipLoadJob?.cancel()
-        skipLoadJob = viewModelScope.launch {
-            getSkipSegmentsUseCase(animeId, episodeName, durationMs)
-                .onSuccess { segments -> _uiState.update { it.copy(skipSegments = segments) } }
-            // ignore error — skip segments just won't be available
-        }
-    }
-
-    private fun onVideoReady(durationMs: Long) {
-        if (durationMs <= 0L) return
-        val episode = _uiState.value.currentEpisode ?: return
-        if (durationFiredForVideoId == episode.videoId) return
-        // Always store the duration so loadEpisodeList can use it after resolveMalId completes.
-        pendingVideoReady = episode.videoId to durationMs
-        val animeId = animePreview?.id ?: return
-        durationFiredForVideoId = episode.videoId
-        loadSkipSegments(animeId, episode.name, durationMs)
     }
 
     private fun loadVideo(episode: Episode, allEpisodes: List<Episode>, index: Int) {
-        durationFiredForVideoId = null
-        pendingVideoReady = null
         viewModelScope.launch {
             _uiState.update {
                 it.copy(
                     isLoading = true,
                     error = null,
                     currentEpisode = episode,
-                    skipSegments = emptyList(),
                     allEpisodes = if (allEpisodes.isNotEmpty()) allEpisodes else it.allEpisodes,
                     currentEpisodeIndex = if (allEpisodes.isNotEmpty()) index else it.currentEpisodeIndex,
                 )
@@ -245,11 +177,8 @@ class PlayerViewModel @Inject constructor(
                     _uiState.update {
                         it.copy(videoSources = sources, isLoading = false, selectedQuality = quality)
                     }
-                    // Record in history when video loads successfully
                     val preview = animePreview
                     if (preview != null) addToHistoryUseCase(preview, episode)
-                    // Load skip segments for new episode
-                    animePreview?.id?.let { id -> loadSkipSegments(id, episode.name) }
                 }
                 .onError { _, msg ->
                     _uiState.update {

@@ -9,7 +9,7 @@ import javax.inject.Singleton
 /**
  * Rewrites the host of every outgoing animevost/mirror request to the currently
  * active base URL resolved by [EndpointResolver].
- * All other hosts (AniSkip, Jikan, etc.) are passed through unchanged.
+ * All other hosts (Jikan, GitHub, etc.) are passed through unchanged.
  */
 @Singleton
 class BaseUrlInterceptor @Inject constructor(

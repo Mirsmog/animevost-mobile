@@ -1,12 +1,10 @@
 package com.animevost.app.core.network.di
 
-import com.animevost.app.core.network.AniSkipApi
 import com.animevost.app.core.network.AnimeVostApi
 import com.animevost.app.core.network.BaseUrlInterceptor
 import com.animevost.app.core.network.CookieStorage
 import com.animevost.app.core.network.DleEndpoints
 import com.animevost.app.core.network.HtmlFetcher
-import com.animevost.app.core.network.JikanApi
 import com.animevost.app.core.network.SessionCookieJar
 import dagger.Module
 import dagger.Provides
@@ -83,25 +81,5 @@ object NetworkModule {
     @Singleton
     fun provideHtmlFetcher(client: OkHttpClient): HtmlFetcher {
         return HtmlFetcher(client)
-    }
-
-    @Provides
-    @Singleton
-    fun provideAniSkipApi(): AniSkipApi {
-        return Retrofit.Builder()
-            .baseUrl("https://api.aniskip.com/")
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(AniSkipApi::class.java)
-    }
-
-    @Provides
-    @Singleton
-    fun provideJikanApi(): JikanApi {
-        return Retrofit.Builder()
-            .baseUrl("https://api.jikan.moe/")
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(JikanApi::class.java)
     }
 }

@@ -11,25 +11,17 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         FavoriteEntity::class,
         HistoryEntity::class,
-        MalMappingEntity::class,
-        SkipSegmentEntity::class,
         WatchProgressEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun favoriteDao(): FavoriteDao
     abstract fun historyDao(): HistoryDao
-    abstract fun malMappingDao(): MalMappingDao
-    abstract fun skipSegmentDao(): SkipSegmentDao
     abstract fun watchProgressDao(): WatchProgressDao
 
     companion object {
-        /**
-         * Migrates from version 1 (favorites + history) to version 2,
-         * which introduced the mal_mapping and skip_segments tables.
-         */
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -72,16 +64,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        /** Clears stale MAL ID mappings so the improved resolver re-fetches them. */
         val MIGRATION_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("DELETE FROM mal_mapping")
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS `skip_segments`")
+                db.execSQL("DROP TABLE IF EXISTS `mal_mapping`")
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "animevost.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
     }
 }

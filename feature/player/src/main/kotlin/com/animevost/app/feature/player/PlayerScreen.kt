@@ -6,63 +6,28 @@ import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.view.WindowManager
 import androidx.annotation.OptIn
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.FastForward
-import androidx.compose.material.icons.filled.FastRewind
-import androidx.compose.material.icons.filled.Forward10
-import androidx.compose.material.icons.filled.HighQuality
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Replay10
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -84,9 +49,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -94,25 +59,16 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
-import com.animevost.app.core.domain.model.SkipSegment
-import com.animevost.app.core.domain.model.SkipType
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.LockOpen
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
 import kotlin.math.abs
-import kotlin.math.roundToInt
 
 private enum class SeekSide { BACK, FORWARD }
 
@@ -141,7 +97,6 @@ fun PlayerScreen(
 
     // ── YouTube-style accumulated seek ───────────────────────────
     val seekScope = rememberCoroutineScope()
-    // Signed: positive = forward, negative = backward
     var seekAccum by remember { mutableLongStateOf(0L) }
     var seekJob by remember { mutableStateOf<Job?>(null) }
 
@@ -157,27 +112,6 @@ fun PlayerScreen(
     var lockedSpeed by remember { mutableFloatStateOf(2.0f) }
     var showSpeedPopup by remember { mutableStateOf(false) }
 
-    // ── Skip segment state ───────────────────────────────────
-    val activeSkip = state.skipSegments.firstOrNull { seg ->
-        currentPosition in seg.startMs..seg.endMs
-    }
-    var skipButtonVisible by remember { mutableStateOf(false) }
-    var skipDismissed by remember { mutableStateOf<Long?>(null) }
-
-    // Show skip button when entering a segment, auto-hide after 5s
-    LaunchedEffect(activeSkip?.startMs, activeSkip?.type) {
-        if (activeSkip != null && skipDismissed != activeSkip.startMs) {
-            skipButtonVisible = true
-            delay(5_000)
-            skipButtonVisible = false
-        } else {
-            skipButtonVisible = false
-        }
-    }
-    // Reset dismissed when leaving segment
-    LaunchedEffect(activeSkip) {
-        if (activeSkip == null) skipDismissed = null
-    }
     DisposableEffect(Unit) {
         val origOrientation = activity.requestedOrientation
         activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -234,10 +168,6 @@ fun PlayerScreen(
                     showAutoNext = true
                     autoNextCountdown = 5
                 }
-                if (playbackState == Player.STATE_READY) {
-                    val dur = exoPlayer.duration
-                    if (dur > 0L) viewModel.onEvent(PlayerEvent.VideoReady(dur))
-                }
             }
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
@@ -245,7 +175,6 @@ fun PlayerScreen(
         }
         exoPlayer.addListener(listener)
         onDispose {
-            // Save final position before releasing
             val pos = exoPlayer.currentPosition
             val dur = exoPlayer.duration
             if (pos > 0L) viewModel.onEvent(PlayerEvent.UpdateProgress(pos, dur))
@@ -263,7 +192,7 @@ fun PlayerScreen(
             val dur = exoPlayer.duration
             if (dur > 0) duration = dur
             saveCounter++
-            if (saveCounter >= 10) { // every ~5 s
+            if (saveCounter >= 10) {
                 saveCounter = 0
                 val pos = exoPlayer.currentPosition
                 if (pos > 0L && dur > 0L) {
@@ -330,39 +259,29 @@ fun PlayerScreen(
                 .fillMaxSize()
                 .pointerInput(isSpeedLocked, lockedSpeed) {
                     kotlinx.coroutines.coroutineScope {
-                        // Tap + hold = 2x speed / double-tap = seek ±10s / single-tap = toggle
                         launch {
                             var lastTapUpMs = 0L
                             detectTapGestures(
                                 onPress = { offset ->
                                     val pressTime = System.currentTimeMillis()
-                                    val isSecondTap = pressTime - lastTapUpMs < 400 &&
-                                        lastTapUpMs > 0
-
+                                    val isSecondTap = pressTime - lastTapUpMs < 400 && lastTapUpMs > 0
                                     if (isSecondTap) {
                                         lastTapUpMs = 0L
                                         val releasedQuickly =
                                             kotlinx.coroutines.withTimeoutOrNull(200L) {
                                                 tryAwaitRelease()
                                             } != null
-
                                         if (!releasedQuickly) {
                                             if (!isSpeedLocked) {
                                                 try {
                                                     isSpeedBoosting = true
-                                                    exoPlayer.setPlaybackParameters(
-                                                        PlaybackParameters(2.0f),
-                                                    )
-                                                    haptic.performHapticFeedback(
-                                                        HapticFeedbackType.LongPress,
-                                                    )
+                                                    exoPlayer.setPlaybackParameters(PlaybackParameters(2.0f))
+                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                                     tryAwaitRelease()
                                                 } finally {
                                                     isSpeedBoosting = false
                                                     exoPlayer.setPlaybackParameters(
-                                                        PlaybackParameters(
-                                                            if (isSpeedLocked) lockedSpeed else 1.0f
-                                                        ),
+                                                        PlaybackParameters(if (isSpeedLocked) lockedSpeed else 1.0f),
                                                     )
                                                 }
                                             } else {
@@ -375,38 +294,32 @@ fun PlayerScreen(
                                     }
                                 },
                                 onTap = {
-                                    if (!isSpeedBoosting) {
-                                        controlsVisible = !controlsVisible
-                                    }
+                                    if (!isSpeedBoosting) controlsVisible = !controlsVisible
                                 },
                                 onDoubleTap = { offset ->
                                     if (isSpeedBoosting) return@detectTapGestures
                                     lastTapUpMs = 0L
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    if (offset.x < size.width / 2) {
-                                        seekAccum -= 10_000L
-                                    } else {
-                                        seekAccum += 10_000L
-                                    }
+                                    if (offset.x < size.width / 2) seekAccum -= 10_000L
+                                    else seekAccum += 10_000L
                                     seekJob?.cancel()
                                     seekJob = seekScope.launch {
                                         delay(600)
                                         val accum = seekAccum
                                         exoPlayer.seekTo(
-                                            (exoPlayer.currentPosition + accum).coerceIn(0L, duration)
+                                            (exoPlayer.currentPosition + accum).coerceIn(0L, duration),
                                         )
                                         seekAccum = 0L
                                     }
                                 },
                             )
                         }
-                        // Horizontal drag → seek preview (full width ≈ 2 min)
+                        // Horizontal drag → seek preview
                         launch {
                             var startMs = 0L
                             var totalX = 0f
                             var totalY = 0f
                             var isHorizontal: Boolean? = null
-
                             detectDragGestures(
                                 onDragStart = {
                                     startMs = exoPlayer.currentPosition
@@ -414,17 +327,13 @@ fun PlayerScreen(
                                 },
                                 onDrag = { change, drag ->
                                     totalX += drag.x; totalY += drag.y
-                                    if (isHorizontal == null &&
-                                        (abs(totalX) > 25 || abs(totalY) > 25)
-                                    ) {
+                                    if (isHorizontal == null && (abs(totalX) > 25 || abs(totalY) > 25)) {
                                         isHorizontal = abs(totalX) > abs(totalY)
                                         if (isHorizontal == true) controlsVisible = false
                                     }
                                     if (isHorizontal == true) {
-                                        val delta =
-                                            (totalX / size.width.toFloat() * 120_000L).toLong()
-                                        seekPreviewMs =
-                                            (startMs + delta).coerceIn(0L, duration)
+                                        val delta = (totalX / size.width.toFloat() * 120_000L).toLong()
+                                        seekPreviewMs = (startMs + delta).coerceIn(0L, duration)
                                         exoPlayer.seekTo(seekPreviewMs)
                                         showSeekPreview = true
                                     }
@@ -489,7 +398,6 @@ fun PlayerScreen(
                     ) { showSpeedPopup = true }
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 if (isSpeedLocked) {
                     Icon(
@@ -500,8 +408,7 @@ fun PlayerScreen(
                     )
                 }
                 Text(
-                    text = if (isSpeedBoosting && !isSpeedLocked) "▶▶ 2x"
-                           else formatSpeed(lockedSpeed),
+                    text = if (isSpeedBoosting && !isSpeedLocked) "▶▶ 2x" else formatSpeed(lockedSpeed),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -545,38 +452,13 @@ fun PlayerScreen(
         ) {
             AutoNextCard(
                 countdown = autoNextCountdown,
-                nextName = state.allEpisodes
-                    .getOrNull(state.currentEpisodeIndex + 1)?.name ?: "",
+                nextName = state.allEpisodes.getOrNull(state.currentEpisodeIndex + 1)?.name ?: "",
                 onConfirm = {
                     viewModel.onEvent(PlayerEvent.NextEpisode(exoPlayer.currentPosition, exoPlayer.duration))
                     showAutoNext = false
                 },
                 onCancel = { showAutoNext = false },
             )
-        }
-
-        // ── Skip intro/outro button ──────────────────────────────
-        AnimatedVisibility(
-            visible = skipButtonVisible && activeSkip != null,
-            enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
-            exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(),
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 24.dp, bottom = 90.dp),
-        ) {
-            activeSkip?.let { skip ->
-                SkipButton(
-                    label = when (skip.type) {
-                        SkipType.INTRO -> "Пропустить интро"
-                        SkipType.OUTRO -> "Пропустить аутро"
-                    },
-                    onClick = {
-                        exoPlayer.seekTo(skip.endMs)
-                        skipButtonVisible = false
-                        skipDismissed = skip.startMs
-                    },
-                )
-            }
         }
 
         // ── Controls overlay (fade in/out) ───────────────────────
@@ -595,22 +477,23 @@ fun PlayerScreen(
                 duration = duration,
                 hasPrevious = state.hasPrevious,
                 hasNext = state.hasNext,
-                skipSegments = state.skipSegments,
                 onBack = onBack,
                 onPlayPause = {
                     if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
                 },
-                onPrevious = { viewModel.onEvent(PlayerEvent.PreviousEpisode(exoPlayer.currentPosition, exoPlayer.duration)) },
-                onNext = { viewModel.onEvent(PlayerEvent.NextEpisode(exoPlayer.currentPosition, exoPlayer.duration)) },
+                onPrevious = {
+                    viewModel.onEvent(PlayerEvent.PreviousEpisode(exoPlayer.currentPosition, exoPlayer.duration))
+                },
+                onNext = {
+                    viewModel.onEvent(PlayerEvent.NextEpisode(exoPlayer.currentPosition, exoPlayer.duration))
+                },
                 onSeekBack = {
                     exoPlayer.seekTo(maxOf(0L, exoPlayer.currentPosition - 10_000L))
                 },
                 onSeekForward = {
                     exoPlayer.seekTo(minOf(duration, exoPlayer.currentPosition + 10_000L))
                 },
-                onSeek = { fraction ->
-                    exoPlayer.seekTo((fraction * duration).toLong())
-                },
+                onSeek = { fraction -> exoPlayer.seekTo((fraction * duration).toLong()) },
                 onSelectQuality = { viewModel.onEvent(PlayerEvent.SelectQuality(it)) },
             )
         }
@@ -622,9 +505,7 @@ fun PlayerScreen(
                 isLocked = isSpeedLocked,
                 onSpeedSelect = { speed ->
                     lockedSpeed = speed
-                    if (isSpeedLocked) {
-                        exoPlayer.setPlaybackParameters(PlaybackParameters(speed))
-                    }
+                    if (isSpeedLocked) exoPlayer.setPlaybackParameters(PlaybackParameters(speed))
                 },
                 onLockToggle = {
                     if (isSpeedLocked) {
@@ -640,586 +521,4 @@ fun PlayerScreen(
             )
         }
     }
-}
-
-// ─── Seek pill animation (YouTube-style accumulated) ─────────────────────────
-
-@Composable
-private fun SeekAnimOverlay(
-    visible: Boolean,
-    isForward: Boolean,
-    seekMs: Long,
-    modifier: Modifier = Modifier,
-) {
-    // Keep last non-zero value so the fade-out doesn't flash "0 сек"
-    var displaySecs by remember { mutableIntStateOf(0) }
-    val secs = (seekMs / 1000).toInt()
-    if (secs > 0) displaySecs = secs
-
-    AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(80)),
-        exit = fadeOut(tween(400)),
-        modifier = modifier,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(width = 100.dp, height = 160.dp)
-                .background(
-                    Color.White.copy(alpha = 0.18f),
-                    if (isForward) RoundedCornerShape(topStart = 90.dp, bottomStart = 90.dp)
-                    else RoundedCornerShape(topEnd = 90.dp, bottomEnd = 90.dp),
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                Icon(
-                    imageVector = if (isForward) Icons.Filled.FastForward
-                    else Icons.Filled.FastRewind,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(40.dp),
-                )
-                AnimatedContent(
-                    targetState = displaySecs,
-                    transitionSpec = {
-                        slideInVertically { -it } + fadeIn(tween(120)) togetherWith
-                            slideOutVertically { it } + fadeOut(tween(80))
-                    },
-                    label = "seek_secs",
-                ) { s ->
-                    Text(
-                        text = if (isForward) "+${s} сек" else "−${s} сек",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = Color.White,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-            }
-        }
-    }
-}
-
-// ─── Auto-next episode card ───────────────────────────────────────────────────
-
-@Composable
-private fun AutoNextCard(
-    countdown: Int,
-    nextName: String,
-    onConfirm: () -> Unit,
-    onCancel: () -> Unit,
-) {
-    Card(
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xEE0D0D14)),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            horizontalAlignment = Alignment.End,
-        ) {
-            Text(
-                "Следующая серия",
-                style = MaterialTheme.typography.labelLarge,
-                color = Color.White.copy(alpha = 0.6f),
-            )
-            Text(
-                nextName,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(
-                    onClick = onCancel,
-                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.4f)),
-                ) { Text("Отмена", color = Color.White) }
-                Button(
-                    onClick = onConfirm,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                    ),
-                ) { Text("Смотреть ($countdown)", color = Color.White) }
-            }
-        }
-    }
-}
-
-// ─── Full player controls overlay ─────────────────────────────────────────────
-
-@Composable
-private fun PlayerControls(
-    episodeName: String,
-    videoSources: List<String>,
-    selectedQuality: String,
-    isPlaying: Boolean,
-    currentPosition: Long,
-    duration: Long,
-    hasPrevious: Boolean,
-    hasNext: Boolean,
-    skipSegments: List<SkipSegment>,
-    onBack: () -> Unit,
-    onPlayPause: () -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
-    onSeekBack: () -> Unit,
-    onSeekForward: () -> Unit,
-    onSeek: (Float) -> Unit,
-    onSelectQuality: (String) -> Unit,
-) {
-    var showQualityMenu by remember { mutableStateOf(false) }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.42f)),
-    ) {
-
-        // ── Top bar: ← name  [quality] ──────────────────────────
-        Row(
-            modifier = Modifier
-                .statusBarsPadding()
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp)
-                .align(Alignment.TopCenter),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Назад",
-                    tint = Color.White,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
-            Text(
-                text = episodeName,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = Color.White,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 6.dp),
-            )
-            // Quality badge
-            Box {
-                Row(
-                    modifier = Modifier
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) { showQualityMenu = true }
-                        .background(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
-                            RoundedCornerShape(6.dp),
-                        )
-                        .padding(horizontal = 10.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Icon(
-                        Icons.Filled.HighQuality,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Text(
-                        text = selectedQuality,
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-                DropdownMenu(
-                    expanded = showQualityMenu,
-                    onDismissRequest = { showQualityMenu = false },
-                ) {
-                    videoSources.forEach { quality ->
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    quality,
-                                    fontWeight = if (quality == selectedQuality)
-                                        FontWeight.Bold else FontWeight.Normal,
-                                )
-                            },
-                            onClick = {
-                                onSelectQuality(quality)
-                                showQualityMenu = false
-                            },
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-        }
-
-        // ── Center: |◁  ◁10  ▶⏸  10▷  ▷| ──────────────────────
-        Row(
-            modifier = Modifier.align(Alignment.Center),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(
-                onClick = onPrevious,
-                enabled = hasPrevious,
-                modifier = Modifier.size(48.dp),
-            ) {
-                Icon(
-                    Icons.Filled.SkipPrevious,
-                    contentDescription = "Предыдущая серия",
-                    tint = if (hasPrevious) Color.White else Color.White.copy(alpha = 0.3f),
-                    modifier = Modifier.size(34.dp),
-                )
-            }
-            IconButton(onClick = onSeekBack, modifier = Modifier.size(48.dp)) {
-                Icon(
-                    Icons.Filled.Replay10,
-                    contentDescription = "−10 сек",
-                    tint = Color.White,
-                    modifier = Modifier.size(32.dp),
-                )
-            }
-            // Play / Pause — big orange circle
-            Box(
-                modifier = Modifier
-                    .size(66.dp)
-                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onPlayPause,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Filled.Pause
-                    else Icons.Filled.PlayArrow,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(38.dp),
-                )
-            }
-            IconButton(onClick = onSeekForward, modifier = Modifier.size(48.dp)) {
-                Icon(
-                    Icons.Filled.Forward10,
-                    contentDescription = "+10 сек",
-                    tint = Color.White,
-                    modifier = Modifier.size(32.dp),
-                )
-            }
-            IconButton(
-                onClick = onNext,
-                enabled = hasNext,
-                modifier = Modifier.size(48.dp),
-            ) {
-                Icon(
-                    Icons.Filled.SkipNext,
-                    contentDescription = "Следующая серия",
-                    tint = if (hasNext) Color.White else Color.White.copy(alpha = 0.3f),
-                    modifier = Modifier.size(34.dp),
-                )
-            }
-        }
-
-        // ── Bottom: time + progress slider ──────────────────────
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 4.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    formatTime(currentPosition),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color.White,
-                )
-                Text(
-                    formatTime(duration),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color.White.copy(alpha = 0.6f),
-                )
-            }
-            ThinSeekBar(
-                fraction = if (duration > 0) currentPosition.toFloat() / duration.toFloat()
-                else 0f,
-                onSeek = onSeek,
-                skipSegments = skipSegments,
-                durationMs = duration,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-    }
-}
-
-// ─── Thin seek bar with orange circle thumb ──────────────────────────────────
-
-@Composable
-private fun ThinSeekBar(
-    fraction: Float,
-    onSeek: (Float) -> Unit,
-    skipSegments: List<SkipSegment>,
-    durationMs: Long,
-    modifier: Modifier = Modifier,
-) {
-    val primary = MaterialTheme.colorScheme.primary
-    var dragging by remember { mutableStateOf(false) }
-    var dragFraction by remember { mutableFloatStateOf(0f) }
-    val displayFraction = if (dragging) dragFraction else fraction.coerceIn(0f, 1f)
-    val thumbDiameter = 14.dp
-
-    // Segment colors
-    val introColor = Color(0xFF42A5F5) // blue
-    val outroColor = Color(0xFFAB47BC) // purple
-
-    androidx.compose.foundation.layout.BoxWithConstraints(
-        modifier = modifier
-            .height(28.dp)
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures(
-                    onDragStart = { offset ->
-                        dragging = true
-                        dragFraction =
-                            (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
-                        onSeek(dragFraction)
-                    },
-                    onDragEnd = { dragging = false },
-                    onDragCancel = { dragging = false },
-                    onHorizontalDrag = { change, _ ->
-                        dragFraction =
-                            (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
-                        onSeek(dragFraction)
-                    },
-                )
-            }
-            .pointerInput(Unit) {
-                detectTapGestures { offset ->
-                    onSeek(
-                        (offset.x / size.width.toFloat()).coerceIn(0f, 1f),
-                    )
-                }
-            },
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        val trackHeight = 3.dp
-        val trackShape = RoundedCornerShape(1.5.dp)
-        val thumbOffset = (maxWidth * displayFraction - thumbDiameter / 2)
-            .coerceAtLeast(0.dp)
-
-        // Inactive track
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(trackHeight)
-                .background(Color.White.copy(alpha = 0.2f), trackShape),
-        )
-
-        // Skip segment highlights
-        if (durationMs > 0) {
-            for (seg in skipSegments) {
-                val startFrac = (seg.startMs.toFloat() / durationMs).coerceIn(0f, 1f)
-                val endFrac = (seg.endMs.toFloat() / durationMs).coerceIn(0f, 1f)
-                val segWidth = maxWidth * (endFrac - startFrac)
-                val segOffset = maxWidth * startFrac
-                val segColor = if (seg.type == SkipType.INTRO) introColor else outroColor
-
-                Box(
-                    modifier = Modifier
-                        .offset(x = segOffset)
-                        .width(segWidth)
-                        .height(trackHeight)
-                        .background(segColor.copy(alpha = 0.7f), trackShape),
-                )
-            }
-        }
-
-        // Active track
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(displayFraction)
-                .height(trackHeight)
-                .background(primary, trackShape),
-        )
-        // Thumb circle
-        Box(
-            modifier = Modifier
-                .offset(x = thumbOffset)
-                .size(thumbDiameter)
-                .background(primary, CircleShape),
-        )
-    }
-}
-
-// ─── Skip button (Netflix-style) ──────────────────────────────────────────────
-
-@Composable
-private fun SkipButton(
-    label: String,
-    onClick: () -> Unit,
-) {
-    Button(
-        onClick = onClick,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Color.White.copy(alpha = 0.9f),
-        ),
-        shape = RoundedCornerShape(8.dp),
-        modifier = Modifier.height(40.dp),
-    ) {
-        Text(
-            text = label,
-            color = Color.Black,
-            style = MaterialTheme.typography.labelLarge,
-            fontWeight = FontWeight.Bold,
-        )
-    }
-}
-
-// ─── Speed picker popup ───────────────────────────────────────────────────────
-
-private val speedOptions = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f, 4.0f, 5.0f)
-
-private fun formatSpeed(speed: Float): String =
-    if (speed % 1f == 0f) "${speed.toInt()}x" else "${speed}x"
-
-@Composable
-private fun SpeedPickerPopup(
-    selectedSpeed: Float,
-    isLocked: Boolean,
-    onSpeedSelect: (Float) -> Unit,
-    onLockToggle: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val initialIndex = speedOptions.indexOf(selectedSpeed).coerceAtLeast(0)
-    var sliderIndex by remember(selectedSpeed) { mutableFloatStateOf(initialIndex.toFloat()) }
-    val currentSpeed = speedOptions[sliderIndex.roundToInt()]
-
-    // Fullscreen overlay — no Dialog window, so centering is always exact
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.55f))
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onDismiss,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .widthIn(min = 260.dp, max = 380.dp)
-                .background(Color(0xF0111118), RoundedCornerShape(20.dp))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {},
-                )
-                .padding(horizontal = 24.dp, vertical = 20.dp),
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text(
-                    text = "Скорость",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color.White.copy(alpha = 0.5f),
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = formatSpeed(currentSpeed),
-                    style = MaterialTheme.typography.displaySmall,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Slider(
-                    value = sliderIndex,
-                    onValueChange = { raw ->
-                        sliderIndex = raw
-                        onSpeedSelect(speedOptions[raw.roundToInt()])
-                    },
-                    valueRange = 0f..(speedOptions.size - 1).toFloat(),
-                    steps = speedOptions.size - 2,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = SliderDefaults.colors(
-                        thumbColor = MaterialTheme.colorScheme.primary,
-                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                        inactiveTrackColor = Color.White.copy(alpha = 0.2f),
-                        activeTickColor = Color.Transparent,
-                        inactiveTickColor = Color.Transparent,
-                    ),
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        text = formatSpeed(speedOptions.first()),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.4f),
-                    )
-                    Text(
-                        text = formatSpeed(speedOptions.last()),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.4f),
-                    )
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            if (isLocked) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-                            else Color.White.copy(alpha = 0.05f),
-                            RoundedCornerShape(10.dp),
-                        )
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onLockToggle,
-                        )
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    Icon(
-                        imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
-                        contentDescription = null,
-                        tint = if (isLocked) MaterialTheme.colorScheme.primary
-                               else Color.White.copy(alpha = 0.6f),
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Text(
-                        text = if (isLocked) "Отключить закрепление" else "Закрепить скорость",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = if (isLocked) FontWeight.SemiBold else FontWeight.Normal,
-                        color = if (isLocked) MaterialTheme.colorScheme.primary
-                                else Color.White.copy(alpha = 0.6f),
-                    )
-                }
-            }
-        }
-    }
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-private fun formatTime(ms: Long): String {
-    if (ms <= 0L) return "0:00"
-    val totalSec = ms / 1000
-    val h = totalSec / 3600
-    val m = (totalSec % 3600) / 60
-    val s = totalSec % 60
-    return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
