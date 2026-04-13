@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.animevost.app.core.domain.model.AnimePreview
+import com.animevost.app.core.domain.model.AnimeStatus
 import com.animevost.app.core.ui.components.AnimeCard
 import com.animevost.app.core.ui.components.ErrorState
 import com.animevost.app.core.ui.components.LoadingState
@@ -262,6 +263,29 @@ private fun LoggedInContent(
                     items = state.favorites.take(8),
                     onAnimeClick = onAnimeClick,
                 )
+            }
+        }
+
+        // Watch lists sections
+        state.watchLists.forEach { (status, list) ->
+            if (list.isNotEmpty()) {
+                item {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(top = 8.dp),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                    )
+                    SectionHeader(
+                        title = status.label,
+                        actionLabel = null,
+                        onAction = null,
+                    )
+                }
+                item {
+                    AnimeHorizontalRow(
+                        items = list,
+                        onAnimeClick = onAnimeClick,
+                    )
+                }
             }
         }
 

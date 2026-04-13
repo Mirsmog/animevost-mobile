@@ -3,15 +3,18 @@ package com.animevost.app.feature.profile
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.animevost.app.core.domain.model.AnimePreview
+import com.animevost.app.core.domain.model.AnimeStatus
 import com.animevost.app.core.domain.model.User
 import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.FavoriteRepository
+import com.animevost.app.core.domain.repository.UserListRepository
 import com.animevost.app.core.domain.usecase.GetWatchHistoryUseCase
 import com.animevost.app.core.domain.usecase.LogoutUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
@@ -23,6 +26,7 @@ data class ProfileUiState(
     val isLoggedIn: Boolean = false,
     val favorites: List<AnimePreview> = emptyList(),
     val history: List<AnimePreview> = emptyList(),
+    val watchLists: Map<AnimeStatus, List<AnimePreview>> = emptyMap(),
     val selectedTab: ProfileTab = ProfileTab.FAVORITES,
     val isLoading: Boolean = false,
     val error: String? = null,
@@ -31,6 +35,7 @@ data class ProfileUiState(
 enum class ProfileTab(val title: String) {
     FAVORITES("Избранное"),
     HISTORY("История"),
+    LISTS("Списки"),
 }
 
 sealed interface ProfileEvent {
@@ -46,6 +51,7 @@ class ProfileViewModel @Inject constructor(
     private val favoriteRepository: FavoriteRepository,
     private val getWatchHistoryUseCase: GetWatchHistoryUseCase,
     private val logoutUseCase: LogoutUseCase,
+    private val userListRepository: UserListRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
@@ -70,6 +76,15 @@ class ProfileViewModel @Inject constructor(
                 .collect { favorites ->
                     _uiState.update { it.copy(favorites = favorites.take(8)) }
                 }
+        }
+        // Reactive watch lists per status
+        viewModelScope.launch {
+            val flows = AnimeStatus.entries.map { status -> userListRepository.getByStatus(status) }
+            combine(flows) { arrays ->
+                AnimeStatus.entries.zip(arrays.toList()).associate { (status, list) -> status to list }
+            }.collect { watchLists ->
+                _uiState.update { it.copy(watchLists = watchLists) }
+            }
         }
     }
 

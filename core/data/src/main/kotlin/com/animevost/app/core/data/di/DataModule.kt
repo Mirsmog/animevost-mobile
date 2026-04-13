@@ -8,6 +8,7 @@ import androidx.datastore.preferences.preferencesDataStoreFile
 import com.animevost.app.core.data.db.AppDatabase
 import com.animevost.app.core.data.db.FavoriteDao
 import com.animevost.app.core.data.db.HistoryDao
+import com.animevost.app.core.data.db.UserListDao
 import com.animevost.app.core.data.db.WatchProgressDao
 import com.animevost.app.core.data.repository.AnimeRepositoryImpl
 import com.animevost.app.core.data.repository.UpdateRepositoryImpl
@@ -17,6 +18,7 @@ import com.animevost.app.core.data.repository.FavoriteRepositoryImpl
 import com.animevost.app.core.data.repository.HistoryRepositoryImpl
 import com.animevost.app.core.data.repository.ScheduleRepositoryImpl
 import com.animevost.app.core.data.repository.SharedPrefsCookieStorage
+import com.animevost.app.core.data.repository.UserListRepositoryImpl
 import com.animevost.app.core.data.repository.WatchProgressRepositoryImpl
 import com.animevost.app.core.data.repository.VideoRepositoryImpl
 import com.animevost.app.core.domain.repository.AnimeRepository
@@ -26,6 +28,7 @@ import com.animevost.app.core.domain.repository.CommentRepository
 import com.animevost.app.core.domain.repository.FavoriteRepository
 import com.animevost.app.core.domain.repository.HistoryRepository
 import com.animevost.app.core.domain.repository.ScheduleRepository
+import com.animevost.app.core.domain.repository.UserListRepository
 import com.animevost.app.core.domain.repository.WatchProgressRepository
 import com.animevost.app.core.domain.repository.VideoRepository
 import com.animevost.app.core.network.CookieStorage
@@ -54,6 +57,9 @@ object DataProvidesModule {
 
     @Provides
     fun provideWatchProgressDao(db: AppDatabase): WatchProgressDao = db.watchProgressDao()
+
+    @Provides
+    fun provideUserListDao(db: AppDatabase): UserListDao = db.userListDao()
 
     @Provides
     @Singleton
@@ -107,4 +113,8 @@ abstract class DataBindsModule {
     @Binds
     @Singleton
     abstract fun bindUpdateRepository(impl: UpdateRepositoryImpl): UpdateRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindUserListRepository(impl: UserListRepositoryImpl): UserListRepository
 }

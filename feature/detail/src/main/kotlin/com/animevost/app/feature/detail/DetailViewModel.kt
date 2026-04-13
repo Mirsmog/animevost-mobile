@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.animevost.app.core.data.download.EpisodeDownloader
 import com.animevost.app.core.domain.model.AnimePreview
+import com.animevost.app.core.domain.model.AnimeStatus
 import com.animevost.app.core.domain.model.Comment
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.model.VideoSource
@@ -16,6 +17,7 @@ import com.animevost.app.core.domain.usecase.ToggleFavoriteUseCase
 import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.FavoriteRepository
 import com.animevost.app.core.domain.model.WatchProgress
+import com.animevost.app.core.domain.repository.UserListRepository
 import com.animevost.app.core.domain.repository.WatchProgressRepository
 import com.animevost.app.core.domain.util.onError
 import com.animevost.app.core.domain.util.onSuccess
@@ -57,6 +59,8 @@ data class DetailUiState(
     val watchedEpisodeIds: Set<String> = emptySet(),
     val continueEpisode: Episode? = null,
     val continuePositionMs: Long = 0L,
+    // Watch status (user list)
+    val watchStatus: AnimeStatus? = null,
     // Episode pagination
     val episodeRangeStart: Int = 0,
 )
@@ -77,6 +81,8 @@ sealed interface DetailEvent {
     data class ShowDownloadSheet(val episode: Episode) : DetailEvent
     data object HideDownloadSheet : DetailEvent
     data class DownloadWithQuality(val source: VideoSource) : DetailEvent
+    // Watch status
+    data class SetWatchStatus(val status: AnimeStatus?) : DetailEvent
     // Episode pagination
     data class SelectEpisodeRange(val start: Int) : DetailEvent
 }
@@ -97,6 +103,7 @@ class DetailViewModel @Inject constructor(
     private val addCommentUseCase: AddCommentUseCase,
     private val authRepository: AuthRepository,
     private val watchProgressRepository: WatchProgressRepository,
+    private val userListRepository: UserListRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DetailUiState())
@@ -108,6 +115,15 @@ class DetailViewModel @Inject constructor(
     init {
         authRepository.isLoggedInFlow
             .onEach { loggedIn -> _uiState.update { it.copy(isLoggedIn = loggedIn) } }
+            .launchIn(viewModelScope)
+    }
+
+    private var watchStatusJob: kotlinx.coroutines.Job? = null
+
+    private fun observeWatchStatus(url: String) {
+        watchStatusJob?.cancel()
+        watchStatusJob = userListRepository.getStatusFlow(url)
+            .onEach { status -> _uiState.update { it.copy(watchStatus = status) } }
             .launchIn(viewModelScope)
     }
 
@@ -127,12 +143,14 @@ class DetailViewModel @Inject constructor(
             is DetailEvent.ShowDownloadSheet -> showDownloadSheet(event.episode)
             is DetailEvent.HideDownloadSheet -> hideDownloadSheet()
             is DetailEvent.DownloadWithQuality -> downloadWithQuality(event.source)
+            is DetailEvent.SetWatchStatus -> setWatchStatus(event.status)
             is DetailEvent.SelectEpisodeRange -> _uiState.update { it.copy(episodeRangeStart = event.start) }
         }
     }
 
     private fun loadAnime(url: String) {
         if (_uiState.value.isLoading) return
+        observeWatchStatus(url)
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null, animeUrl = url) }
             val result = getAnimeDetailUseCase(url)
@@ -349,6 +367,29 @@ class DetailViewModel @Inject constructor(
                         ),
                     )
                 }
+        }
+    }
+
+    private fun setWatchStatus(status: AnimeStatus?) {
+        val url = _uiState.value.animeUrl
+        if (url.isBlank()) return
+        val anime = _uiState.value.anime
+        val preview = anime?.let {
+            AnimePreview(
+                id = it.id,
+                title = it.title,
+                titleOriginal = it.titleOriginal,
+                posterUrl = it.posterUrl,
+                episodeInfo = it.episodeCount,
+                url = url,
+            )
+        }
+        viewModelScope.launch {
+            try {
+                userListRepository.setStatus(url, status, preview)
+            } catch (e: Exception) {
+                _effect.emit(DetailEffect.ShowSnackbar("Ошибка сохранения статуса"))
+            }
         }
     }
 }

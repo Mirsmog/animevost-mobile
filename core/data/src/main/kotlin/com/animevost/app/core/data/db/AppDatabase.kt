@@ -12,14 +12,16 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FavoriteEntity::class,
         HistoryEntity::class,
         WatchProgressEntity::class,
+        UserListEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun favoriteDao(): FavoriteDao
     abstract fun historyDao(): HistoryDao
     abstract fun watchProgressDao(): WatchProgressDao
+    abstract fun userListDao(): UserListDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -77,9 +79,25 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `user_list` (
+                        `animeUrl` TEXT NOT NULL,
+                        `animeId` INTEGER NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `posterUrl` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`animeUrl`)
+                    )""".trimIndent(),
+                )
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "animevost.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build()
     }
 }

@@ -4,8 +4,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import okhttp3.FormBody
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import timber.log.Timber
 import java.io.IOException
 import javax.inject.Inject
@@ -47,6 +49,32 @@ class HtmlFetcher @Inject constructor(
                 .url(url)
                 .header("User-Agent", USER_AGENT)
                 .post(formBody)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw HtmlFetchException("HTTP ${response.code}: ${response.message}")
+                }
+                response.body?.string() ?: throw HtmlFetchException("Empty response body")
+            }
+        }
+    }
+
+    /** POST with multipart/form-data encoding (required for DLE profile updates). */
+    suspend fun fetchMultipart(
+        url: String,
+        parts: Map<String, String>,
+    ): String = withRetry {
+        withContext(Dispatchers.IO) {
+            Timber.d("Fetching (multipart POST): $url")
+            val body = MultipartBody.Builder().setType(MultipartBody.FORM).apply {
+                parts.forEach { (key, value) -> addFormDataPart(key, value) }
+            }.build()
+
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", USER_AGENT)
+                .post(body)
                 .build()
 
             client.newCall(request).execute().use { response ->

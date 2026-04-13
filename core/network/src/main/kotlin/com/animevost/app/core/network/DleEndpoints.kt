@@ -39,6 +39,9 @@ object DleEndpoints {
     // Logout
     const val LOGOUT = "index.php?action=logout"
 
+    // Profile page — substitute {username} at runtime
+    const val PROFILE_PAGE = "user/{username}/"
+
     // Video player frame
     const val PLAYER_FRAME = "frame5.php"
 

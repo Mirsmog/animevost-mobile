@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.Star
@@ -55,6 +56,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -96,6 +99,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.animevost.app.core.domain.model.AnimeDetail
+import com.animevost.app.core.domain.model.AnimeStatus
 import com.animevost.app.core.domain.model.Comment
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.model.VideoSource
@@ -176,6 +180,7 @@ fun DetailScreen(
                     watchedEpisodeIds = state.watchedEpisodeIds,
                     continueEpisode = state.continueEpisode,
                     continuePositionMs = state.continuePositionMs,
+                    watchStatus = state.watchStatus,
                     comments = state.comments,
                     isLoadingComments = state.isLoadingComments,
                     commentTextValue = state.commentTextValue,
@@ -185,6 +190,7 @@ fun DetailScreen(
                     onToggleFavorite = { viewModel.onEvent(DetailEvent.ToggleFavorite) },
                     onRate = { viewModel.onEvent(DetailEvent.RateAnime(it)) },
                     onToggleDescription = { viewModel.onEvent(DetailEvent.ToggleDescription) },
+                    onSetWatchStatus = { viewModel.onEvent(DetailEvent.SetWatchStatus(it)) },
                     onPlayEpisode = { episode, index ->
                         onPlayEpisode(episode, state.anime!!.episodes, index)
                     },                    onShowDownloadSheet = { episode ->
@@ -219,6 +225,7 @@ private fun DetailContent(
     watchedEpisodeIds: Set<String>,
     continueEpisode: Episode?,
     continuePositionMs: Long,
+    watchStatus: AnimeStatus?,
     comments: List<Comment>,
     isLoadingComments: Boolean,
     commentTextValue: TextFieldValue,
@@ -228,6 +235,7 @@ private fun DetailContent(
     onToggleFavorite: () -> Unit,
     onRate: (Int) -> Unit,
     onToggleDescription: () -> Unit,
+    onSetWatchStatus: (AnimeStatus?) -> Unit,
     onPlayEpisode: (Episode, Int) -> Unit,
     onShowDownloadSheet: (Episode) -> Unit,
     onSelectEpisodeRange: (Int) -> Unit,
@@ -301,6 +309,13 @@ private fun DetailContent(
                 }
                 Spacer(Modifier.height(12.dp))
             }
+
+            // Watch status chip
+            WatchStatusChip(
+                currentStatus = watchStatus,
+                onStatusSelected = onSetWatchStatus,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
 
             // Genre chips
             FlowRow(
@@ -1409,4 +1424,78 @@ private val EmojiTagVisualTransformation = VisualTransformation { text ->
             transformedToOriginal.getOrElse(offset) { original.length }
     }
     TransformedText(AnnotatedString(sb.toString()), offsetMapping)
+}
+
+// ── Watch Status Chip ─────────────────────────────────────────────────────────
+
+@Composable
+private fun WatchStatusChip(
+    currentStatus: AnimeStatus?,
+    onStatusSelected: (AnimeStatus?) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(modifier = modifier) {
+        FilterChip(
+            selected = currentStatus != null,
+            onClick = { expanded = true },
+            label = {
+                Text(
+                    text = currentStatus?.label ?: "В списке",
+                    style = MaterialTheme.typography.labelMedium,
+                )
+            },
+            leadingIcon = if (currentStatus != null) {
+                { Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp)) }
+            } else null,
+            trailingIcon = {
+                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(16.dp))
+            },
+            shape = RoundedCornerShape(16.dp),
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = OrangePrimary.copy(alpha = 0.15f),
+                selectedLabelColor = OrangePrimary,
+                selectedLeadingIconColor = OrangePrimary,
+                containerColor = Bg3,
+                labelColor = TextSecondary,
+            ),
+            border = FilterChipDefaults.filterChipBorder(
+                enabled = true,
+                selected = currentStatus != null,
+                borderColor = Color.Transparent,
+                selectedBorderColor = OrangePrimary.copy(alpha = 0.4f),
+            ),
+        )
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            AnimeStatus.entries.forEach { status ->
+                DropdownMenuItem(
+                    text = { Text(status.label) },
+                    leadingIcon = {
+                        if (status == currentStatus) {
+                            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(18.dp))
+                        }
+                    },
+                    onClick = {
+                        onStatusSelected(if (status == currentStatus) null else status)
+                        expanded = false
+                    },
+                )
+            }
+            if (currentStatus != null) {
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text = { Text("Убрать из списка", color = MaterialTheme.colorScheme.error) },
+                    onClick = {
+                        onStatusSelected(null)
+                        expanded = false
+                    },
+                )
+            }
+        }
+    }
 }
