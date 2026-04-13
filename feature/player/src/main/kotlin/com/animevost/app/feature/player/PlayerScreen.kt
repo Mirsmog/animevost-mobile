@@ -475,6 +475,7 @@ fun PlayerScreen(
             Box {
                 Row(
                     modifier = Modifier
+                        .padding(top = 6.dp, end = 6.dp)
                         .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
@@ -487,7 +488,7 @@ fun PlayerScreen(
                         text = if (isSpeedBoosting) {
                             val boostSpeed = if (isSpeedLocked) (lockedSpeed * 2f).coerceAtMost(5f) else 2.0f
                             "▶▶ ${formatSpeed(boostSpeed)}"
-                        } else formatSpeed(lockedSpeed),
+                        } else "▶▶ ${formatSpeed(lockedSpeed)}",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
@@ -497,7 +498,6 @@ fun PlayerScreen(
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .offset(x = 5.dp, y = (-5).dp)
                             .size(13.dp)
                             .background(MaterialTheme.colorScheme.primary, CircleShape),
                         contentAlignment = Alignment.Center,
