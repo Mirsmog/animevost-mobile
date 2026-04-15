@@ -158,6 +158,19 @@ class DetailViewModel @Inject constructor(
                 val isFav = favoriteRepository.isFavorite(anime.id)
                 _uiState.update { it.copy(anime = anime, isFavorite = isFav, isLoading = false) }
                 loadComments()
+                viewModelScope.launch {
+                    userListRepository.enrichPreview(
+                        animeUrl = url,
+                        preview = AnimePreview(
+                            id = anime.id,
+                            title = anime.title,
+                            titleOriginal = anime.titleOriginal,
+                            posterUrl = anime.posterUrl,
+                            episodeInfo = "",
+                            url = url,
+                        ),
+                    )
+                }
             }
             result.onError { _, msg ->
                 _uiState.update {

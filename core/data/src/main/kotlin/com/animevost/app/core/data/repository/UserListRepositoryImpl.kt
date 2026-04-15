@@ -128,20 +128,18 @@ class UserListRepositoryImpl @Inject constructor(
         val profileUrl = profileUrlFor(user.name)
 
         if (pendingUpload) {
-            // Upload local state first; then re-read to pick up remote-only entries.
             uploadNow(profileUrl)
-            // Re-read remote to get any entries added on another device.
             val html = htmlFetcher.fetch(profileUrl)
-            val parsed = userInfoParser.parse(html)
+            val parsed = userInfoParser.parse(html, profileUrl)
             val remote = decodePayload(parsed.rawInfo)
-            // Fill in remote entries that don't exist locally (local additions already won above).
             addMissingFromRemote(remote)
+            if (parsed.avatarUrl.isNotBlank()) authRepository.saveAvatarUrl(parsed.avatarUrl)
         } else {
-            // No local pending changes: remote is the single source of truth.
             val html = htmlFetcher.fetch(profileUrl)
-            val parsed = userInfoParser.parse(html)
+            val parsed = userInfoParser.parse(html, profileUrl)
             val remote = decodePayload(parsed.rawInfo)
             overwriteLocalWithRemote(remote)
+            if (parsed.avatarUrl.isNotBlank()) authRepository.saveAvatarUrl(parsed.avatarUrl)
         }
     }
 
@@ -154,7 +152,7 @@ class UserListRepositoryImpl @Inject constructor(
      */
     private suspend fun uploadNow(profileUrl: String) {
         val html = htmlFetcher.fetch(profileUrl)
-        val parsed = userInfoParser.parse(html)
+        val parsed = userInfoParser.parse(html, profileUrl)
         if (parsed.hash.isBlank()) {
             Timber.w("UserList upload skipped — could not read dle_allow_hash (not logged in?)")
             return
@@ -259,6 +257,15 @@ class UserListRepositoryImpl @Inject constructor(
     }
 
     // ── Static helpers ────────────────────────────────────────────────────────
+
+    override suspend fun enrichPreview(animeUrl: String, preview: AnimePreview) {
+        dao.enrichIfBlank(
+            url = animeUrl.toRelativePath(),
+            title = preview.title,
+            posterUrl = preview.posterUrl,
+            animeId = preview.id,
+        )
+    }
 
     private companion object {
         const val PAYLOAD_VERSION = 1

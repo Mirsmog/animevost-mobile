@@ -30,6 +30,7 @@ class AuthRepositoryImpl @Inject constructor(
     internal companion object {
         val KEY_USERNAME = stringPreferencesKey("auth_username")
         val KEY_USER_ID = intPreferencesKey("auth_user_id")
+        val KEY_AVATAR_URL = stringPreferencesKey("auth_avatar_url")
     }
 
     // Initialise synchronously from the cookie jar so the first emission is correct
@@ -97,7 +98,14 @@ class AuthRepositoryImpl @Inject constructor(
         val userId = dataStore.data
             .map { it[KEY_USER_ID] }
             .firstOrNull() ?: cookieUserId.toIntOrNull() ?: 0
-        return User(id = userId, name = username, avatarUrl = "", isLoggedIn = true)
+        val avatarUrl = dataStore.data
+            .map { it[KEY_AVATAR_URL] }
+            .firstOrNull() ?: ""
+        return User(id = userId, name = username, avatarUrl = avatarUrl, isLoggedIn = true)
+    }
+
+    override suspend fun saveAvatarUrl(url: String) {
+        dataStore.edit { it[KEY_AVATAR_URL] = url }
     }
 
     override suspend fun isLoggedIn(): Boolean = getCurrentUser() != null

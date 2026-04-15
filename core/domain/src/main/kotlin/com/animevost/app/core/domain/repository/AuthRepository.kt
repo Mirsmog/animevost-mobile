@@ -22,4 +22,7 @@ interface AuthRepository {
 
     /** Reactive stream of the authenticated state. Emits `true` after login, `false` after logout. */
     val isLoggedInFlow: Flow<Boolean>
+
+    /** Persists the user's avatar URL so [getCurrentUser] can return it. */
+    suspend fun saveAvatarUrl(url: String)
 }

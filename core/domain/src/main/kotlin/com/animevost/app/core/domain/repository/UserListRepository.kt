@@ -20,4 +20,10 @@ interface UserListRepository {
 
     /** Sync watch-list from the remote profile `info` field. No-op when not logged in. */
     suspend fun syncFromRemote()
+
+    /**
+     * Backfill display metadata (title, posterUrl) for an entry that was synced from remote
+     * without local preview data. Only updates Room; does NOT trigger a remote upload.
+     */
+    suspend fun enrichPreview(animeUrl: String, preview: AnimePreview)
 }

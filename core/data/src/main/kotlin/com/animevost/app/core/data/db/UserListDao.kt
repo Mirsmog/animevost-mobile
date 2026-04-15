@@ -25,4 +25,8 @@ interface UserListDao {
 
     @Query("DELETE FROM user_list")
     suspend fun deleteAll()
+
+    /** Updates title/posterUrl/animeId only if the entry exists and title is currently blank. */
+    @Query("UPDATE user_list SET title=:title, posterUrl=:posterUrl, animeId=:animeId WHERE animeUrl=:url AND title=''")
+    suspend fun enrichIfBlank(url: String, title: String, posterUrl: String, animeId: Int)
 }
