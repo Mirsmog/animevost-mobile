@@ -1,8 +1,13 @@
-# AnimeVost
+# AnimeVost Mobile
 
-**Неофициальное** мобильное приложение для сайта [animevost.org](https://animevost.org). Разрабатывалось для личного использования и не имеет никакой связи с командой сайта. Приложение позволяет смотреть аниме, следить за расписанием выхода серий и управлять избранным.
+<div align="center">
 
-> Проект находится в активной разработке. Некоторые функции ещё не реализованы.
+[![Release](https://img.shields.io/github/v/release/Mirsmog/animevost-mobile?style=flat-square&color=6c5ce7)](https://github.com/Mirsmog/animevost-mobile/releases/latest)
+[![Android](https://img.shields.io/badge/Android-8.0%2B-brightgreen?style=flat-square&logo=android)](https://github.com/Mirsmog/animevost-mobile/releases/latest)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.0-7F52FF?style=flat-square&logo=kotlin)](https://kotlinlang.org)
+[![License](https://img.shields.io/github/license/Mirsmog/animevost-mobile?style=flat-square)](LICENSE)
+
+</div>
 
 <div align="center">
   <img src="docs/screenshots/screen_4.jpg" width="22%">
@@ -11,104 +16,48 @@
   <img src="docs/screenshots/screen_3.jpg" width="22%">
 </div>
 
-## Скачать
+<br>
 
-Готовые APK доступны на странице [Releases](https://github.com/Mirsmog/animevost-mobile/releases/latest).
-
-Скачайте файл под своё устройство:
-
-| APK | Устройство |
-|---|---|
-| `AnimeVost-vX.X.X-arm64-v8a.apk` | Большинство современных Android-устройств |
-| `AnimeVost-vX.X.X-armeabi-v7a.apk` | Старые 32-битные устройства |
-| `AnimeVost-vX.X.X-universal.apk` | Если не знаете какой выбрать |
-
-> Перед установкой разрешите установку из неизвестных источников: **Настройки → Приложения → Особые права → Установка неизвестных приложений**.
+**Неофициальный** нативный клиент [animevost.org](https://animevost.org) для Android. Написан на Kotlin + Jetpack Compose. Никакой связи с командой сайта не имеет.
 
 ## Возможности
 
-- Каталог аниме с сортировкой и фильтрацией по типу, жанру и году
-- Поиск по названию с просмотром жанров и годов выхода
-- Расписание выхода новых серий
-- Страница аниме: описание, список эпизодов, комментарии
-- Встроенный видеоплеер на базе Media3 / ExoPlayer
-- Авторизация через аккаунт animevost.org
-- Избранное с синхронизацией
+- 🎬 Встроенный плеер — управление жестами, переменная скорость, двойное ускорение нажатием
+- 📋 Списки просмотра — «Смотрю», «Просмотрено», «Запланировано», «Брошено» с облачной синхронизацией через профиль
+- 🗂️ Каталог с фильтрацией по типу, жанру и году
+- 🔍 Поиск по названию
+- 📅 Расписание выхода новых серий
+- 💬 Комментарии к аниме
+- ⭐ Избранное с синхронизацией
+- 👤 Профиль пользователя с аватаркой
 
-## Требования
+## Скачать
 
-- Android 8.0 и выше (API 26+)
-- Android Studio Hedgehog или новее
-- JDK 17
+Готовые APK → **[Releases](https://github.com/Mirsmog/animevost-mobile/releases/latest)**
 
-## Сборка
+| APK | Для кого |
+|---|---|
+| `arm64-v8a` | Большинство современных устройств |
+| `armeabi-v7a` | Старые 32-битные устройства |
+| `universal` | Если не уверены — берите этот |
+
+> Перед установкой разрешите установку из неизвестных источников: **Настройки → Приложения → Особые права → Установка неизвестных приложений**.
+
+## Сборка из исходников
 
 ```bash
-git clone https://github.com/ваш-профиль/animevost-mobile.git
+git clone https://github.com/Mirsmog/animevost-mobile.git
 cd animevost-mobile
 ./gradlew assembleDebug
 ```
 
-APK появится в `app/build/outputs/apk/debug/`.
+Требования: Android 8.0+ (API 26), JDK 17, Android Studio Hedgehog+.
 
-> Для входа в приложение нужен существующий аккаунт на [animevost.org](https://animevost.org). Регистрация через приложение пока не поддерживается.
-
-## Стек
-
-| Слой | Технологии |
-|---|---|
-| UI | Jetpack Compose, Material 3 |
-| Навигация | Compose Navigation |
-| DI | Hilt |
-| Сеть | Retrofit, JSoup |
-| База данных | Room |
-| Плеер | Media3 (ExoPlayer) |
-| Язык | Kotlin 2.0 |
-
-## Структура проекта
-
-```
-app/                  точка входа, граф навигации
-core/
-  domain/             модели данных, use cases, интерфейсы репозиториев
-  data/               реализация репозиториев, Room
-  network/            Retrofit-клиент, JSoup-парсер
-  ui/                 дизайн-система, переиспользуемые компоненты
-feature/
-  home/               главный каталог с поиском
-  catalog/            списки по фильтрам
-  schedule/           расписание серий
-  detail/             страница аниме
-  player/             видеоплеер
-  auth/               авторизация
-  profile/            профиль и избранное
-```
+> Для входа нужен существующий аккаунт на [animevost.org](https://animevost.org).
 
 ## Участие в разработке
 
-Пул-реквесты приветствуются. Перед крупными изменениями лучше открыть issue и обсудить.
-
-## Релизы
-
-Сборка и публикация APK происходит автоматически при создании тега вида `v1.2.3`.
-
-Перед первым релизом нужно добавить четыре секрета в настройках репозитория (`Settings → Secrets → Actions`):
-
-| Секрет | Описание |
-|---|---|
-| `KEYSTORE_BASE64` | Keystore-файл, закодированный в base64: `base64 -w 0 my.jks` |
-| `KEYSTORE_PASSWORD` | Пароль от keystore |
-| `KEY_ALIAS` | Алиас ключа |
-| `KEY_PASSWORD` | Пароль от ключа |
-
-После этого создание релиза:
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-GitHub Actions соберёт APK под arm64-v8a, armeabi-v7a, x86_64 и universal, и опубликует их в разделе Releases.
+Пул-реквесты приветствуются. Перед крупными изменениями лучше открыть issue.
 
 ## Лицензия
 
