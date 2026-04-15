@@ -36,11 +36,12 @@ class UserInfoParser @Inject constructor() {
         val email = form?.selectFirst("input[name=email]")?.`val`()?.trim() ?: ""
 
         // Try common DLE avatar selectors; absUrl works because Jsoup has a base URI.
+        // animevost uses class "loginAva" in the header; also try generic fallbacks.
         val avatarUrl = doc
-            .select("div.ava img, div.avatar img, div.user-ava img, .userinfo-ava img, div.img_profile img")
+            .select(".loginAva img, div.ava img, div.avatar img, div.user-ava img, .userinfo-ava img, div.img_profile img")
             .firstOrNull()?.absUrl("src")
             ?.takeIf { it.isNotBlank() }
-            ?: doc.select("img[src*=avatar], img[src*=/ava]")
+            ?: doc.select("img[src*=fotos], img[src*=avatar], img[src*=/ava]")
                 .firstOrNull()?.absUrl("src")
                 ?.takeIf { it.isNotBlank() }
             ?: ""
