@@ -284,8 +284,9 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun captureSkipStart(type: SegmentType, positionMs: Long) {
-        val sv = surfaceViewRef?.get() ?: return
+        // Update state immediately so the "Конец" button appears — regardless of SurfaceView state.
         _uiState.update { it.copy(editingSegmentType = type, pendingStartMs = positionMs) }
+        val sv = surfaceViewRef?.get() ?: return
         viewModelScope.launch {
             val h0 = captureHash(sv)
             delay(3_000)
