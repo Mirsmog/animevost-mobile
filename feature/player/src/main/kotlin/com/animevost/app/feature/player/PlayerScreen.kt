@@ -4,6 +4,7 @@ package com.animevost.app.feature.player
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.view.SurfaceView
 import android.view.WindowManager
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
@@ -83,6 +84,7 @@ fun PlayerScreen(
     val context = LocalContext.current
     val activity = context as Activity
     val state by viewModel.uiState.collectAsState()
+    val skipSnackbar by viewModel.skipSnackbar.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
     val haptic = LocalHapticFeedback.current
 
@@ -113,6 +115,10 @@ fun PlayerScreen(
     var isSpeedLocked by remember { mutableStateOf(false) }
     var lockedSpeed by remember { mutableFloatStateOf(2.0f) }
     var showSpeedPopup by remember { mutableStateOf(false) }
+
+    // ── Skip segment editor ──────────────────────────────────
+    var showSkipEditor by remember { mutableStateOf(false) }
+    var surfaceViewRef by remember { mutableStateOf<SurfaceView?>(null) }
 
     DisposableEffect(Unit) {
         val origOrientation = activity.requestedOrientation
@@ -225,6 +231,14 @@ fun PlayerScreen(
         }
     }
 
+    // ── Start skip detection when SurfaceView is ready ───────────
+    LaunchedEffect(surfaceViewRef, state.skipSegments) {
+        val sv = surfaceViewRef ?: return@LaunchedEffect
+        if (state.skipSegments.isNotEmpty()) {
+            viewModel.startSkipDetection(sv, exoPlayer)
+        }
+    }
+
     // ── Lifecycle pause / resume ─────────────────────────────────
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -251,7 +265,13 @@ fun PlayerScreen(
                     PlayerView(ctx).apply { player = exoPlayer; useController = false }
                 },
                 modifier = Modifier.fillMaxSize(),
-                update = { view -> view.player = exoPlayer },
+                update = { view ->
+                    view.player = exoPlayer
+                    val sv = view.videoSurfaceView as? SurfaceView
+                    if (sv != null && surfaceViewRef !== sv) {
+                        surfaceViewRef = sv
+                    }
+                },
             )
         }
 
@@ -535,5 +555,74 @@ fun PlayerScreen(
                 onDismiss = { showSpeedPopup = false },
             )
         }
+
+        // ── Skip editor button (top-left, visible with controls) ─
+        AnimatedVisibility(
+            visible = controlsVisible && !showSkipEditor,
+            enter = fadeIn(tween(200)),
+            exit = fadeOut(tween(200)),
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = 16.dp, top = 110.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { showSkipEditor = true }
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = "⏭ Скип",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                )
+            }
+        }
+
+        // ── Skip segment editor sheet ────────────────────────────
+        AnimatedVisibility(
+            visible = showSkipEditor,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            SkipSegmentEditorSheet(
+                segments = state.skipSegments,
+                editingType = state.editingSegmentType,
+                pendingStartMs = state.pendingStartMs,
+                currentPositionMs = currentPosition,
+                onStartCapture = { type ->
+                    viewModel.onEvent(PlayerEvent.SaveSkipStart(type, exoPlayer.currentPosition))
+                },
+                onEndCapture = { type ->
+                    viewModel.onEvent(PlayerEvent.SaveSkipEnd(type, exoPlayer.currentPosition))
+                },
+                onDelete = { type -> viewModel.onEvent(PlayerEvent.DeleteSkip(type)) },
+                onBeginEdit = { type -> viewModel.onEvent(PlayerEvent.BeginEditSegment(type)) },
+                onDismiss = {
+                    viewModel.onEvent(PlayerEvent.CancelEditSegment)
+                    showSkipEditor = false
+                },
+            )
+        }
+
+        // ── Skip snackbar ────────────────────────────────────────
+        SkipSnackbarOverlay(
+            message = skipSnackbar?.message ?: "",
+            visible = skipSnackbar != null,
+            onUndo = {
+                val pos = skipSnackbar?.undoPositionMs ?: return@SkipSnackbarOverlay
+                exoPlayer.seekTo(pos)
+                viewModel.onEvent(PlayerEvent.UndoSkip(pos))
+            },
+            onDismiss = { viewModel.onEvent(PlayerEvent.DismissSkipSnackbar) },
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 80.dp),
+        )
     }
 }

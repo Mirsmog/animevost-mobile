@@ -1,5 +1,10 @@
 package com.animevost.app.feature.player
 
+import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
+import android.view.PixelCopy
+import android.view.SurfaceView
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -9,15 +14,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.Episode
+import com.animevost.app.core.domain.model.SegmentType
+import com.animevost.app.core.domain.model.SkipSegment
 import com.animevost.app.core.domain.model.VideoSource
+import com.animevost.app.core.domain.model.WatchProgress
+import com.animevost.app.core.domain.repository.SkipSegmentRepository
+import com.animevost.app.core.domain.repository.WatchProgressRepository
 import com.animevost.app.core.domain.usecase.AddToHistoryUseCase
 import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
 import com.animevost.app.core.domain.usecase.GetVideoUrlUseCase
-import com.animevost.app.core.domain.model.WatchProgress
-import com.animevost.app.core.domain.repository.WatchProgressRepository
 import com.animevost.app.core.domain.util.onError
 import com.animevost.app.core.domain.util.onSuccess
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,7 +34,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import java.lang.ref.WeakReference
 import javax.inject.Inject
+import kotlin.coroutines.resume
 
 data class PlayerUiState(
     val videoSources: List<VideoSource> = emptyList(),
@@ -37,6 +49,9 @@ data class PlayerUiState(
     val currentEpisodeIndex: Int = 0,
     /** Position to seek to when the video finishes loading (cleared after use). */
     val resumePositionMs: Long = 0L,
+    val skipSegments: List<SkipSegment> = emptyList(),
+    val editingSegmentType: SegmentType? = null,
+    val pendingStartMs: Long? = null,
 ) {
     val hasPrevious: Boolean get() = currentEpisodeIndex > 0
     val hasNext: Boolean get() = currentEpisodeIndex < allEpisodes.lastIndex
@@ -44,6 +59,8 @@ data class PlayerUiState(
         get() = videoSources.firstOrNull { it.quality == selectedQuality }?.url
             ?: videoSources.firstOrNull()?.url
 }
+
+data class SkipSnackbar(val message: String, val undoPositionMs: Long)
 
 sealed interface PlayerEvent {
     data class SelectQuality(val quality: String) : PlayerEvent
@@ -53,6 +70,13 @@ sealed interface PlayerEvent {
     data class UpdateProgress(val positionMs: Long, val durationMs: Long) : PlayerEvent
     /** Signal that resume position has been consumed (seek done). */
     data object ResumeConsumed : PlayerEvent
+    data class BeginEditSegment(val type: SegmentType) : PlayerEvent
+    data class SaveSkipStart(val type: SegmentType, val positionMs: Long) : PlayerEvent
+    data class SaveSkipEnd(val type: SegmentType, val positionMs: Long) : PlayerEvent
+    data class DeleteSkip(val type: SegmentType) : PlayerEvent
+    data object DismissSkipSnackbar : PlayerEvent
+    data class UndoSkip(val positionMs: Long) : PlayerEvent
+    data object CancelEditSegment : PlayerEvent
 }
 
 @HiltViewModel
@@ -63,6 +87,7 @@ class PlayerViewModel @Inject constructor(
     private val addToHistoryUseCase: AddToHistoryUseCase,
     private val dataStore: DataStore<Preferences>,
     private val watchProgressRepository: WatchProgressRepository,
+    private val skipSegmentRepository: SkipSegmentRepository,
 ) : ViewModel() {
 
     private companion object {
@@ -76,7 +101,13 @@ class PlayerViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
+    private val _skipSnackbar = MutableStateFlow<SkipSnackbar?>(null)
+    val skipSnackbar: StateFlow<SkipSnackbar?> = _skipSnackbar.asStateFlow()
+
     private var animePreview: AnimePreview? = null
+    private var skipDetector: SkipDetector? = null
+    private var surfaceViewRef: WeakReference<SurfaceView>? = null
+    private var pendingHashes: Triple<Long, Long, Long>? = null
 
     init {
         val episode = Episode(name = episodeName, videoId = videoId, thumbnailUrl = "")
@@ -97,6 +128,17 @@ class PlayerViewModel @Inject constructor(
             }
             is PlayerEvent.UpdateProgress -> saveCurrentProgress(event.positionMs, event.durationMs)
             is PlayerEvent.ResumeConsumed -> _uiState.update { it.copy(resumePositionMs = 0L) }
+            is PlayerEvent.BeginEditSegment -> _uiState.update {
+                it.copy(editingSegmentType = event.type, pendingStartMs = null)
+            }
+            is PlayerEvent.SaveSkipStart -> captureSkipStart(event.type, event.positionMs)
+            is PlayerEvent.SaveSkipEnd -> captureSkipEnd(event.type, event.positionMs)
+            is PlayerEvent.DeleteSkip -> deleteSkipSegment(event.type)
+            is PlayerEvent.DismissSkipSnackbar -> _skipSnackbar.value = null
+            is PlayerEvent.UndoSkip -> _skipSnackbar.value = null
+            is PlayerEvent.CancelEditSegment -> _uiState.update {
+                it.copy(editingSegmentType = null, pendingStartMs = null)
+            }
         }
     }
 
@@ -151,6 +193,7 @@ class PlayerViewModel @Inject constructor(
                 if (savedProgress != null && savedProgress.positionMs > 0L && !savedProgress.isCompleted) {
                     _uiState.update { it.copy(resumePositionMs = savedProgress.positionMs) }
                 }
+                loadSkipSegments(detail.id)
             }
         }
     }
@@ -200,6 +243,118 @@ class PlayerViewModel @Inject constructor(
         val newIndex = state.currentEpisodeIndex + direction
         if (newIndex < 0 || newIndex > state.allEpisodes.lastIndex) return
         val episode = state.allEpisodes[newIndex]
+        skipDetector?.resetSkipped()
         loadVideo(episode, state.allEpisodes, newIndex)
+    }
+
+    // ── Skip segment support ─────────────────────────────────────
+
+    private fun loadSkipSegments(animeId: Int) {
+        viewModelScope.launch {
+            val segments = skipSegmentRepository.getSegments(animeId)
+            _uiState.update { it.copy(skipSegments = segments) }
+        }
+    }
+
+    fun startSkipDetection(surfaceView: SurfaceView, exoPlayer: androidx.media3.exoplayer.ExoPlayer) {
+        surfaceViewRef = WeakReference(surfaceView)
+        val segments = _uiState.value.skipSegments
+        if (segments.isEmpty()) return
+        skipDetector?.stop()
+        val detector = SkipDetector(exoPlayer, surfaceView)
+        detector.onSegmentDetected = { type, seekToMs ->
+            val prevPosition = exoPlayer.currentPosition
+            exoPlayer.seekTo(seekToMs)
+            val label = if (type == SegmentType.INTRO) "Интро" else "Аутро"
+            _skipSnackbar.value = SkipSnackbar("$label пропущено", prevPosition)
+            viewModelScope.launch {
+                delay(3_000)
+                if (_skipSnackbar.value?.undoPositionMs == prevPosition) {
+                    _skipSnackbar.value = null
+                }
+            }
+        }
+        skipDetector = detector
+        detector.start(segments, viewModelScope)
+    }
+
+    fun restartSkipDetection(exoPlayer: androidx.media3.exoplayer.ExoPlayer) {
+        val sv = surfaceViewRef?.get() ?: return
+        startSkipDetection(sv, exoPlayer)
+    }
+
+    private fun captureSkipStart(type: SegmentType, positionMs: Long) {
+        val sv = surfaceViewRef?.get() ?: return
+        _uiState.update { it.copy(editingSegmentType = type, pendingStartMs = positionMs) }
+        viewModelScope.launch {
+            val h0 = captureHash(sv)
+            delay(3_000)
+            val h3 = captureHash(sv)
+            delay(3_000)
+            val h6 = captureHash(sv)
+            pendingHashes = Triple(h0 ?: 0L, h3 ?: 0L, h6 ?: 0L)
+        }
+    }
+
+    private fun captureSkipEnd(type: SegmentType, positionMs: Long) {
+        val startMs = _uiState.value.pendingStartMs ?: return
+        val animeId = animePreview?.id ?: return
+        val hashes = pendingHashes ?: Triple(0L, 0L, 0L)
+        val durationMs = positionMs - startMs
+        if (durationMs <= 0) return
+        viewModelScope.launch {
+            val segment = SkipSegment(
+                animeId = animeId,
+                type = type,
+                hash0 = hashes.first,
+                hash3 = hashes.second,
+                hash6 = hashes.third,
+                durationMs = durationMs,
+                referenceTimeMs = startMs,
+            )
+            skipSegmentRepository.saveSegment(segment)
+            pendingHashes = null
+            _uiState.update { it.copy(editingSegmentType = null, pendingStartMs = null) }
+            loadSkipSegments(animeId)
+        }
+    }
+
+    private fun deleteSkipSegment(type: SegmentType) {
+        val animeId = animePreview?.id ?: return
+        viewModelScope.launch {
+            skipSegmentRepository.deleteSegment(animeId, type)
+            loadSkipSegments(animeId)
+        }
+    }
+
+    private suspend fun captureHash(surfaceView: SurfaceView): Long? {
+        if (!surfaceView.isAttachedToWindow || surfaceView.width <= 0) return null
+        return suspendCancellableCoroutine { cont ->
+            val bitmap = Bitmap.createBitmap(
+                surfaceView.width,
+                surfaceView.height,
+                Bitmap.Config.ARGB_8888,
+            )
+            try {
+                PixelCopy.request(surfaceView, bitmap, { result ->
+                    if (result == PixelCopy.SUCCESS) {
+                        val hash = PHashUtils.compute(bitmap)
+                        bitmap.recycle()
+                        cont.resume(hash)
+                    } else {
+                        bitmap.recycle()
+                        cont.resume(null)
+                    }
+                }, Handler(Looper.getMainLooper()))
+            } catch (_: Exception) {
+                bitmap.recycle()
+                cont.resume(null)
+            }
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        skipDetector?.stop()
     }
 }
