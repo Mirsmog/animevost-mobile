@@ -12,6 +12,7 @@ import com.animevost.app.core.data.db.MalMappingDao
 import com.animevost.app.core.data.db.SkipTimeDao
 import com.animevost.app.core.data.db.UserListDao
 import com.animevost.app.core.data.db.WatchProgressDao
+import com.animevost.app.core.data.repository.FeatureFlagsRepositoryImpl
 import com.animevost.app.core.data.repository.AnimeRepositoryImpl
 import com.animevost.app.core.data.repository.UpdateRepositoryImpl
 import com.animevost.app.core.data.repository.AuthRepositoryImpl
@@ -24,6 +25,7 @@ import com.animevost.app.core.data.repository.SkipTimesRepositoryImpl
 import com.animevost.app.core.data.repository.UserListRepositoryImpl
 import com.animevost.app.core.data.repository.WatchProgressRepositoryImpl
 import com.animevost.app.core.data.repository.VideoRepositoryImpl
+import com.animevost.app.core.domain.repository.FeatureFlagsRepository
 import com.animevost.app.core.domain.repository.AnimeRepository
 import com.animevost.app.core.domain.repository.UpdateRepository
 import com.animevost.app.core.domain.repository.AuthRepository
@@ -131,4 +133,8 @@ abstract class DataBindsModule {
     @Binds
     @Singleton
     abstract fun bindSkipTimesRepository(impl: SkipTimesRepositoryImpl): SkipTimesRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindFeatureFlagsRepository(impl: FeatureFlagsRepositoryImpl): FeatureFlagsRepository
 }

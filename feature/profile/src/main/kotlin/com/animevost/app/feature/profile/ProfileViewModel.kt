@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.AnimeStatus
+import com.animevost.app.core.domain.model.BetaFeature
 import com.animevost.app.core.domain.model.User
 import com.animevost.app.core.domain.repository.AuthRepository
+import com.animevost.app.core.domain.repository.FeatureFlagsRepository
 import com.animevost.app.core.domain.repository.FavoriteRepository
 import com.animevost.app.core.domain.repository.UserListRepository
 import com.animevost.app.core.domain.usecase.GetWatchHistoryUseCase
@@ -17,6 +19,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -43,6 +46,7 @@ sealed interface ProfileEvent {
     data class SelectTab(val tab: ProfileTab) : ProfileEvent
     data object Logout : ProfileEvent
     data object Refresh : ProfileEvent
+    data class ToggleBetaFeature(val feature: BetaFeature, val enabled: Boolean) : ProfileEvent
 }
 
 @HiltViewModel
@@ -52,10 +56,14 @@ class ProfileViewModel @Inject constructor(
     private val getWatchHistoryUseCase: GetWatchHistoryUseCase,
     private val logoutUseCase: LogoutUseCase,
     private val userListRepository: UserListRepository,
+    private val featureFlagsRepository: FeatureFlagsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
+
+    private val _betaFeatures = MutableStateFlow<Map<BetaFeature, Boolean>>(emptyMap())
+    val betaFeatures: StateFlow<Map<BetaFeature, Boolean>> = _betaFeatures.asStateFlow()
 
     init {
         // Re-load profile (user info + history) on every auth state change
@@ -86,6 +94,15 @@ class ProfileViewModel @Inject constructor(
                 _uiState.update { it.copy(watchLists = watchLists) }
             }
         }
+        // Reactive beta feature flags
+        viewModelScope.launch {
+            val flows = BetaFeature.entries.map { feature ->
+                featureFlagsRepository.isEnabled(feature)
+            }
+            combine(flows) { values ->
+                BetaFeature.entries.zip(values.toList()).associate { (feature, enabled) -> feature to enabled }
+            }.collect { _betaFeatures.value = it }
+        }
     }
 
     fun onEvent(event: ProfileEvent) {
@@ -94,6 +111,9 @@ class ProfileViewModel @Inject constructor(
             is ProfileEvent.SelectTab -> _uiState.update { it.copy(selectedTab = event.tab) }
             is ProfileEvent.Logout -> logout()
             is ProfileEvent.Refresh -> loadProfile()
+            is ProfileEvent.ToggleBetaFeature -> viewModelScope.launch {
+                featureFlagsRepository.setEnabled(event.feature, event.enabled)
+            }
         }
     }
 

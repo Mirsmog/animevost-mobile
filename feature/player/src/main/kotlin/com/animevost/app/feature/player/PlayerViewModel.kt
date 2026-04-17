@@ -8,6 +8,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.animevost.app.core.domain.model.AnimePreview
+import com.animevost.app.core.domain.model.BetaFeature
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.model.SkipInterval
 import com.animevost.app.core.domain.model.VideoSource
@@ -15,11 +16,13 @@ import com.animevost.app.core.domain.usecase.AddToHistoryUseCase
 import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
 import com.animevost.app.core.domain.usecase.GetVideoUrlUseCase
 import com.animevost.app.core.domain.model.WatchProgress
+import com.animevost.app.core.domain.repository.FeatureFlagsRepository
 import com.animevost.app.core.domain.repository.SkipTimesRepository
 import com.animevost.app.core.domain.repository.WatchProgressRepository
 import com.animevost.app.core.domain.util.onError
 import com.animevost.app.core.domain.util.onSuccess
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -66,6 +69,7 @@ class PlayerViewModel @Inject constructor(
     private val dataStore: DataStore<Preferences>,
     private val watchProgressRepository: WatchProgressRepository,
     private val skipTimesRepository: SkipTimesRepository,
+    private val featureFlagsRepository: FeatureFlagsRepository,
 ) : ViewModel() {
 
     private companion object {
@@ -89,6 +93,7 @@ class PlayerViewModel @Inject constructor(
     private var currentSkipIntervals: List<SkipInterval> = emptyList()
     private var titleOriginal: String = ""
     private var titleAlternative: String = ""
+    private var skipTimesJob: Job? = null
 
     init {
         val episode = Episode(name = episodeName, videoId = videoId, thumbnailUrl = "")
@@ -230,8 +235,16 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun loadSkipTimesForEpisode(animeId: Int, epName: String) {
+        skipTimesJob?.cancel()
         val episodeNum = Regex("\\d+").find(epName)?.value?.toIntOrNull() ?: 1
-        viewModelScope.launch {
+        skipTimesJob = viewModelScope.launch {
+            val isEnabled = featureFlagsRepository.isEnabled(BetaFeature.SKIP_INTRO_OUTRO).first()
+            if (!isEnabled) {
+                currentSkipIntervals = emptyList()
+                _skipIntervals.value = emptyList()
+                _activeSkip.value = null
+                return@launch
+            }
             currentSkipIntervals = try {
                 skipTimesRepository.getSkipTimes(
                     animeId = animeId,
