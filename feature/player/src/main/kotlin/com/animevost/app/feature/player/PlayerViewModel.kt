@@ -9,11 +9,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.Episode
+import com.animevost.app.core.domain.model.SkipInterval
 import com.animevost.app.core.domain.model.VideoSource
 import com.animevost.app.core.domain.usecase.AddToHistoryUseCase
 import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
 import com.animevost.app.core.domain.usecase.GetVideoUrlUseCase
 import com.animevost.app.core.domain.model.WatchProgress
+import com.animevost.app.core.domain.repository.SkipTimesRepository
 import com.animevost.app.core.domain.repository.WatchProgressRepository
 import com.animevost.app.core.domain.util.onError
 import com.animevost.app.core.domain.util.onSuccess
@@ -63,6 +65,7 @@ class PlayerViewModel @Inject constructor(
     private val addToHistoryUseCase: AddToHistoryUseCase,
     private val dataStore: DataStore<Preferences>,
     private val watchProgressRepository: WatchProgressRepository,
+    private val skipTimesRepository: SkipTimesRepository,
 ) : ViewModel() {
 
     private companion object {
@@ -76,7 +79,13 @@ class PlayerViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
+    private val _activeSkip = MutableStateFlow<SkipInterval?>(null)
+    val activeSkip: StateFlow<SkipInterval?> = _activeSkip.asStateFlow()
+
     private var animePreview: AnimePreview? = null
+    private var currentSkipIntervals: List<SkipInterval> = emptyList()
+    private var titleOriginal: String = ""
+    private var titleAlternative: String = ""
 
     init {
         val episode = Episode(name = episodeName, videoId = videoId, thumbnailUrl = "")
@@ -125,6 +134,8 @@ class PlayerViewModel @Inject constructor(
             result.onSuccess { detail ->
                 val episodes = detail.episodes
                 val currentIdx = episodes.indexOfFirst { it.videoId == videoId }
+                titleOriginal = detail.titleOriginal
+                titleAlternative = detail.titleAlternative
                 animePreview = AnimePreview(
                     id = detail.id,
                     title = detail.title,
@@ -144,6 +155,7 @@ class PlayerViewModel @Inject constructor(
                 if (currentEp != null && preview != null) {
                     addToHistoryUseCase(preview, currentEp)
                 }
+                loadSkipTimesForEpisode(detail.id, episodeName)
             }
             if (result is com.animevost.app.core.domain.util.Result.Success) {
                 val detail = result.data
@@ -200,6 +212,32 @@ class PlayerViewModel @Inject constructor(
         val newIndex = state.currentEpisodeIndex + direction
         if (newIndex < 0 || newIndex > state.allEpisodes.lastIndex) return
         val episode = state.allEpisodes[newIndex]
+        _activeSkip.value = null
+        currentSkipIntervals = emptyList()
         loadVideo(episode, state.allEpisodes, newIndex)
+        animePreview?.let { preview ->
+            loadSkipTimesForEpisode(preview.id, episode.name)
+        }
+    }
+
+    fun checkSkipPosition(positionMs: Long) {
+        val active = currentSkipIntervals.firstOrNull { positionMs in it.startMs..it.endMs }
+        if (_activeSkip.value != active) _activeSkip.value = active
+    }
+
+    private fun loadSkipTimesForEpisode(animeId: Int, epName: String) {
+        val episodeNum = Regex("\\d+").find(epName)?.value?.toIntOrNull() ?: 1
+        viewModelScope.launch {
+            currentSkipIntervals = try {
+                skipTimesRepository.getSkipTimes(
+                    animeId = animeId,
+                    episodeNumber = episodeNum,
+                    titleOriginal = titleOriginal,
+                    titleAlternative = titleAlternative,
+                )
+            } catch (_: Exception) {
+                emptyList()
+            }
+        }
     }
 }

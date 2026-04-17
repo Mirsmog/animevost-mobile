@@ -12,6 +12,7 @@ data class AnimeDetail(
     val url: String = "",
     val title: String,
     val titleOriginal: String,
+    val titleAlternative: String = "",
     val posterUrl: String,
     val year: String,
     val genres: List<Genre>,

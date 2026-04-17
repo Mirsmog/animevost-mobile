@@ -8,6 +8,8 @@ import androidx.datastore.preferences.preferencesDataStoreFile
 import com.animevost.app.core.data.db.AppDatabase
 import com.animevost.app.core.data.db.FavoriteDao
 import com.animevost.app.core.data.db.HistoryDao
+import com.animevost.app.core.data.db.MalMappingDao
+import com.animevost.app.core.data.db.SkipTimeDao
 import com.animevost.app.core.data.db.UserListDao
 import com.animevost.app.core.data.db.WatchProgressDao
 import com.animevost.app.core.data.repository.AnimeRepositoryImpl
@@ -18,6 +20,7 @@ import com.animevost.app.core.data.repository.FavoriteRepositoryImpl
 import com.animevost.app.core.data.repository.HistoryRepositoryImpl
 import com.animevost.app.core.data.repository.ScheduleRepositoryImpl
 import com.animevost.app.core.data.repository.SharedPrefsCookieStorage
+import com.animevost.app.core.data.repository.SkipTimesRepositoryImpl
 import com.animevost.app.core.data.repository.UserListRepositoryImpl
 import com.animevost.app.core.data.repository.WatchProgressRepositoryImpl
 import com.animevost.app.core.data.repository.VideoRepositoryImpl
@@ -28,6 +31,7 @@ import com.animevost.app.core.domain.repository.CommentRepository
 import com.animevost.app.core.domain.repository.FavoriteRepository
 import com.animevost.app.core.domain.repository.HistoryRepository
 import com.animevost.app.core.domain.repository.ScheduleRepository
+import com.animevost.app.core.domain.repository.SkipTimesRepository
 import com.animevost.app.core.domain.repository.UserListRepository
 import com.animevost.app.core.domain.repository.WatchProgressRepository
 import com.animevost.app.core.domain.repository.VideoRepository
@@ -60,6 +64,12 @@ object DataProvidesModule {
 
     @Provides
     fun provideUserListDao(db: AppDatabase): UserListDao = db.userListDao()
+
+    @Provides
+    fun provideMalMappingDao(db: AppDatabase): MalMappingDao = db.malMappingDao()
+
+    @Provides
+    fun provideSkipTimeDao(db: AppDatabase): SkipTimeDao = db.skipTimeDao()
 
     @Provides
     @Singleton
@@ -117,4 +127,8 @@ abstract class DataBindsModule {
     @Binds
     @Singleton
     abstract fun bindUserListRepository(impl: UserListRepositoryImpl): UserListRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindSkipTimesRepository(impl: SkipTimesRepositoryImpl): SkipTimesRepository
 }

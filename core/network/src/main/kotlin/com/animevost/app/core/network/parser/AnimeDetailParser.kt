@@ -44,6 +44,8 @@ class AnimeDetailParser @Inject constructor(
 
         val content = story.selectFirst(STORY_CONTENT) ?: story
 
+        val titleAlternative = content.selectFirst("h4")?.text()?.trim().orEmpty()
+
         val posterUrl = content.selectFirst("img")?.let { img ->
             img.absUrl("src").ifEmpty { AnimeListParser.resolveUrl(img.attr("src"), resolver.currentBaseUrl) }
         }.orEmpty()
@@ -104,6 +106,7 @@ class AnimeDetailParser @Inject constructor(
             url = url,
             title = title,
             titleOriginal = titleOriginal,
+            titleAlternative = titleAlternative,
             posterUrl = posterUrl,
             year = year,
             genres = genres,

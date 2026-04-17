@@ -13,6 +13,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -83,6 +84,7 @@ fun PlayerScreen(
     val context = LocalContext.current
     val activity = context as Activity
     val state by viewModel.uiState.collectAsState()
+    val activeSkip by viewModel.activeSkip.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
     val haptic = LocalHapticFeedback.current
 
@@ -193,6 +195,7 @@ fun PlayerScreen(
             currentPosition = exoPlayer.currentPosition
             val dur = exoPlayer.duration
             if (dur > 0) duration = dur
+            viewModel.checkSkipPosition(exoPlayer.currentPosition)
             saveCounter++
             if (saveCounter >= 10) {
                 saveCounter = 0
@@ -426,6 +429,37 @@ fun PlayerScreen(
                 },
                 onCancel = { showAutoNext = false },
             )
+        }
+
+        // ── Skip intro/outro button ─────────────────────────────
+        AnimatedVisibility(
+            visible = activeSkip != null,
+            enter = fadeIn(tween(300)) + slideInVertically(initialOffsetY = { it }),
+            exit = fadeOut(tween(200)) + slideOutVertically(targetOffsetY = { it }),
+            modifier = Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 80.dp),
+        ) {
+            val skip = activeSkip
+            if (skip != null) {
+                val label = if (skip.type == com.animevost.app.core.domain.model.SkipType.OP) {
+                    "Пропустить интро"
+                } else {
+                    "Пропустить концовку"
+                }
+                Box(
+                    modifier = Modifier
+                        .background(Color.White.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                        .border(1.dp, Color.White.copy(alpha = 0.8f), RoundedCornerShape(4.dp))
+                        .clickable { exoPlayer.seekTo(skip.endMs) }
+                        .padding(horizontal = 20.dp, vertical = 10.dp),
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White,
+                    )
+                }
+            }
         }
 
         // ── Controls overlay (fade in/out) ───────────────────────

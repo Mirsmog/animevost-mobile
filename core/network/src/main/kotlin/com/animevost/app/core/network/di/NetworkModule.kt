@@ -1,10 +1,12 @@
 package com.animevost.app.core.network.di
 
+import com.animevost.app.core.network.AniSkipApi
 import com.animevost.app.core.network.AnimeVostApi
 import com.animevost.app.core.network.BaseUrlInterceptor
 import com.animevost.app.core.network.CookieStorage
 import com.animevost.app.core.network.DleEndpoints
 import com.animevost.app.core.network.HtmlFetcher
+import com.animevost.app.core.network.JikanApi
 import com.animevost.app.core.network.SessionCookieJar
 import dagger.Module
 import dagger.Provides
@@ -82,4 +84,42 @@ object NetworkModule {
     fun provideHtmlFetcher(client: OkHttpClient): HtmlFetcher {
         return HtmlFetcher(client)
     }
+
+    @Provides
+    @Singleton
+    @Named("jikan")
+    fun provideJikanRetrofit(): Retrofit = Retrofit.Builder()
+        .baseUrl("https://api.jikan.moe/")
+        .client(
+            OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .build(),
+        )
+        .addConverterFactory(GsonConverterFactory.create())
+        .build()
+
+    @Provides
+    @Singleton
+    fun provideJikanApi(@Named("jikan") retrofit: Retrofit): JikanApi =
+        retrofit.create(JikanApi::class.java)
+
+    @Provides
+    @Singleton
+    @Named("aniskip")
+    fun provideAniSkipRetrofit(): Retrofit = Retrofit.Builder()
+        .baseUrl("https://api.aniskip.com/")
+        .client(
+            OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .build(),
+        )
+        .addConverterFactory(GsonConverterFactory.create())
+        .build()
+
+    @Provides
+    @Singleton
+    fun provideAniSkipApi(@Named("aniskip") retrofit: Retrofit): AniSkipApi =
+        retrofit.create(AniSkipApi::class.java)
 }
