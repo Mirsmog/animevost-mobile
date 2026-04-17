@@ -28,6 +28,9 @@ class SkipSegmentRepositoryImpl @Inject constructor(
         startMs = startMs,
         durationMs = durationMs,
         windowMs = windowMs,
+        hash0 = hash0,
+        hash3 = hash3,
+        hash6 = hash6,
     )
 
     private fun SkipSegmentEntity.toDomain() = SkipSegment(
@@ -36,5 +39,8 @@ class SkipSegmentRepositoryImpl @Inject constructor(
         startMs = startMs,
         durationMs = durationMs,
         windowMs = windowMs,
+        hash0 = hash0,
+        hash3 = hash3,
+        hash6 = hash6,
     )
 }

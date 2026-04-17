@@ -9,4 +9,7 @@ data class SkipSegmentEntity(
     val startMs: Long,
     val durationMs: Long,
     val windowMs: Long = 90_000L,
+    val hash0: Long = 0L,
+    val hash3: Long = 0L,
+    val hash6: Long = 0L,
 )

@@ -13,4 +13,10 @@ data class SkipSegment(
      * Default: 90 seconds.
      */
     val windowMs: Long = 90_000L,
+    /** pHash at startMs. */
+    val hash0: Long = 0L,
+    /** pHash at startMs + 3 s. */
+    val hash3: Long = 0L,
+    /** pHash at startMs + 6 s. */
+    val hash6: Long = 0L,
 )

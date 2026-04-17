@@ -230,8 +230,8 @@ fun PlayerScreen(
     }
 
     // ── Start skip detection when segments are ready ─────────────
-    LaunchedEffect(state.skipSegments) {
-        if (state.skipSegments.isNotEmpty()) {
+    LaunchedEffect(state.skipSegments, state.currentVideoUrl) {
+        if (state.skipSegments.isNotEmpty() && state.currentVideoUrl != null) {
             viewModel.startSkipDetection(exoPlayer)
         }
     }

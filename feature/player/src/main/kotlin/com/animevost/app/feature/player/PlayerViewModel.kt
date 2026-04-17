@@ -1,5 +1,6 @@
 package com.animevost.app.feature.player
 
+import android.media.MediaMetadataRetriever
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -21,6 +22,7 @@ import com.animevost.app.core.domain.usecase.GetVideoUrlUseCase
 import com.animevost.app.core.domain.util.onError
 import com.animevost.app.core.domain.util.onSuccess
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -98,6 +100,7 @@ class PlayerViewModel @Inject constructor(
 
     private var animePreview: AnimePreview? = null
     private var skipDetector: SkipDetector? = null
+    private var pendingHashes: Triple<Long, Long, Long>? = null
 
     init {
         val episode = Episode(name = episodeName, videoId = videoId, thumbnailUrl = "")
@@ -248,9 +251,10 @@ class PlayerViewModel @Inject constructor(
 
     fun startSkipDetection(exoPlayer: androidx.media3.exoplayer.ExoPlayer) {
         val segments = _uiState.value.skipSegments
+        val url = _uiState.value.currentVideoUrl ?: return
         if (segments.isEmpty()) return
         skipDetector?.stop()
-        val detector = SkipDetector(exoPlayer)
+        val detector = SkipDetector(exoPlayer, url)
         detector.onSegmentDetected = { type, seekToMs ->
             val prevPosition = exoPlayer.currentPosition
             exoPlayer.seekTo(seekToMs)
@@ -273,11 +277,30 @@ class PlayerViewModel @Inject constructor(
 
     private fun captureSkipStart(type: SegmentType, positionMs: Long) {
         _uiState.update { it.copy(editingSegmentType = type, pendingStartMs = positionMs) }
+        val url = _uiState.value.currentVideoUrl ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(url, emptyMap())
+                val h0 = retriever.getFrameAtTime(positionMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    ?.let { PHashUtils.compute(it).also { _ -> it.recycle() } } ?: 0L
+                val h3 = retriever.getFrameAtTime((positionMs + 3000L) * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    ?.let { PHashUtils.compute(it).also { _ -> it.recycle() } } ?: 0L
+                val h6 = retriever.getFrameAtTime((positionMs + 6000L) * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                    ?.let { PHashUtils.compute(it).also { _ -> it.recycle() } } ?: 0L
+                pendingHashes = Triple(h0, h3, h6)
+            } catch (_: Exception) {
+                pendingHashes = Triple(0L, 0L, 0L)
+            } finally {
+                retriever.release()
+            }
+        }
     }
 
     private fun captureSkipEnd(type: SegmentType, positionMs: Long) {
         val startMs = _uiState.value.pendingStartMs ?: return
         val animeId = animePreview?.id ?: return
+        val hashes = pendingHashes ?: Triple(0L, 0L, 0L)
         val durationMs = positionMs - startMs
         if (durationMs <= 0) return
         viewModelScope.launch {
@@ -286,8 +309,12 @@ class PlayerViewModel @Inject constructor(
                 type = type,
                 startMs = startMs,
                 durationMs = durationMs,
+                hash0 = hashes.first,
+                hash3 = hashes.second,
+                hash6 = hashes.third,
             )
             skipSegmentRepository.saveSegment(segment)
+            pendingHashes = null
             _uiState.update { it.copy(editingSegmentType = null, pendingStartMs = null) }
             loadSkipSegments(animeId)
         }
