@@ -1,5 +1,7 @@
 package com.animevost.app.feature.player
 
+import com.animevost.app.core.domain.model.SkipInterval
+import com.animevost.app.core.domain.model.SkipType
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -70,6 +72,7 @@ internal fun PlayerControls(
     onSeekForward: () -> Unit,
     onSeek: (Float) -> Unit,
     onSelectQuality: (String) -> Unit,
+    skipIntervals: List<SkipInterval> = emptyList(),
 ) {
     var showQualityMenu by remember { mutableStateOf(false) }
 
@@ -249,6 +252,8 @@ internal fun PlayerControls(
                 fraction = if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f,
                 onSeek = onSeek,
                 modifier = Modifier.fillMaxWidth(),
+                skipIntervals = skipIntervals,
+                duration = duration,
             )
         }
     }
@@ -261,6 +266,8 @@ internal fun ThinSeekBar(
     fraction: Float,
     onSeek: (Float) -> Unit,
     modifier: Modifier = Modifier,
+    skipIntervals: List<SkipInterval> = emptyList(),
+    duration: Long = 0L,
 ) {
     val primary = MaterialTheme.colorScheme.primary
     var dragging by remember { mutableStateOf(false) }
@@ -304,6 +311,21 @@ internal fun ThinSeekBar(
                 .height(trackHeight)
                 .background(Color.White.copy(alpha = 0.2f), trackShape),
         )
+        // Skip interval markers (OP = amber, ED = teal)
+        if (duration > 0L) {
+            skipIntervals.forEach { interval ->
+                val startFrac = (interval.startMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+                val endFrac = (interval.endMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+                val segColor = if (interval.type == SkipType.OP) Color(0xFFFFB300) else Color(0xFF26C6DA)
+                Box(
+                    modifier = Modifier
+                        .offset(x = maxWidth * startFrac)
+                        .width((maxWidth * (endFrac - startFrac)).coerceAtLeast(2.dp))
+                        .height(trackHeight)
+                        .background(segColor),
+                )
+            }
+        }
         // Active track
         Box(
             modifier = Modifier

@@ -85,6 +85,7 @@ fun PlayerScreen(
     val activity = context as Activity
     val state by viewModel.uiState.collectAsState()
     val activeSkip by viewModel.activeSkip.collectAsState()
+    val skipIntervals by viewModel.skipIntervals.collectAsState()
     val lifecycleOwner = LocalLifecycleOwner.current
     val haptic = LocalHapticFeedback.current
 
@@ -496,6 +497,7 @@ fun PlayerScreen(
                 },
                 onSeek = { fraction -> exoPlayer.seekTo((fraction * duration).toLong()) },
                 onSelectQuality = { viewModel.onEvent(PlayerEvent.SelectQuality(it)) },
+                skipIntervals = skipIntervals,
             )
         }
 

@@ -82,6 +82,9 @@ class PlayerViewModel @Inject constructor(
     private val _activeSkip = MutableStateFlow<SkipInterval?>(null)
     val activeSkip: StateFlow<SkipInterval?> = _activeSkip.asStateFlow()
 
+    private val _skipIntervals = MutableStateFlow<List<SkipInterval>>(emptyList())
+    val skipIntervals: StateFlow<List<SkipInterval>> = _skipIntervals.asStateFlow()
+
     private var animePreview: AnimePreview? = null
     private var currentSkipIntervals: List<SkipInterval> = emptyList()
     private var titleOriginal: String = ""
@@ -214,6 +217,7 @@ class PlayerViewModel @Inject constructor(
         val episode = state.allEpisodes[newIndex]
         _activeSkip.value = null
         currentSkipIntervals = emptyList()
+        _skipIntervals.value = emptyList()
         loadVideo(episode, state.allEpisodes, newIndex)
         animePreview?.let { preview ->
             loadSkipTimesForEpisode(preview.id, episode.name)
@@ -238,6 +242,7 @@ class PlayerViewModel @Inject constructor(
             } catch (_: Exception) {
                 emptyList()
             }
+            _skipIntervals.value = currentSkipIntervals
         }
     }
 }
