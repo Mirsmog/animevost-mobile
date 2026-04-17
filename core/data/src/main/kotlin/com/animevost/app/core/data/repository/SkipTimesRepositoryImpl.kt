@@ -1,5 +1,6 @@
 package com.animevost.app.core.data.repository
 
+import android.util.Log
 import com.animevost.app.core.data.db.MalMappingDao
 import com.animevost.app.core.data.db.MalMappingEntity
 import com.animevost.app.core.data.db.SkipTimeDao
@@ -12,6 +13,8 @@ import com.animevost.app.core.network.JikanApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
+
+private const val TAG = "AniSkip"
 
 class SkipTimesRepositoryImpl @Inject constructor(
     private val jikanApi: JikanApi,
@@ -26,16 +29,26 @@ class SkipTimesRepositoryImpl @Inject constructor(
         titleOriginal: String,
         titleAlternative: String,
     ): List<SkipInterval> = withContext(Dispatchers.IO) {
+        Log.d(TAG, "getSkipTimes: animeId=$animeId ep=$episodeNumber titleOriginal='$titleOriginal' titleAlternative='$titleAlternative'")
         val cached = skipTimeDao.get(animeId, episodeNumber)
-        if (cached.isNotEmpty()) return@withContext cached.toSkipIntervals()
+        if (cached.isNotEmpty()) {
+            Log.d(TAG, "cache hit: ${cached.size} entries")
+            return@withContext cached.toSkipIntervals()
+        }
 
         val malId = getMalId(animeId, titleOriginal, titleAlternative)
-            ?: return@withContext emptyList()
+        if (malId == null) {
+            Log.w(TAG, "malId not found, skip loading aborted")
+            return@withContext emptyList()
+        }
 
+        Log.d(TAG, "malId=$malId, fetching AniSkip ep=$episodeNumber")
         return@withContext try {
             val response = aniSkipApi.getSkipTimes(malId, episodeNumber)
+            Log.d(TAG, "AniSkip response: found=${response.found} results=${response.results.size}")
             if (!response.found || response.results.isEmpty()) return@withContext emptyList()
             val entities = response.results.mapNotNull { result ->
+                Log.d(TAG, "  result: skipType=${result.skip_type} start=${result.interval.start_time} end=${result.interval.end_time}")
                 val type = when (result.skip_type) {
                     "op" -> "OP"
                     "ed" -> "ED"
@@ -50,8 +63,10 @@ class SkipTimesRepositoryImpl @Inject constructor(
                 )
             }
             if (entities.isNotEmpty()) skipTimeDao.insertAll(entities)
+            Log.d(TAG, "saved ${entities.size} skip intervals")
             entities.toSkipIntervals()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            Log.e(TAG, "AniSkip request failed: ${e.message}", e)
             emptyList()
         }
     }
@@ -61,19 +76,25 @@ class SkipTimesRepositoryImpl @Inject constructor(
         titleOriginal: String,
         titleAlternative: String,
     ): Int? {
-        malMappingDao.get(animeId)?.let { return it.malId }
+        malMappingDao.get(animeId)?.let {
+            Log.d(TAG, "malMapping cache hit: malId=${it.malId}")
+            return it.malId
+        }
 
         val candidates = buildSearchCandidates(titleOriginal, titleAlternative)
+        Log.d(TAG, "Jikan search candidates: $candidates")
         for (query in candidates) {
             if (query.isBlank()) continue
             try {
                 val resp = jikanApi.searchAnime(query)
+                Log.d(TAG, "  Jikan '$query' → ${resp.data.size} results: ${resp.data.take(3).map { it.mal_id to it.title }}")
                 if (resp.data.isNotEmpty()) {
                     val malId = resp.data[0].mal_id
                     malMappingDao.insert(MalMappingEntity(animeId = animeId, malId = malId))
                     return malId
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.e(TAG, "  Jikan '$query' failed: ${e.message}")
                 continue
             }
         }
