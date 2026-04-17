@@ -23,14 +23,15 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -49,7 +50,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.AnimeStatus
-import com.animevost.app.core.domain.model.BetaFeature
 import com.animevost.app.core.ui.components.AnimeCard
 import com.animevost.app.core.ui.components.ErrorState
 import com.animevost.app.core.ui.components.LoadingState
@@ -61,10 +61,10 @@ fun ProfileScreen(
     onNavigateToLogin: () -> Unit,
     onAnimeClick: (String) -> Unit,
     onNavigateToFavorites: () -> Unit,
+    onNavigateToSettings: () -> Unit,
     viewModel: ProfileViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsState()
-    val betaFeatures by viewModel.betaFeatures.collectAsState()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -76,6 +76,11 @@ fun ProfileScreen(
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )
+                },
+                actions = {
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(Icons.Filled.Settings, contentDescription = "Настройки")
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
@@ -91,19 +96,11 @@ fun ProfileScreen(
                 modifier = Modifier.padding(innerPadding),
             )
             !state.isLoggedIn -> GuestContent(
-                betaFeatures = betaFeatures,
-                onToggleBeta = { feature, enabled ->
-                    viewModel.onEvent(ProfileEvent.ToggleBetaFeature(feature, enabled))
-                },
                 onNavigateToLogin = onNavigateToLogin,
                 modifier = Modifier.padding(innerPadding),
             )
             else -> LoggedInContent(
                 state = state,
-                betaFeatures = betaFeatures,
-                onToggleBeta = { feature, enabled ->
-                    viewModel.onEvent(ProfileEvent.ToggleBetaFeature(feature, enabled))
-                },
                 onLogout = { viewModel.onEvent(ProfileEvent.Logout) },
                 onAnimeClick = onAnimeClick,
                 onNavigateToFavorites = onNavigateToFavorites,
@@ -115,8 +112,6 @@ fun ProfileScreen(
 
 @Composable
 private fun GuestContent(
-    betaFeatures: Map<BetaFeature, Boolean>,
-    onToggleBeta: (BetaFeature, Boolean) -> Unit,
     onNavigateToLogin: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -170,18 +165,12 @@ private fun GuestContent(
                 }
             }
         }
-
-        item {
-            BetaFeaturesSection(betaFeatures = betaFeatures, onToggle = onToggleBeta)
-        }
     }
 }
 
 @Composable
 private fun LoggedInContent(
     state: ProfileUiState,
-    betaFeatures: Map<BetaFeature, Boolean>,
-    onToggleBeta: (BetaFeature, Boolean) -> Unit,
     onLogout: () -> Unit,
     onAnimeClick: (String) -> Unit,
     onNavigateToFavorites: () -> Unit,
@@ -341,10 +330,6 @@ private fun LoggedInContent(
                 }
             }
         }
-
-        item {
-            BetaFeaturesSection(betaFeatures = betaFeatures, onToggle = onToggleBeta)
-        }
     }
 }
 
@@ -367,76 +352,4 @@ private fun AnimeHorizontalRow(
     }
 }
 
-private val betaFeatureUiMeta = mapOf(
-    BetaFeature.SKIP_INTRO_OUTRO to Pair(
-        "Пропуск интро/аутро",
-        "Кнопка «Пропустить» и метки на таймлайне. Работает через AniSkip — не все аниме охвачены.",
-    ),
-)
 
-@Composable
-private fun BetaFeaturesSection(
-    betaFeatures: Map<BetaFeature, Boolean>,
-    onToggle: (BetaFeature, Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier = modifier.fillMaxWidth()) {
-        HorizontalDivider(
-            modifier = Modifier.padding(top = 8.dp),
-            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-        )
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "⚗️ Бета-функции",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-        }
-        Text(
-            text = "Экспериментальные возможности — могут работать нестабильно.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp),
-        )
-        BetaFeature.entries.forEach { feature ->
-            val (title, description) = betaFeatureUiMeta[feature]
-                ?: Pair(feature.name, "")
-            val isEnabled = betaFeatures[feature] ?: false
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onBackground,
-                    )
-                    if (description.isNotBlank()) {
-                        Text(
-                            text = description,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 2.dp),
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                Switch(
-                    checked = isEnabled,
-                    onCheckedChange = { onToggle(feature, it) },
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(8.dp))
-    }
-}

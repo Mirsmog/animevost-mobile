@@ -36,6 +36,7 @@ import com.animevost.app.feature.home.HomeScreen
 import com.animevost.app.feature.player.PlayerScreen
 import com.animevost.app.feature.profile.FavoritesScreen
 import com.animevost.app.feature.profile.ProfileScreen
+import com.animevost.app.feature.profile.SettingsScreen
 import com.animevost.app.feature.schedule.ScheduleScreen
 
 @Composable
@@ -142,7 +143,11 @@ fun AppNavGraph() {
                             launchSingleTop = true
                         }
                     },
+                    onNavigateToSettings = { navController.navigate(NavRoutes.SETTINGS) },
                 )
+            }
+            composable(NavRoutes.SETTINGS) {
+                SettingsScreen(onBack = { navController.popBackStack() })
             }
             composable(
                 route = NavRoutes.FILTERED_LIST,
