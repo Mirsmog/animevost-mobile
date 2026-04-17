@@ -4,7 +4,6 @@ package com.animevost.app.feature.player
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
-import android.view.SurfaceView
 import android.view.WindowManager
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
@@ -118,7 +117,6 @@ fun PlayerScreen(
 
     // ── Skip segment editor ──────────────────────────────────
     var showSkipEditor by remember { mutableStateOf(false) }
-    var surfaceViewRef by remember { mutableStateOf<SurfaceView?>(null) }
 
     DisposableEffect(Unit) {
         val origOrientation = activity.requestedOrientation
@@ -231,11 +229,10 @@ fun PlayerScreen(
         }
     }
 
-    // ── Start skip detection when SurfaceView is ready ───────────
-    LaunchedEffect(surfaceViewRef, state.skipSegments) {
-        val sv = surfaceViewRef ?: return@LaunchedEffect
+    // ── Start skip detection when segments are ready ─────────────
+    LaunchedEffect(state.skipSegments) {
         if (state.skipSegments.isNotEmpty()) {
-            viewModel.startSkipDetection(sv, exoPlayer)
+            viewModel.startSkipDetection(exoPlayer)
         }
     }
 
@@ -265,13 +262,7 @@ fun PlayerScreen(
                     PlayerView(ctx).apply { player = exoPlayer; useController = false }
                 },
                 modifier = Modifier.fillMaxSize(),
-                update = { view ->
-                    view.player = exoPlayer
-                    val sv = view.videoSurfaceView as? SurfaceView
-                    if (sv != null && surfaceViewRef !== sv) {
-                        surfaceViewRef = sv
-                    }
-                },
+                update = { view -> view.player = exoPlayer },
             )
         }
 

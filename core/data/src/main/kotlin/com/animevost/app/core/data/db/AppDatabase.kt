@@ -15,7 +15,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         UserListEntity::class,
         SkipSegmentEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -114,9 +114,26 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Drop old hash-based table, recreate with simpler time-window schema.
+                db.execSQL("DROP TABLE IF EXISTS `skip_segments`")
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `skip_segments` (
+                        `animeId` INTEGER NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `startMs` INTEGER NOT NULL,
+                        `durationMs` INTEGER NOT NULL,
+                        `windowMs` INTEGER NOT NULL DEFAULT 90000,
+                        PRIMARY KEY(`animeId`, `type`)
+                    )""".trimIndent(),
+                )
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "animevost.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                 .build()
     }
 }

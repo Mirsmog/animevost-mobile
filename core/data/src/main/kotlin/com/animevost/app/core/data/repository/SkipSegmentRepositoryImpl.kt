@@ -25,20 +25,16 @@ class SkipSegmentRepositoryImpl @Inject constructor(
     private fun SkipSegment.toEntity() = SkipSegmentEntity(
         animeId = animeId,
         type = type.name,
-        hash0 = hash0,
-        hash3 = hash3,
-        hash6 = hash6,
+        startMs = startMs,
         durationMs = durationMs,
-        referenceTimeMs = referenceTimeMs,
+        windowMs = windowMs,
     )
 
     private fun SkipSegmentEntity.toDomain() = SkipSegment(
         animeId = animeId,
         type = SegmentType.valueOf(type),
-        hash0 = hash0,
-        hash3 = hash3,
-        hash6 = hash6,
+        startMs = startMs,
         durationMs = durationMs,
-        referenceTimeMs = referenceTimeMs,
+        windowMs = windowMs,
     )
 }

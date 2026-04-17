@@ -6,9 +6,7 @@ import androidx.room.Entity
 data class SkipSegmentEntity(
     val animeId: Int,
     val type: String,
-    val hash0: Long,
-    val hash3: Long,
-    val hash6: Long,
+    val startMs: Long,
     val durationMs: Long,
-    val referenceTimeMs: Long,
+    val windowMs: Long = 90_000L,
 )

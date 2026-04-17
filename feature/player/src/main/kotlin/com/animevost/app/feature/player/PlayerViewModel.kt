@@ -1,10 +1,5 @@
 package com.animevost.app.feature.player
 
-import android.graphics.Bitmap
-import android.os.Handler
-import android.os.Looper
-import android.view.PixelCopy
-import android.view.SurfaceView
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -34,10 +29,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import java.lang.ref.WeakReference
 import javax.inject.Inject
-import kotlin.coroutines.resume
 
 data class PlayerUiState(
     val videoSources: List<VideoSource> = emptyList(),
@@ -106,8 +98,6 @@ class PlayerViewModel @Inject constructor(
 
     private var animePreview: AnimePreview? = null
     private var skipDetector: SkipDetector? = null
-    private var surfaceViewRef: WeakReference<SurfaceView>? = null
-    private var pendingHashes: Triple<Long, Long, Long>? = null
 
     init {
         val episode = Episode(name = episodeName, videoId = videoId, thumbnailUrl = "")
@@ -256,12 +246,11 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    fun startSkipDetection(surfaceView: SurfaceView, exoPlayer: androidx.media3.exoplayer.ExoPlayer) {
-        surfaceViewRef = WeakReference(surfaceView)
+    fun startSkipDetection(exoPlayer: androidx.media3.exoplayer.ExoPlayer) {
         val segments = _uiState.value.skipSegments
         if (segments.isEmpty()) return
         skipDetector?.stop()
-        val detector = SkipDetector(exoPlayer, surfaceView)
+        val detector = SkipDetector(exoPlayer)
         detector.onSegmentDetected = { type, seekToMs ->
             val prevPosition = exoPlayer.currentPosition
             exoPlayer.seekTo(seekToMs)
@@ -279,42 +268,26 @@ class PlayerViewModel @Inject constructor(
     }
 
     fun restartSkipDetection(exoPlayer: androidx.media3.exoplayer.ExoPlayer) {
-        val sv = surfaceViewRef?.get() ?: return
-        startSkipDetection(sv, exoPlayer)
+        startSkipDetection(exoPlayer)
     }
 
     private fun captureSkipStart(type: SegmentType, positionMs: Long) {
-        // Update state immediately so the "Конец" button appears — regardless of SurfaceView state.
         _uiState.update { it.copy(editingSegmentType = type, pendingStartMs = positionMs) }
-        val sv = surfaceViewRef?.get() ?: return
-        viewModelScope.launch {
-            val h0 = captureHash(sv)
-            delay(3_000)
-            val h3 = captureHash(sv)
-            delay(3_000)
-            val h6 = captureHash(sv)
-            pendingHashes = Triple(h0 ?: 0L, h3 ?: 0L, h6 ?: 0L)
-        }
     }
 
     private fun captureSkipEnd(type: SegmentType, positionMs: Long) {
         val startMs = _uiState.value.pendingStartMs ?: return
         val animeId = animePreview?.id ?: return
-        val hashes = pendingHashes ?: Triple(0L, 0L, 0L)
         val durationMs = positionMs - startMs
         if (durationMs <= 0) return
         viewModelScope.launch {
             val segment = SkipSegment(
                 animeId = animeId,
                 type = type,
-                hash0 = hashes.first,
-                hash3 = hashes.second,
-                hash6 = hashes.third,
+                startMs = startMs,
                 durationMs = durationMs,
-                referenceTimeMs = startMs,
             )
             skipSegmentRepository.saveSegment(segment)
-            pendingHashes = null
             _uiState.update { it.copy(editingSegmentType = null, pendingStartMs = null) }
             loadSkipSegments(animeId)
         }
@@ -325,32 +298,6 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             skipSegmentRepository.deleteSegment(animeId, type)
             loadSkipSegments(animeId)
-        }
-    }
-
-    private suspend fun captureHash(surfaceView: SurfaceView): Long? {
-        if (!surfaceView.isAttachedToWindow || surfaceView.width <= 0) return null
-        return suspendCancellableCoroutine { cont ->
-            val bitmap = Bitmap.createBitmap(
-                surfaceView.width,
-                surfaceView.height,
-                Bitmap.Config.ARGB_8888,
-            )
-            try {
-                PixelCopy.request(surfaceView, bitmap, { result ->
-                    if (result == PixelCopy.SUCCESS) {
-                        val hash = PHashUtils.compute(bitmap)
-                        bitmap.recycle()
-                        cont.resume(hash)
-                    } else {
-                        bitmap.recycle()
-                        cont.resume(null)
-                    }
-                }, Handler(Looper.getMainLooper()))
-            } catch (_: Exception) {
-                bitmap.recycle()
-                cont.resume(null)
-            }
         }
     }
 

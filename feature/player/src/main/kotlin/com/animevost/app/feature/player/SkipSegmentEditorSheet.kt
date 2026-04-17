@@ -139,8 +139,8 @@ private fun SegmentRow(
             if (segment != null && !isEditing) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = formatTime(segment.referenceTimeMs) + " · " +
-                            formatTime(segment.referenceTimeMs + segment.durationMs),
+                        text = formatTime(segment.startMs) + " · " +
+                            formatTime(segment.startMs + segment.durationMs),
                         style = MaterialTheme.typography.labelMedium,
                         color = Color.White.copy(alpha = 0.6f),
                     )
