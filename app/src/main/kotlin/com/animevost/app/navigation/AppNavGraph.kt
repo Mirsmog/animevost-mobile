@@ -34,7 +34,7 @@ import com.animevost.app.feature.catalog.FilteredListScreen
 import com.animevost.app.feature.detail.DetailScreen
 import com.animevost.app.feature.home.HomeScreen
 import com.animevost.app.feature.player.PlayerScreen
-import com.animevost.app.feature.profile.FavoritesScreen
+import com.animevost.app.feature.profile.CollectionsScreen
 import com.animevost.app.feature.profile.ProfileScreen
 import com.animevost.app.feature.profile.SettingsScreen
 import com.animevost.app.feature.schedule.ScheduleScreen
@@ -121,7 +121,7 @@ fun AppNavGraph() {
                 )
             }
             composable(Screen.Favorites.route) {
-                FavoritesScreen(
+                CollectionsScreen(
                     onAnimeClick = { url ->
                         navController.navigate(NavRoutes.animeDetail(url))
                     },

@@ -1,9 +1,11 @@
 package com.animevost.app.core.data.repository
 
 import com.animevost.app.core.data.db.FavoriteDao
+import com.animevost.app.core.data.db.FavoriteEntity
 import com.animevost.app.core.data.mapper.toAnimePreview
 import com.animevost.app.core.data.mapper.toFavoriteEntity
 import com.animevost.app.core.domain.model.AnimePreview
+import com.animevost.app.core.domain.model.FavoriteEntry
 import com.animevost.app.core.domain.repository.FavoriteRepository
 import com.animevost.app.core.domain.util.Result
 import com.animevost.app.core.network.DleEndpoints
@@ -12,9 +14,7 @@ import com.animevost.app.core.network.SessionCookieJar
 import com.animevost.app.core.network.parser.FavoritesParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
@@ -30,34 +30,28 @@ class FavoriteRepositoryImpl @Inject constructor(
 ) : FavoriteRepository {
 
     private val favMutex = Mutex()
-    // In-memory state for remote favorites (only used when logged in)
-    private val _remoteFavorites = MutableStateFlow<List<AnimePreview>>(emptyList())
 
     override fun getAllFavorites(): Flow<List<AnimePreview>> =
-        if (isLoggedIn()) _remoteFavorites
-        else favoriteDao.getAll().map { list -> list.map { it.toAnimePreview() } }
+        favoriteDao.getAll().map { list -> list.map { it.toAnimePreview() } }
+
+    override fun getAllFavoriteEntries(): Flow<List<FavoriteEntry>> =
+        favoriteDao.getAll().map { list -> list.map { it.toEntry() } }
 
     override suspend fun getFavorites(page: Int): List<AnimePreview> {
         val pageSize = 20
         val offset = (page - 1) * pageSize
-        return if (isLoggedIn()) {
-            _remoteFavorites.value.drop(offset).take(pageSize)
-        } else {
-            favoriteDao.getPage(pageSize, offset).map { it.toAnimePreview() }
-        }
+        return favoriteDao.getPage(pageSize, offset).map { it.toAnimePreview() }
     }
 
     override suspend fun isFavorite(newsId: Int): Boolean =
-        if (isLoggedIn()) _remoteFavorites.value.any { it.id == newsId }
-        else favoriteDao.isFavorite(newsId)
+        favoriteDao.isFavorite(newsId)
 
     override fun isFavoriteFlow(newsId: Int): Flow<Boolean> =
-        if (isLoggedIn()) _remoteFavorites.map { list -> list.any { it.id == newsId } }
-        else favoriteDao.isFavoriteFlow(newsId)
+        favoriteDao.isFavoriteFlow(newsId)
 
     override suspend fun toggleFavorite(newsId: Int, preview: AnimePreview?): Boolean = favMutex.withLock {
         if (isLoggedIn()) {
-            val isFav = _remoteFavorites.value.any { it.id == newsId }
+            val isFav = favoriteDao.isFavorite(newsId)
             val endpoint = if (isFav) DleEndpoints.FAVORITES_REMOVE else DleEndpoints.FAVORITES_ADD
             try {
                 htmlFetcher.fetch(DleEndpoints.BASE_URL + endpoint + newsId)
@@ -65,9 +59,9 @@ class FavoriteRepositoryImpl @Inject constructor(
                 Timber.w(e, "Failed to toggle remote favorite newsId=$newsId")
             }
             if (isFav) {
-                _remoteFavorites.update { current -> current.filter { it.id != newsId } }
+                favoriteDao.deleteByNewsId(newsId)
             } else if (preview != null) {
-                _remoteFavorites.update { current -> current + preview }
+                favoriteDao.insert(preview.toFavoriteEntity())
             }
             !isFav
         } else {
@@ -103,11 +97,8 @@ class FavoriteRepositoryImpl @Inject constructor(
                 // 3. Re-fetch remote if we pushed anything (now includes merged items)
                 val finalRemote = if (toPush.isNotEmpty()) fetchAllRemotePages() else remoteItems
 
-                // 4. Clear local DB — remote is now the source of truth
-                favoriteDao.deleteAll()
-
-                // 5. Update in-memory state
-                _remoteFavorites.value = finalRemote
+                // 4. Cache merged server state locally
+                favoriteDao.replaceAll(finalRemote.toCachedEntities(previous = favoriteDao.getAllList()))
 
                 Timber.d("Login sync: pushed=${toPush.size}, remote total=${finalRemote.size}")
                 Result.Success(Unit)
@@ -124,7 +115,7 @@ class FavoriteRepositoryImpl @Inject constructor(
         if (!isLoggedIn()) return Result.Success(Unit)
         return try {
             val items = fetchAllRemotePages()
-            _remoteFavorites.value = items
+            favoriteDao.replaceAll(items.toCachedEntities(previous = favoriteDao.getAllList()))
             Result.Success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -154,4 +145,18 @@ class FavoriteRepositoryImpl @Inject constructor(
 
     private fun isLoggedIn(): Boolean =
         cookieJar.getCookieValue("animevost.org", "dle_user_id") != null
+
+    private fun FavoriteEntity.toEntry() = FavoriteEntry(
+        anime = toAnimePreview(),
+        addedAt = addedAt,
+    )
+
+    private fun List<AnimePreview>.toCachedEntities(previous: List<FavoriteEntity>): List<FavoriteEntity> {
+        val previousMap = previous.associateBy { it.newsId }
+        return map { anime ->
+            anime.toFavoriteEntity().copy(
+                addedAt = previousMap[anime.id]?.addedAt ?: System.currentTimeMillis(),
+            )
+        }
+    }
 }

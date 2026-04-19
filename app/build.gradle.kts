@@ -14,8 +14,8 @@ android {
         applicationId = "com.animevost.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 24
-        versionName = "1.7.0"
+        versionCode = 25
+        versionName = "1.7.1"
     }
 
     signingConfigs {

@@ -5,7 +5,10 @@ import com.animevost.app.core.data.mapper.toAnimePreview
 import com.animevost.app.core.data.mapper.toHistoryEntity
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.Episode
+import com.animevost.app.core.domain.model.HistoryEntry
 import com.animevost.app.core.domain.repository.HistoryRepository
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -15,11 +18,11 @@ class HistoryRepositoryImpl @Inject constructor(
 ) : HistoryRepository {
 
     override suspend fun getHistory(): List<AnimePreview> {
-        // Deduplicate by animeId keeping the most-recent watch entry per anime
-        return historyDao.getAllList()
-            .distinctBy { it.animeId }
-            .map { it.toAnimePreview() }
+        return historyDao.getAllList().deduplicateHistory().map { it.anime }
     }
+
+    override fun getHistoryFlow(): Flow<List<HistoryEntry>> =
+        historyDao.getAll().map { list -> list.deduplicateHistory() }
 
     override suspend fun addToHistory(anime: AnimePreview, episode: Episode) {
         historyDao.deleteByEpisode(anime.id, episode.videoId)
@@ -29,4 +32,12 @@ class HistoryRepositoryImpl @Inject constructor(
     override suspend fun clearHistory() {
         historyDao.clearAll()
     }
+
+    private fun List<com.animevost.app.core.data.db.HistoryEntity>.deduplicateHistory(): List<HistoryEntry> =
+        distinctBy { it.animeId }.map {
+            HistoryEntry(
+                anime = it.toAnimePreview(),
+                watchedAt = it.watchedAt,
+            )
+        }
 }

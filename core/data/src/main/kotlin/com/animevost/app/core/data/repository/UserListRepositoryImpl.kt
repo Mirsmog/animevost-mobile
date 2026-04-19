@@ -5,6 +5,7 @@ import com.animevost.app.core.data.db.UserListDao
 import com.animevost.app.core.data.db.UserListEntity
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.AnimeStatus
+import com.animevost.app.core.domain.model.UserListEntry
 import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.UserListRepository
 import com.animevost.app.core.network.EndpointResolver
@@ -85,6 +86,18 @@ class UserListRepositoryImpl @Inject constructor(
 
     override fun getByStatus(status: AnimeStatus): Flow<List<AnimePreview>> =
         dao.getByStatus(status.code).map { list -> list.map { it.toPreview() } }
+
+    override fun getAllEntries(): Flow<List<UserListEntry>> =
+        dao.getAllFlow().map { list ->
+            list.mapNotNull { entity ->
+                val status = AnimeStatus.fromCode(entity.status) ?: return@mapNotNull null
+                UserListEntry(
+                    anime = entity.toPreview(),
+                    status = status,
+                    updatedAt = entity.updatedAt,
+                )
+            }
+        }
 
     // ── Write ─────────────────────────────────────────────────────────────────
 

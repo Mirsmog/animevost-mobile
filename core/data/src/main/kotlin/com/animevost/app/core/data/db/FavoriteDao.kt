@@ -1,10 +1,10 @@
 package com.animevost.app.core.data.db
 
 import androidx.room.Dao
-import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -15,6 +15,9 @@ interface FavoriteDao {
 
     @Query("SELECT * FROM favorites ORDER BY addedAt DESC LIMIT :limit OFFSET :offset")
     suspend fun getPage(limit: Int, offset: Int): List<FavoriteEntity>
+
+    @Query("SELECT * FROM favorites ORDER BY addedAt DESC")
+    suspend fun getAllList(): List<FavoriteEntity>
 
     @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE newsId = :newsId)")
     suspend fun isFavorite(newsId: Int): Boolean
@@ -28,6 +31,9 @@ interface FavoriteDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: FavoriteEntity)
 
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(entities: List<FavoriteEntity>)
+
     @Query("DELETE FROM favorites WHERE newsId = :newsId")
     suspend fun deleteByNewsId(newsId: Int)
 
@@ -36,4 +42,10 @@ interface FavoriteDao {
 
     @Query("DELETE FROM favorites")
     suspend fun deleteAll()
+
+    @Transaction
+    suspend fun replaceAll(entities: List<FavoriteEntity>) {
+        deleteAll()
+        if (entities.isNotEmpty()) insertAll(entities)
+    }
 }

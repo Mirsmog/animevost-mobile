@@ -2,6 +2,7 @@ package com.animevost.app.core.domain.repository
 
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.AnimeStatus
+import com.animevost.app.core.domain.model.UserListEntry
 import kotlinx.coroutines.flow.Flow
 
 interface UserListRepository {
@@ -17,6 +18,9 @@ interface UserListRepository {
 
     /** Reactive list of previews with the given status, ordered by last update. */
     fun getByStatus(status: AnimeStatus): Flow<List<AnimePreview>>
+
+    /** Reactive list of all locally cached watch-list entries, ordered by last update. */
+    fun getAllEntries(): Flow<List<UserListEntry>>
 
     /** Sync watch-list from the remote profile `info` field. No-op when not logged in. */
     suspend fun syncFromRemote()

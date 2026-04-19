@@ -8,6 +8,9 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface UserListDao {
 
+    @Query("SELECT * FROM user_list ORDER BY updatedAt DESC")
+    fun getAllFlow(): Flow<List<UserListEntity>>
+
     @Query("SELECT * FROM user_list WHERE status = :statusCode ORDER BY updatedAt DESC")
     fun getByStatus(statusCode: String): Flow<List<UserListEntity>>
 

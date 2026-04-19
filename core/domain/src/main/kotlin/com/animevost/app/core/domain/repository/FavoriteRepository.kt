@@ -1,12 +1,16 @@
 package com.animevost.app.core.domain.repository
 
 import com.animevost.app.core.domain.model.AnimePreview
+import com.animevost.app.core.domain.model.FavoriteEntry
 import kotlinx.coroutines.flow.Flow
 
 /** Manages the user's personal favourites list backed by the local Room database. */
 interface FavoriteRepository {
     /** Returns a reactive stream of all favourited anime. */
     fun getAllFavorites(): Flow<List<AnimePreview>>
+
+    /** Returns a reactive stream of all favourite entries with local metadata when available. */
+    fun getAllFavoriteEntries(): Flow<List<FavoriteEntry>>
 
     /** Returns a single page of favourites (for non-reactive use). */
     suspend fun getFavorites(page: Int): List<AnimePreview>
