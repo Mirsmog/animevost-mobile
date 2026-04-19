@@ -48,7 +48,6 @@ enum class CollectionsTab(val title: String) {
 
 data class CollectionsUiState(
     val items: List<CollectionItem> = emptyList(),
-    val summaryCards: List<CollectionSummaryCard> = emptyList(),
     val availableStatuses: List<AnimeStatus> = emptyList(),
     val tabCounts: Map<CollectionsTab, Int> = emptyMap(),
     val statusCounts: Map<AnimeStatus, Int> = emptyMap(),
@@ -58,13 +57,6 @@ data class CollectionsUiState(
     val sort: SortOption = SortOption.DATE,
     val sortAscending: Boolean = false,
     val isLoading: Boolean = true,
-)
-
-data class CollectionSummaryCard(
-    val title: String,
-    val count: Int,
-    val tab: CollectionsTab,
-    val status: AnimeStatus? = null,
 )
 
 sealed interface CollectionsEvent {
@@ -118,7 +110,6 @@ class CollectionsViewModel @Inject constructor(
                         sort = controlState.sort,
                         ascending = controlState.sortAscending,
                     ),
-                    summaryCards = buildSummaryCards(tabCounts, statusCounts),
                     availableStatuses = availableStatuses,
                     tabCounts = tabCounts,
                     statusCounts = statusCounts,
@@ -289,32 +280,4 @@ class CollectionsViewModel @Inject constructor(
         }
         return normalizedUrl.ifBlank { id.toString() }
     }
-
-    private fun buildSummaryCards(
-        tabCounts: Map<CollectionsTab, Int>,
-        statusCounts: Map<AnimeStatus, Int>,
-    ): List<CollectionSummaryCard> = listOf(
-        CollectionSummaryCard(
-            title = "История",
-            count = tabCounts[CollectionsTab.HISTORY] ?: 0,
-            tab = CollectionsTab.HISTORY,
-        ),
-        CollectionSummaryCard(
-            title = "Избранное",
-            count = tabCounts[CollectionsTab.FAVORITES] ?: 0,
-            tab = CollectionsTab.FAVORITES,
-        ),
-        CollectionSummaryCard(
-            title = AnimeStatus.WATCHING.label,
-            count = statusCounts[AnimeStatus.WATCHING] ?: 0,
-            tab = CollectionsTab.LISTS,
-            status = AnimeStatus.WATCHING,
-        ),
-        CollectionSummaryCard(
-            title = AnimeStatus.WATCHED.label,
-            count = statusCounts[AnimeStatus.WATCHED] ?: 0,
-            tab = CollectionsTab.LISTS,
-            status = AnimeStatus.WATCHED,
-        ),
-    )
 }
