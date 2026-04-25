@@ -35,6 +35,15 @@ val WarningAmber     = Color(0xFFF59E0B)
 val SuccessGreen     = Color(0xFF22C55E)
 val OnError          = Color(0xFFFFFFFF)
 
+// ── Library: status accents ───────────────────────────────────
+// Tinted accents used for AnimeStatus tiles and pills on the library screen.
+val StatusWatching   = Color(0xFFC084FC) // фиолетовый — Смотрю
+val StatusPlanned    = Color(0xFF60A5FA) // голубой — Запланировано
+val StatusCompleted  = Color(0xFF34D399) // бирюзовый — Просмотрено
+val StatusDropped    = Color(0xFFF87171) // красный — Брошено
+val StatusOnHold     = Color(0xFFFACC15) // жёлтый — Отложено
+val StatusFavorite   = Color(0xFFFB7185) // розовый — Избранное
+
 // ── Light theme (secondary, kept for completeness) ────────────
 val LightBackground  = Color(0xFFFFFBFE)
 val LightSurface     = Color(0xFFFFFBFE)

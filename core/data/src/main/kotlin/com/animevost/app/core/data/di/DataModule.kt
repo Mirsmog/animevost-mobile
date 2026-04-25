@@ -23,6 +23,7 @@ import com.animevost.app.core.data.repository.ScheduleRepositoryImpl
 import com.animevost.app.core.data.repository.SharedPrefsCookieStorage
 import com.animevost.app.core.data.repository.SkipTimesRepositoryImpl
 import com.animevost.app.core.data.repository.UserListRepositoryImpl
+import com.animevost.app.core.data.repository.UserPreferencesRepositoryImpl
 import com.animevost.app.core.data.repository.WatchProgressRepositoryImpl
 import com.animevost.app.core.data.repository.VideoRepositoryImpl
 import com.animevost.app.core.domain.repository.FeatureFlagsRepository
@@ -35,6 +36,7 @@ import com.animevost.app.core.domain.repository.HistoryRepository
 import com.animevost.app.core.domain.repository.ScheduleRepository
 import com.animevost.app.core.domain.repository.SkipTimesRepository
 import com.animevost.app.core.domain.repository.UserListRepository
+import com.animevost.app.core.domain.repository.UserPreferencesRepository
 import com.animevost.app.core.domain.repository.WatchProgressRepository
 import com.animevost.app.core.domain.repository.VideoRepository
 import com.animevost.app.core.network.CookieStorage
@@ -137,4 +139,8 @@ abstract class DataBindsModule {
     @Binds
     @Singleton
     abstract fun bindFeatureFlagsRepository(impl: FeatureFlagsRepositoryImpl): FeatureFlagsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindUserPreferencesRepository(impl: UserPreferencesRepositoryImpl): UserPreferencesRepository
 }

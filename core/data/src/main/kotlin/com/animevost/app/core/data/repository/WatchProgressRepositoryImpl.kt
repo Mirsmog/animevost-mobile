@@ -4,11 +4,16 @@ import com.animevost.app.core.data.db.WatchProgressDao
 import com.animevost.app.core.data.db.WatchProgressEntity
 import com.animevost.app.core.domain.model.WatchProgress
 import com.animevost.app.core.domain.repository.WatchProgressRepository
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 class WatchProgressRepositoryImpl @Inject constructor(
     private val dao: WatchProgressDao,
 ) : WatchProgressRepository {
+
+    override fun observeLatestPerAnime(): Flow<List<WatchProgress>> =
+        dao.observeLatestPerAnime().map { list -> list.map { it.toDomain() } }
 
     override suspend fun saveProgress(progress: WatchProgress) {
         dao.upsert(progress.toEntity())

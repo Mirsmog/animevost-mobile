@@ -1,5 +1,6 @@
 package com.animevost.app.feature.profile
 
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -8,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -15,62 +17,80 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Sort
+import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.FolderCopy
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.Bookmark
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.GridView
+import androidx.compose.material.icons.outlined.PauseCircle
+import androidx.compose.material.icons.outlined.PlayCircle
+import androidx.compose.material.icons.outlined.RemoveCircle
 import androidx.compose.material.icons.outlined.Schedule
-import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.SortByAlpha
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import coil.compose.AsyncImage
+import coil.request.CachePolicy
+import coil.request.ImageRequest
 import com.animevost.app.core.domain.model.AnimeStatus
+import com.animevost.app.core.domain.model.LibraryViewMode
 import com.animevost.app.core.domain.model.SortOption
+import com.animevost.app.core.ui.components.AnimeCard
 import com.animevost.app.core.ui.components.AnimeCardHorizontal
 import com.animevost.app.core.ui.components.LoadingState
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import com.animevost.app.core.ui.theme.StatusFavorite
+import com.animevost.app.core.ui.theme.accentColor
+import kotlinx.coroutines.launch
+
+private const val SECTION_INDEX_ALL = 3
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -81,13 +101,15 @@ fun CollectionsScreen(
     val state by viewModel.uiState.collectAsState()
     var showSortSheet by remember { mutableStateOf(false) }
     var showSearchField by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
 
     if (showSortSheet) {
-        CollectionsSortSheet(
+        LibrarySortSheet(
             selectedSort = state.sort,
             sortAscending = state.sortAscending,
             onSortSelected = {
-                viewModel.onEvent(CollectionsEvent.SortSelected(it))
+                viewModel.onEvent(LibraryEvent.SortSelected(it))
                 showSortSheet = false
             },
             onDismiss = { showSortSheet = false },
@@ -96,54 +118,19 @@ fun CollectionsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
+            LibraryTopBar(
+                totalCount = state.totalCount,
+                continueCount = state.continueWatching.size,
+                showSearchField = showSearchField,
+                query = state.query,
+                onQueryChange = { viewModel.onEvent(LibraryEvent.QueryChanged(it)) },
+                onSearchToggle = {
                     if (showSearchField) {
-                        TextField(
-                            value = state.query,
-                            onValueChange = { viewModel.onEvent(CollectionsEvent.QueryChanged(it)) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(end = 8.dp),
-                            placeholder = { Text("Поиск") },
-                            singleLine = true,
-                            textStyle = MaterialTheme.typography.bodyMedium,
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
-                            ),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = {}),
-                        )
-                    } else {
-                        Text(
-                            text = "Коллекции",
-                            style = MaterialTheme.typography.titleLarge,
-                        )
+                        viewModel.onEvent(LibraryEvent.QueryChanged(""))
                     }
+                    showSearchField = !showSearchField
                 },
-                actions = {
-                    if (showSearchField) {
-                        IconButton(onClick = {
-                            viewModel.onEvent(CollectionsEvent.QueryChanged(""))
-                            showSearchField = false
-                        }) {
-                            Icon(Icons.Default.Close, contentDescription = "Закрыть поиск")
-                        }
-                    } else {
-                        IconButton(onClick = { showSearchField = true }) {
-                            Icon(Icons.Default.Search, contentDescription = "Поиск")
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                    titleContentColor = MaterialTheme.colorScheme.onBackground,
-                ),
+                onSortClick = { showSortSheet = true },
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
@@ -154,68 +141,746 @@ fun CollectionsScreen(
             }
 
             else -> {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
-                    contentPadding = PaddingValues(bottom = 24.dp),
-                ) {
-                    item {
-                        CollectionsTabsRow(
-                            selectedTab = state.selectedTab,
-                            onTabSelected = { viewModel.onEvent(CollectionsEvent.TabSelected(it)) },
-                        )
-                    }
-                    if (state.selectedTab == CollectionsTab.LISTS && state.availableStatuses.isNotEmpty()) {
-                        item {
-                            ListStatusChips(
-                                selectedStatus = state.selectedStatus,
-                                statuses = state.availableStatuses,
-                                statusCounts = state.statusCounts,
-                                onStatusSelected = { viewModel.onEvent(CollectionsEvent.StatusSelected(it)) },
-                            )
-                        }
-                    }
-                    item {
-                        CollectionsToolbar(
-                            count = state.items.size,
-                            sort = state.sort,
-                            sortAscending = state.sortAscending,
-                            onSortClick = { showSortSheet = true },
-                        )
-                    }
+                LibraryContent(
+                    state = state,
+                    listState = listState,
+                    contentPadding = innerPadding,
+                    onAnimeClick = onAnimeClick,
+                    onFilterSelected = { filter ->
+                        viewModel.onEvent(LibraryEvent.FilterSelected(filter))
+                        scope.launch { listState.animateScrollToItem(SECTION_INDEX_ALL) }
+                    },
+                    onViewModeToggled = { viewModel.onEvent(LibraryEvent.ViewModeToggled) },
+                )
+            }
+        }
+    }
+}
 
-                    if (state.items.isEmpty()) {
-                        item {
-                            EmptyCollectionsState(
-                                hasQuery = state.query.isNotBlank(),
-                                tab = state.selectedTab,
-                            )
-                        }
-                    } else {
-                        items(
-                            items = state.items,
-                            key = { it.anime.url.ifBlank { it.anime.id.toString() } },
-                        ) { item ->
-                            CollectionRow(
+// ── Top bar ───────────────────────────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LibraryTopBar(
+    totalCount: Int,
+    continueCount: Int,
+    showSearchField: Boolean,
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onSearchToggle: () -> Unit,
+    onSortClick: () -> Unit,
+) {
+    TopAppBar(
+        title = {
+            if (showSearchField) {
+                TextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(end = 8.dp),
+                    placeholder = { Text("Поиск в библиотеке") },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                    ),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = {}),
+                )
+            } else {
+                Column {
+                    Text(
+                        text = "Моя библиотека",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = libraryStatsLabel(totalCount, continueCount),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        actions = {
+            if (showSearchField) {
+                IconButton(onClick = onSearchToggle) {
+                    Icon(Icons.Default.Close, contentDescription = "Закрыть поиск")
+                }
+            } else {
+                IconButton(onClick = onSearchToggle) {
+                    Icon(Icons.Default.Search, contentDescription = "Поиск")
+                }
+                IconButton(onClick = onSortClick) {
+                    Icon(Icons.AutoMirrored.Outlined.Sort, contentDescription = "Сортировка")
+                }
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.background,
+            titleContentColor = MaterialTheme.colorScheme.onBackground,
+        ),
+    )
+}
+
+// ── Content ───────────────────────────────────────────────────────────────────
+
+@Composable
+private fun LibraryContent(
+    state: LibraryUiState,
+    listState: LazyListState,
+    contentPadding: PaddingValues,
+    onAnimeClick: (String) -> Unit,
+    onFilterSelected: (LibraryFilter) -> Unit,
+    onViewModeToggled: () -> Unit,
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(contentPadding),
+        state = listState,
+        contentPadding = PaddingValues(bottom = 32.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp),
+    ) {
+        // index 0 — continue rail (or empty placeholder)
+        item(key = "continue-rail") {
+            if (state.continueWatching.isNotEmpty()) {
+                ContinueWatchingSection(
+                    items = state.continueWatching,
+                    onAnimeClick = onAnimeClick,
+                )
+            } else {
+                Spacer(Modifier.height(0.dp))
+            }
+        }
+
+        // index 1 — status tiles
+        item(key = "status-tiles") {
+            StatusTilesGrid(
+                statusCounts = state.statusCounts,
+                favoritesCount = state.favoritesCount,
+                selectedFilter = state.selectedFilter,
+                onTileClick = onFilterSelected,
+            )
+        }
+
+        // index 2 — all section header (with toggle + chips)
+        item(key = "all-header") {
+            AllSectionHeader(
+                viewMode = state.viewMode,
+                onViewModeToggled = onViewModeToggled,
+                selectedFilter = state.selectedFilter,
+                statusCounts = state.statusCounts,
+                favoritesCount = state.favoritesCount,
+                totalCount = state.totalCount,
+                onFilterSelected = onFilterSelected,
+            )
+        }
+
+        // index 3+ — content
+        if (state.items.isEmpty()) {
+            item(key = "empty") {
+                LibraryEmpty(
+                    hasQuery = state.query.isNotBlank(),
+                    filter = state.selectedFilter,
+                )
+            }
+        } else if (state.viewMode == LibraryViewMode.GRID) {
+            // 3 cards per row
+            val rows = state.items.chunked(3)
+            items(items = rows, key = { row -> "grid-row-${row.first().anime.id}" }) { row ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    row.forEach { item ->
+                        Box(modifier = Modifier.weight(1f)) {
+                            LibraryGridCard(
                                 item = item,
-                                onAnimeClick = onAnimeClick,
-                            )
-                            HorizontalDivider(
-                                modifier = Modifier.padding(start = 84.dp, end = 16.dp),
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                onClick = { onAnimeClick(item.anime.url) },
                             )
                         }
                     }
+                    repeat(3 - row.size) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        } else {
+            items(
+                items = state.items,
+                key = { "list-${it.anime.id}-${it.anime.url}" },
+            ) { item ->
+                AnimeCardHorizontal(
+                    anime = item.anime,
+                    onClick = { onAnimeClick(item.anime.url) },
+                    trailingContent = {
+                        Column(
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            item.listStatus?.let { status ->
+                                StatusPill(status = status)
+                            }
+                            if (item.isFavorite) {
+                                Icon(
+                                    Icons.Filled.Favorite,
+                                    contentDescription = "В избранном",
+                                    modifier = Modifier.size(14.dp),
+                                    tint = StatusFavorite,
+                                )
+                            }
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+// ── Continue watching ─────────────────────────────────────────────────────────
+
+@Composable
+private fun ContinueWatchingSection(
+    items: List<ContinueWatchingItem>,
+    onAnimeClick: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        SectionHeader(
+            title = "Продолжить смотреть",
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(items = items, key = { it.anime.id }) { item ->
+                ContinueWatchingCard(
+                    item = item,
+                    onClick = { onAnimeClick(item.anime.url) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContinueWatchingCard(
+    item: ContinueWatchingItem,
+    onClick: () -> Unit,
+) {
+    val context = LocalContext.current
+    Column(
+        modifier = Modifier
+            .width(140.dp)
+            .clickable(onClick = onClick),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.67f)
+                .clip(RoundedCornerShape(12.dp)),
+        ) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(item.anime.posterUrl)
+                    .diskCachePolicy(CachePolicy.ENABLED)
+                    .memoryCachePolicy(CachePolicy.ENABLED)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = item.anime.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+            )
+            // Play overlay
+            Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(38.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.55f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.PlayArrow,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            // Episode badge
+            if (item.episodeIndex > 0) {
+                Text(
+                    text = "Эп. ${item.episodeIndex}",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color.Black.copy(alpha = 0.7f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                )
+            }
+            // Progress bar
+            val animatedProgress by animateFloatAsState(
+                targetValue = item.progressFraction,
+                label = "progress",
+            )
+            LinearProgressIndicator(
+                progress = { animatedProgress },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(3.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = Color.White.copy(alpha = 0.3f),
+                strokeCap = ProgressIndicatorDefaults.LinearStrokeCap,
+                gapSize = 0.dp,
+                drawStopIndicator = {},
+            )
+        }
+        Text(
+            text = item.anime.title.ifBlank { item.anime.titleOriginal },
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (item.episodeName.isNotBlank()) {
+            Text(
+                text = item.episodeName,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+// ── Status tiles 2×3 ──────────────────────────────────────────────────────────
+
+private data class StatusTileSpec(
+    val filter: LibraryFilter,
+    val label: String,
+    val icon: ImageVector,
+    val color: Color,
+    val count: Int,
+)
+
+@Composable
+private fun StatusTilesGrid(
+    statusCounts: Map<AnimeStatus, Int>,
+    favoritesCount: Int,
+    selectedFilter: LibraryFilter,
+    onTileClick: (LibraryFilter) -> Unit,
+) {
+    val tiles = remember(statusCounts, favoritesCount) {
+        listOf(
+            StatusTileSpec(
+                filter = LibraryFilter.Status(AnimeStatus.WATCHING),
+                label = AnimeStatus.WATCHING.label,
+                icon = Icons.Outlined.PlayCircle,
+                color = AnimeStatus.WATCHING.accentColor(),
+                count = statusCounts[AnimeStatus.WATCHING] ?: 0,
+            ),
+            StatusTileSpec(
+                filter = LibraryFilter.Status(AnimeStatus.PLANNED),
+                label = AnimeStatus.PLANNED.label,
+                icon = Icons.Outlined.Bookmark,
+                color = AnimeStatus.PLANNED.accentColor(),
+                count = statusCounts[AnimeStatus.PLANNED] ?: 0,
+            ),
+            StatusTileSpec(
+                filter = LibraryFilter.Status(AnimeStatus.WATCHED),
+                label = AnimeStatus.WATCHED.label,
+                icon = Icons.Outlined.CheckCircle,
+                color = AnimeStatus.WATCHED.accentColor(),
+                count = statusCounts[AnimeStatus.WATCHED] ?: 0,
+            ),
+            StatusTileSpec(
+                filter = LibraryFilter.Status(AnimeStatus.ON_HOLD),
+                label = AnimeStatus.ON_HOLD.label,
+                icon = Icons.Outlined.PauseCircle,
+                color = AnimeStatus.ON_HOLD.accentColor(),
+                count = statusCounts[AnimeStatus.ON_HOLD] ?: 0,
+            ),
+            StatusTileSpec(
+                filter = LibraryFilter.Status(AnimeStatus.DROPPED),
+                label = AnimeStatus.DROPPED.label,
+                icon = Icons.Outlined.RemoveCircle,
+                color = AnimeStatus.DROPPED.accentColor(),
+                count = statusCounts[AnimeStatus.DROPPED] ?: 0,
+            ),
+            StatusTileSpec(
+                filter = LibraryFilter.Favorites,
+                label = "Избранное",
+                icon = Icons.Filled.Favorite,
+                color = StatusFavorite,
+                count = favoritesCount,
+            ),
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        SectionHeader(title = "Списки")
+        // 2 rows × 3 columns
+        tiles.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                row.forEach { tile ->
+                    StatusTile(
+                        spec = tile,
+                        isSelected = selectedFilter == tile.filter,
+                        onClick = { onTileClick(tile.filter) },
+                        modifier = Modifier.weight(1f),
+                    )
                 }
             }
         }
     }
 }
 
+@Composable
+private fun StatusTile(
+    spec: StatusTileSpec,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val bgAlpha = if (isSelected) 0.22f else 0.10f
+    val borderAlpha = if (isSelected) 1f else 0f
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(spec.color.copy(alpha = bgAlpha))
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(spec.color.copy(alpha = 0.25f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = spec.icon,
+                        contentDescription = null,
+                        tint = spec.color,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                Text(
+                    text = spec.count.toString(),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = spec.color,
+                )
+            }
+            Text(
+                text = spec.label,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        // selection indicator border
+        if (borderAlpha > 0f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color.Transparent),
+            )
+        }
+    }
+}
+
+// ── "Все" section ─────────────────────────────────────────────────────────────
+
+@Composable
+private fun AllSectionHeader(
+    viewMode: LibraryViewMode,
+    onViewModeToggled: () -> Unit,
+    selectedFilter: LibraryFilter,
+    statusCounts: Map<AnimeStatus, Int>,
+    favoritesCount: Int,
+    totalCount: Int,
+    onFilterSelected: (LibraryFilter) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SectionHeader(
+                title = "Все",
+                modifier = Modifier.weight(1f),
+            )
+            ViewModeToggle(viewMode = viewMode, onToggle = onViewModeToggled)
+        }
+
+        LibraryFilterChips(
+            selectedFilter = selectedFilter,
+            statusCounts = statusCounts,
+            favoritesCount = favoritesCount,
+            totalCount = totalCount,
+            onFilterSelected = onFilterSelected,
+        )
+    }
+}
+
+@Composable
+private fun ViewModeToggle(
+    viewMode: LibraryViewMode,
+    onToggle: () -> Unit,
+) {
+    val (icon, contentDesc) = when (viewMode) {
+        LibraryViewMode.GRID -> Icons.AutoMirrored.Outlined.ViewList to "Список"
+        LibraryViewMode.LIST -> Icons.Outlined.GridView to "Сетка"
+    }
+    IconButton(onClick = onToggle) {
+        Icon(icon, contentDescription = contentDesc)
+    }
+}
+
+@Composable
+private fun LibraryFilterChips(
+    selectedFilter: LibraryFilter,
+    statusCounts: Map<AnimeStatus, Int>,
+    favoritesCount: Int,
+    totalCount: Int,
+    onFilterSelected: (LibraryFilter) -> Unit,
+) {
+    LazyRow(
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        item("all") {
+            LibraryChip(
+                label = "Все",
+                count = totalCount,
+                selected = selectedFilter == LibraryFilter.All,
+                onClick = { onFilterSelected(LibraryFilter.All) },
+            )
+        }
+        item("favorites") {
+            LibraryChip(
+                label = "Избранное",
+                count = favoritesCount,
+                selected = selectedFilter == LibraryFilter.Favorites,
+                onClick = { onFilterSelected(LibraryFilter.Favorites) },
+            )
+        }
+        items(items = AnimeStatus.entries, key = { "status-${it.code}" }) { status ->
+            val count = statusCounts[status] ?: 0
+            if (count > 0) {
+                LibraryChip(
+                    label = status.label,
+                    count = count,
+                    selected = selectedFilter == LibraryFilter.Status(status),
+                    onClick = { onFilterSelected(LibraryFilter.Status(status)) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibraryChip(
+    label: String,
+    count: Int,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        shape = RoundedCornerShape(18.dp),
+        label = {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(label)
+                Text(
+                    text = count.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (selected) {
+                        MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.75f)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    },
+                )
+            }
+        },
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+            selectedLabelColor = MaterialTheme.colorScheme.onSurface,
+        ),
+    )
+}
+
+// ── Grid card with status pill ────────────────────────────────────────────────
+
+@Composable
+private fun LibraryGridCard(
+    item: LibraryItem,
+    onClick: () -> Unit,
+) {
+    Box {
+        AnimeCard(
+            anime = item.anime,
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        // Status pill in top-left corner — does not eclipse type badge in top-right
+        item.listStatus?.let { status ->
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(6.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(status.accentColor().copy(alpha = 0.85f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    text = status.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    maxLines = 1,
+                )
+            }
+        }
+        if (item.isFavorite && item.listStatus == null) {
+            Icon(
+                Icons.Filled.Favorite,
+                contentDescription = "В избранном",
+                tint = StatusFavorite,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp)
+                    .size(16.dp),
+            )
+        }
+    }
+}
+
+// ── Status pill (small inline) ────────────────────────────────────────────────
+
+@Composable
+private fun StatusPill(status: AnimeStatus) {
+    val color = status.accentColor()
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(color.copy(alpha = 0.18f))
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = status.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = color,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+// ── Section header ────────────────────────────────────────────────────────────
+
+@Composable
+private fun SectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onBackground,
+        modifier = modifier,
+    )
+}
+
+// ── Empty state ───────────────────────────────────────────────────────────────
+
+@Composable
+private fun LibraryEmpty(
+    hasQuery: Boolean,
+    filter: LibraryFilter,
+) {
+    val message = when {
+        hasQuery -> "Ничего не найдено"
+        filter == LibraryFilter.Favorites -> "Избранное пока пусто"
+        filter is LibraryFilter.Status -> "Список «${filter.status.label}» пока пуст"
+        else -> "Библиотека пока пуста"
+    }
+    val hint = when {
+        hasQuery -> "Попробуйте изменить запрос"
+        else -> "Добавляйте тайтлы в избранное и списки — они появятся здесь"
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 32.dp, vertical = 48.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Schedule,
+            contentDescription = null,
+            modifier = Modifier.size(48.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = message,
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = hint,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+// ── Sort sheet (DATE / TITLE only) ────────────────────────────────────────────
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun CollectionsSortSheet(
+private fun LibrarySortSheet(
     selectedSort: SortOption,
     sortAscending: Boolean,
     onSortSelected: (SortOption) -> Unit,
@@ -230,11 +895,10 @@ private fun CollectionsSortSheet(
             Box(
                 modifier = Modifier
                     .padding(vertical = 10.dp)
-                    .size(width = 36.dp, height = 4.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                        shape = RoundedCornerShape(2.dp),
-                    ),
+                    .width(36.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)),
             )
         },
     ) {
@@ -247,347 +911,26 @@ private fun CollectionsSortSheet(
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(modifier = Modifier.height(4.dp))
-            CollectionSortOption.entries.forEach { option ->
-                val mappedSort = option.toSortOption()
-                val selected = selectedSort == mappedSort
-                CollectionSortRow(
-                    icon = option.icon(),
-                    label = option.title,
-                    isSelected = selected,
-                    ascending = if (selected) sortAscending else false,
-                    onClick = { onSortSelected(mappedSort) },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CollectionsTabsRow(
-    selectedTab: CollectionsTab,
-    onTabSelected: (CollectionsTab) -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        CollectionsTab.entries.forEach { tab ->
-            val isSelected = selectedTab == tab
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(
-                        if (isSelected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.surfaceVariant,
-                    )
-                    .clickable { onTabSelected(tab) }
-                    .padding(vertical = 10.dp),
-            ) {
-                Text(
-                    tab.title,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (isSelected)
-                        Color(0xFF111111)
-                    else
-                        MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ListStatusChips(
-    selectedStatus: AnimeStatus?,
-    statuses: List<AnimeStatus>,
-    statusCounts: Map<AnimeStatus, Int>,
-    onStatusSelected: (AnimeStatus?) -> Unit,
-) {
-    val totalCount = statuses.sumOf { statusCounts[it] ?: 0 }
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        item {
-            FilterChip(
-                selected = selectedStatus == null,
-                onClick = { onStatusSelected(null) },
-                label = { StatusChipLabel(label = "Все", count = totalCount) },
-                shape = RoundedCornerShape(18.dp),
+            LibrarySortRow(
+                icon = Icons.Outlined.Schedule,
+                label = "По дате активности",
+                isSelected = selectedSort == SortOption.DATE,
+                ascending = if (selectedSort == SortOption.DATE) sortAscending else false,
+                onClick = { onSortSelected(SortOption.DATE) },
             )
-        }
-        items(statuses) { status ->
-            FilterChip(
-                selected = selectedStatus == status,
-                onClick = { onStatusSelected(if (selectedStatus == status) null else status) },
-                label = { StatusChipLabel(label = status.label, count = statusCounts[status] ?: 0) },
-                shape = RoundedCornerShape(18.dp),
+            LibrarySortRow(
+                icon = Icons.Outlined.SortByAlpha,
+                label = "По названию",
+                isSelected = selectedSort == SortOption.TITLE,
+                ascending = if (selectedSort == SortOption.TITLE) sortAscending else false,
+                onClick = { onSortSelected(SortOption.TITLE) },
             )
         }
     }
 }
 
 @Composable
-private fun StatusChipLabel(
-    label: String,
-    count: Int,
-) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label)
-        Text(
-            text = count.toString(),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-        )
-    }
-}
-
-@Composable
-private fun CollectionsToolbar(
-    count: Int,
-    sort: SortOption,
-    sortAscending: Boolean,
-    onSortClick: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = countLabel(count),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
-        )
-        Surface(
-            onClick = onSortClick,
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    Icons.Default.FilterList,
-                    contentDescription = "Сортировка",
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(modifier = Modifier.size(4.dp))
-                Text(
-                    text = sortShortName(sort, sortAscending),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CollectionRow(
-    item: CollectionItem,
-    onAnimeClick: (String) -> Unit,
-) {
-    AnimeCardHorizontal(
-        anime = item.anime,
-        onClick = { onAnimeClick(item.anime.url) },
-        trailingContent = {
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                item.listStatus?.let {
-                    Text(
-                        text = it.label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                    )
-                }
-                val activity = formatActivityTime(item.lastActivityAt)
-                if (activity.isNotBlank()) {
-                    Text(
-                        text = activity,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                CollectionSources(item)
-            }
-        },
-    )
-}
-
-@Composable
-private fun CollectionSources(item: CollectionItem) {
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (CollectionSource.FAVORITES in item.sources) {
-            Icon(
-                Icons.Outlined.FavoriteBorder,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.primary,
-            )
-        }
-        if (CollectionSource.HISTORY in item.sources) {
-            Icon(
-                Icons.Default.History,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        if (CollectionSource.LISTS in item.sources) {
-            Icon(
-                Icons.Default.FolderCopy,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-@Composable
-private fun EmptyCollectionsState(
-    hasQuery: Boolean,
-    tab: CollectionsTab,
-) {
-    val message = when {
-        hasQuery -> "Ничего не найдено"
-        tab == CollectionsTab.HISTORY -> "История просмотра пока пуста"
-        tab == CollectionsTab.FAVORITES -> "Избранное пока пусто"
-        tab == CollectionsTab.LISTS -> "Списки пока пусты"
-        else -> "Коллекции пока пусты"
-    }
-
-    val hint = when {
-        hasQuery -> "Попробуйте изменить запрос"
-        else -> "Здесь появятся избранное, история и пользовательские списки"
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 32.dp, vertical = 72.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Icon(
-            imageVector = when (tab) {
-                CollectionsTab.HISTORY -> Icons.Default.History
-                CollectionsTab.FAVORITES -> Icons.Outlined.FavoriteBorder
-                CollectionsTab.LISTS -> Icons.Default.FolderCopy
-                CollectionsTab.ALL -> Icons.Outlined.Schedule
-            },
-            contentDescription = null,
-            modifier = Modifier.size(56.dp),
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            text = message,
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = hint,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-            textAlign = TextAlign.Center,
-        )
-        if (!hasQuery) {
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = "Попробуйте открыть профиль на сайте или добавить тайтлы в избранное и списки",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                textAlign = TextAlign.Center,
-            )
-        }
-    }
-}
-
-private fun countLabel(count: Int): String {
-    val mod10 = count % 10
-    val mod100 = count % 100
-    val suffix = when {
-        mod10 == 1 && mod100 != 11 -> "аниме"
-        mod10 in 2..4 && mod100 !in 12..14 -> "аниме"
-        else -> "аниме"
-    }
-    return "$count $suffix"
-}
-
-private fun sortShortName(sort: SortOption, ascending: Boolean): String {
-    val arrow = if (ascending) "↑" else "↓"
-    return when (sort) {
-        SortOption.TITLE -> "А-Я $arrow"
-        else -> "Дата $arrow"
-    }
-}
-
-private fun formatActivityTime(timestamp: Long): String {
-    if (timestamp <= 0L) return ""
-    val now = System.currentTimeMillis()
-    val diff = now - timestamp
-    val hour = 60 * 60 * 1000L
-    val day = 24 * hour
-    return when {
-        diff < hour -> "только что"
-        diff < day -> "сегодня"
-        diff < day * 2 -> "вчера"
-        diff < day * 7 -> "${diff / day} дн. назад"
-        else -> SimpleDateFormat("d MMM", Locale("ru")).format(Date(timestamp))
-    }
-}
-
-private enum class CollectionSortOption {
-    LAST_ACTIVITY,
-    TITLE,
-    ;
-
-    val title: String
-        get() = when (this) {
-            LAST_ACTIVITY -> "По дате активности"
-            TITLE -> "По названию"
-        }
-
-    fun toSortOption(): SortOption = when (this) {
-        LAST_ACTIVITY -> SortOption.DATE
-        TITLE -> SortOption.TITLE
-    }
-
-    fun label(ascending: Boolean): String = when (this) {
-        LAST_ACTIVITY -> if (ascending) "Сначала старые" else "Сначала новые"
-        TITLE -> if (ascending) "Название А-Я" else "Название Я-А"
-    }
-
-    fun icon(): ImageVector = when (this) {
-        LAST_ACTIVITY -> Icons.Outlined.CalendarMonth
-        TITLE -> Icons.Outlined.SortByAlpha
-    }
-}
-
-@Composable
-private fun CollectionSortRow(
+private fun LibrarySortRow(
     icon: ImageVector,
     label: String,
     isSelected: Boolean,
@@ -605,39 +948,48 @@ private fun CollectionSortRow(
             .background(bgColor)
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(22.dp),
-            tint = iconColor,
+        Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(22.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            color = contentColor,
+            modifier = Modifier.weight(1f),
         )
-        Spacer(modifier = Modifier.width(14.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodyLarge,
-                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                color = contentColor,
-            )
-            Text(
-                text = if (isSelected) selectedSortDirectionLabel(label, ascending) else "",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
         if (isSelected) {
-            Icon(
-                imageVector = if (ascending) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                contentDescription = if (ascending) "По возрастанию" else "По убыванию",
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.primary,
+            Text(
+                text = if (ascending) "↑" else "↓",
+                style = MaterialTheme.typography.titleMedium,
+                color = contentColor,
             )
         }
     }
 }
 
-private fun selectedSortDirectionLabel(label: String, ascending: Boolean): String = when (label) {
-    "По названию" -> if (ascending) "А-Я" else "Я-А"
-    else -> if (ascending) "Сначала старые" else "Сначала новые"
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+private fun libraryStatsLabel(total: Int, continueCount: Int): String {
+    val titlesPart = "$total ${pluralTitles(total)}"
+    if (continueCount <= 0) return titlesPart
+    return "$titlesPart · $continueCount ${pluralContinue(continueCount)}"
+}
+
+private fun pluralTitles(n: Int): String {
+    val mod10 = n % 10
+    val mod100 = n % 100
+    return when {
+        mod10 == 1 && mod100 != 11 -> "тайтл"
+        mod10 in 2..4 && mod100 !in 12..14 -> "тайтла"
+        else -> "тайтлов"
+    }
+}
+
+private fun pluralContinue(n: Int): String {
+    val mod10 = n % 10
+    val mod100 = n % 100
+    return when {
+        mod10 == 1 && mod100 != 11 -> "продолжается"
+        else -> "продолжаются"
+    }
 }

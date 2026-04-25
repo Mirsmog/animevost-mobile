@@ -1,8 +1,16 @@
 package com.animevost.app.core.domain.repository
 
 import com.animevost.app.core.domain.model.WatchProgress
+import kotlinx.coroutines.flow.Flow
 
 interface WatchProgressRepository {
+
+    /**
+     * Reactive list with the latest progress entry per anime, newest first.
+     * Powers the "Continue watching" rail on the library screen.
+     */
+    fun observeLatestPerAnime(): Flow<List<WatchProgress>>
+
     /** Upserts progress for an episode. */
     suspend fun saveProgress(progress: WatchProgress)
 
