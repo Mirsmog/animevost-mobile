@@ -34,7 +34,6 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.SortByAlpha
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -46,6 +45,8 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -54,6 +55,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -66,8 +68,6 @@ import com.animevost.app.core.domain.model.AnimeStatus
 import com.animevost.app.core.domain.model.SortOption
 import com.animevost.app.core.ui.components.AnimeCardHorizontal
 import com.animevost.app.core.ui.components.LoadingState
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -80,6 +80,7 @@ fun CollectionsScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     var showSortSheet by remember { mutableStateOf(false) }
+    var showSearchField by remember { mutableStateOf(false) }
 
     if (showSortSheet) {
         CollectionsSortSheet(
@@ -97,10 +98,47 @@ fun CollectionsScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = "Коллекции",
-                        style = MaterialTheme.typography.titleLarge,
-                    )
+                    if (showSearchField) {
+                        TextField(
+                            value = state.query,
+                            onValueChange = { viewModel.onEvent(CollectionsEvent.QueryChanged(it)) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(end = 8.dp),
+                            placeholder = { Text("Поиск") },
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyMedium,
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            ),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = {}),
+                        )
+                    } else {
+                        Text(
+                            text = "Коллекции",
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                    }
+                },
+                actions = {
+                    if (showSearchField) {
+                        IconButton(onClick = {
+                            viewModel.onEvent(CollectionsEvent.QueryChanged(""))
+                            showSearchField = false
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "Закрыть поиск")
+                        }
+                    } else {
+                        IconButton(onClick = { showSearchField = true }) {
+                            Icon(Icons.Default.Search, contentDescription = "Поиск")
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
@@ -123,15 +161,8 @@ fun CollectionsScreen(
                     contentPadding = PaddingValues(bottom = 24.dp),
                 ) {
                     item {
-                        CollectionsSearchField(
-                            query = state.query,
-                            onQueryChange = { viewModel.onEvent(CollectionsEvent.QueryChanged(it)) },
-                        )
-                    }
-                    item {
-                        CollectionsTabs(
+                        CollectionsTabsRow(
                             selectedTab = state.selectedTab,
-                            tabCounts = state.tabCounts,
                             onTabSelected = { viewModel.onEvent(CollectionsEvent.TabSelected(it)) },
                         )
                     }
@@ -232,90 +263,41 @@ private fun CollectionsSortSheet(
 }
 
 @Composable
-private fun CollectionsSearchField(
-    query: String,
-    onQueryChange: (String) -> Unit,
-) {
-    TextField(
-        value = query,
-        onValueChange = onQueryChange,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        placeholder = { Text("Поиск по названию") },
-        leadingIcon = {
-            Icon(
-                Icons.Default.Search,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        },
-        trailingIcon = {
-            if (query.isNotEmpty()) {
-                IconButton(onClick = { onQueryChange("") }) {
-                    Icon(Icons.Default.Close, contentDescription = "Очистить")
-                }
-            }
-        },
-        singleLine = true,
-        shape = RoundedCornerShape(24.dp),
-        colors = TextFieldDefaults.colors(
-            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-            focusedIndicatorColor = Color.Transparent,
-            unfocusedIndicatorColor = Color.Transparent,
-        ),
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = {}),
-    )
-}
-
-@Composable
-private fun CollectionsTabs(
+private fun CollectionsTabsRow(
     selectedTab: CollectionsTab,
-    tabCounts: Map<CollectionsTab, Int>,
     onTabSelected: (CollectionsTab) -> Unit,
 ) {
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        items(CollectionsTab.entries) { tab ->
+        CollectionsTab.entries.forEach { tab ->
             val isSelected = selectedTab == tab
-            FilterChip(
-                selected = isSelected,
-                onClick = { onTabSelected(tab) },
-                label = {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = tab.title,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                        )
-                        Text(
-                            text = (tabCounts[tab] ?: 0).toString(),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (isSelected) Color(0xFF111111).copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        )
-                    }
-                },
-                shape = RoundedCornerShape(20.dp),
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = MaterialTheme.colorScheme.primary,
-                    selectedLabelColor = Color(0xFF111111),
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                ),
-                border = FilterChipDefaults.filterChipBorder(
-                    enabled = true,
-                    selected = isSelected,
-                    borderColor = Color.Transparent,
-                    selectedBorderColor = Color.Transparent,
-                ),
-            )
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (isSelected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant,
+                    )
+                    .clickable { onTabSelected(tab) }
+                    .padding(vertical = 10.dp),
+            ) {
+                Text(
+                    tab.title,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (isSelected)
+                        Color(0xFF111111)
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
