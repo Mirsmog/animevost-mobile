@@ -5,12 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.AnimeStatus
 import com.animevost.app.core.domain.model.User
+import com.animevost.app.core.domain.model.BetaFeature
+import com.animevost.app.core.domain.repository.FeatureFlagsRepository
 import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.FavoriteRepository
 import com.animevost.app.core.domain.repository.UserListRepository
-import com.animevost.app.core.domain.usecase.GetWatchHistoryUseCase
 import com.animevost.app.core.domain.usecase.LogoutUseCase
-import dagger.hilt.android.lifecycle.HiltViewModel
+import com.animevost.app.core.domain.usecase.GetWatchHistoryUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -30,6 +31,7 @@ data class ProfileUiState(
     val selectedTab: ProfileTab = ProfileTab.FAVORITES,
     val isLoading: Boolean = false,
     val error: String? = null,
+    val watchStatusEnabled: Boolean = false,
 )
 
 enum class ProfileTab(val title: String) {
@@ -52,6 +54,7 @@ class ProfileViewModel @Inject constructor(
     private val getWatchHistoryUseCase: GetWatchHistoryUseCase,
     private val logoutUseCase: LogoutUseCase,
     private val userListRepository: UserListRepository,
+    private val featureFlagsRepository: FeatureFlagsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ProfileUiState())
@@ -85,6 +88,11 @@ class ProfileViewModel @Inject constructor(
             }.collect { watchLists ->
                 _uiState.update { it.copy(watchLists = watchLists) }
             }
+        }
+        // Watch status beta flag
+        viewModelScope.launch {
+            featureFlagsRepository.isEnabled(BetaFeature.WATCH_STATUS)
+                .collect { enabled -> _uiState.update { it.copy(watchStatusEnabled = enabled) } }
         }
     }
 

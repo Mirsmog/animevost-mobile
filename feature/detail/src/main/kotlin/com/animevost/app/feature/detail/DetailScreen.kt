@@ -188,6 +188,7 @@ fun DetailScreen(
                     continueEpisode = state.continueEpisode,
                     continuePositionMs = state.continuePositionMs,
                     watchStatus = state.watchStatus,
+                    watchStatusEnabled = state.watchStatusEnabled,
                     comments = state.comments,
                     isLoadingComments = state.isLoadingComments,
                     commentTextValue = state.commentTextValue,
@@ -233,7 +234,7 @@ private fun DetailContent(
     continueEpisode: Episode?,
     continuePositionMs: Long,
     watchStatus: AnimeStatus?,
-    comments: List<Comment>,
+    watchStatusEnabled: Boolean,
     isLoadingComments: Boolean,
     commentTextValue: TextFieldValue,
     isAddingComment: Boolean,
@@ -284,6 +285,7 @@ private fun DetailContent(
                 episodes = anime.episodes,
                 continueEpisode = continueEpisode,
                 watchStatus = watchStatus,
+                watchStatusEnabled = watchStatusEnabled,
                 onPlayEpisode = onPlayEpisode,
                 onSetWatchStatus = onSetWatchStatus,
             )
@@ -1405,6 +1407,7 @@ private fun ActionButtonsRow(
     episodes: List<Episode>,
     continueEpisode: Episode?,
     watchStatus: AnimeStatus?,
+    watchStatusEnabled: Boolean,
     onPlayEpisode: (Episode, Int) -> Unit,
     onSetWatchStatus: (AnimeStatus?) -> Unit,
 ) {
@@ -1449,17 +1452,19 @@ private fun ActionButtonsRow(
                 )
             }
         }
-        WatchStatusSquareButton(
-            currentStatus = watchStatus,
-            onStatusSelected = onSetWatchStatus,
-            modifier = if (hasEpisodes)
-                Modifier.size(52.dp)
-            else
-                Modifier
-                    .fillMaxWidth()
-                    .height(52.dp),
-            showLabel = !hasEpisodes,
-        )
+        if (watchStatusEnabled) {
+            WatchStatusSquareButton(
+                currentStatus = watchStatus,
+                onStatusSelected = onSetWatchStatus,
+                modifier = if (hasEpisodes)
+                    Modifier.size(52.dp)
+                else
+                    Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                showLabel = !hasEpisodes,
+            )
+        }
     }
 }
 

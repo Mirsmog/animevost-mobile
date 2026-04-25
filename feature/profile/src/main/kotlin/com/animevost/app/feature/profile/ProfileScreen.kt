@@ -278,24 +278,26 @@ private fun LoggedInContent(
         }
 
         // Watch lists sections
-        state.watchLists.forEach { (status, list) ->
-            if (list.isNotEmpty()) {
-                item {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(top = 8.dp),
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                    )
-                    SectionHeader(
-                        title = status.label,
-                        actionLabel = null,
-                        onAction = null,
-                    )
-                }
-                item {
-                    AnimeHorizontalRow(
-                        items = list,
-                        onAnimeClick = onAnimeClick,
-                    )
+        if (state.watchStatusEnabled) {
+            state.watchLists.forEach { (status, list) ->
+                if (list.isNotEmpty()) {
+                    item {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(top = 8.dp),
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                        )
+                        SectionHeader(
+                            title = status.label,
+                            actionLabel = null,
+                            onAction = null,
+                        )
+                    }
+                    item {
+                        AnimeHorizontalRow(
+                            items = list,
+                            onAnimeClick = onAnimeClick,
+                        )
+                    }
                 }
             }
         }

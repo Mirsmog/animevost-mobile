@@ -14,16 +14,17 @@ import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
 import com.animevost.app.core.domain.usecase.GetCommentsUseCase
 import com.animevost.app.core.domain.usecase.RateAnimeUseCase
 import com.animevost.app.core.domain.usecase.ToggleFavoriteUseCase
+import com.animevost.app.core.domain.model.BetaFeature
+import com.animevost.app.core.domain.repository.FeatureFlagsRepository
 import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.FavoriteRepository
 import com.animevost.app.core.domain.model.WatchProgress
-import com.animevost.app.core.domain.repository.UserListRepository
 import com.animevost.app.core.domain.repository.WatchProgressRepository
-import com.animevost.app.core.domain.util.onError
+import com.animevost.app.core.domain.repository.UserListRepository
 import com.animevost.app.core.domain.util.onSuccess
-import androidx.compose.ui.text.TextRange
+import com.animevost.app.core.domain.util.onError
 import androidx.compose.ui.text.input.TextFieldValue
-import dagger.hilt.android.lifecycle.HiltViewModel
+import androidx.compose.ui.text.TextRange
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -61,6 +62,7 @@ data class DetailUiState(
     val continuePositionMs: Long = 0L,
     // Watch status (user list)
     val watchStatus: AnimeStatus? = null,
+    val watchStatusEnabled: Boolean = false,
     // Episode pagination
     val episodeRangeStart: Int = 0,
 )
@@ -104,6 +106,7 @@ class DetailViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val watchProgressRepository: WatchProgressRepository,
     private val userListRepository: UserListRepository,
+    private val featureFlagsRepository: FeatureFlagsRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DetailUiState())
@@ -115,6 +118,9 @@ class DetailViewModel @Inject constructor(
     init {
         authRepository.isLoggedInFlow
             .onEach { loggedIn -> _uiState.update { it.copy(isLoggedIn = loggedIn) } }
+            .launchIn(viewModelScope)
+        featureFlagsRepository.isEnabled(BetaFeature.WATCH_STATUS)
+            .onEach { enabled -> _uiState.update { it.copy(watchStatusEnabled = enabled) } }
             .launchIn(viewModelScope)
     }
 
