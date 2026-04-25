@@ -45,8 +45,9 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
@@ -56,8 +57,12 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.outlined.BookmarkRemove
+import androidx.compose.material.icons.outlined.Cancel
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.PauseCircle
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.WatchLater
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -111,6 +116,8 @@ import com.animevost.app.core.ui.theme.Bg1
 import com.animevost.app.core.ui.theme.Bg2
 import com.animevost.app.core.ui.theme.Bg3
 import com.animevost.app.core.ui.theme.Bg4
+import com.animevost.app.core.ui.theme.ErrorRed
+import com.animevost.app.core.ui.theme.OrangeMuted
 import com.animevost.app.core.ui.theme.OrangePrimary
 import com.animevost.app.core.ui.theme.TextPrimary
 import com.animevost.app.core.ui.theme.TextSecondary
@@ -272,50 +279,15 @@ private fun DetailContent(
             )
             Spacer(Modifier.height(16.dp))
 
-            // Primary CTA: Watch / Continue
-            if (anime.episodes.isNotEmpty()) {
-                val isContinue = continueEpisode != null
-                Button(
-                    onClick = {
-                        if (isContinue) {
-                            val idx = anime.episodes.indexOf(continueEpisode)
-                            onPlayEpisode(continueEpisode!!, if (idx >= 0) idx else 0)
-                        } else {
-                            onPlayEpisode(anime.episodes.first(), 0)
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = OrangePrimary,
-                        contentColor = Color.Black,
-                    ),
-                ) {
-                    Icon(
-                        Icons.Filled.PlayCircle,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = if (isContinue) "Продолжить • ${continueEpisode!!.name}" else "Смотреть",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Spacer(Modifier.height(12.dp))
-            }
-
-            // Watch status chip
-            WatchStatusChip(
-                currentStatus = watchStatus,
-                onStatusSelected = onSetWatchStatus,
-                modifier = Modifier.padding(bottom = 12.dp),
+            // CTA row: Watch / Continue + Watch-list button
+            ActionButtonsRow(
+                episodes = anime.episodes,
+                continueEpisode = continueEpisode,
+                watchStatus = watchStatus,
+                onPlayEpisode = onPlayEpisode,
+                onSetWatchStatus = onSetWatchStatus,
             )
+            Spacer(Modifier.height(12.dp))
 
             // Genre chips
             FlowRow(
@@ -1426,76 +1398,224 @@ private val EmojiTagVisualTransformation = VisualTransformation { text ->
     TransformedText(AnnotatedString(sb.toString()), offsetMapping)
 }
 
-// ── Watch Status Chip ─────────────────────────────────────────────────────────
+// ── CTA: Watch + Watch-list buttons row ───────────────────────────────────────
 
 @Composable
-private fun WatchStatusChip(
-    currentStatus: AnimeStatus?,
-    onStatusSelected: (AnimeStatus?) -> Unit,
-    modifier: Modifier = Modifier,
+private fun ActionButtonsRow(
+    episodes: List<Episode>,
+    continueEpisode: Episode?,
+    watchStatus: AnimeStatus?,
+    onPlayEpisode: (Episode, Int) -> Unit,
+    onSetWatchStatus: (AnimeStatus?) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Box(modifier = modifier) {
-        FilterChip(
-            selected = currentStatus != null,
-            onClick = { expanded = true },
-            label = {
+    val hasEpisodes = episodes.isNotEmpty()
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (hasEpisodes) {
+            val isContinue = continueEpisode != null
+            Button(
+                onClick = {
+                    if (isContinue) {
+                        val idx = episodes.indexOf(continueEpisode)
+                        onPlayEpisode(continueEpisode!!, if (idx >= 0) idx else 0)
+                    } else {
+                        onPlayEpisode(episodes.first(), 0)
+                    }
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .height(52.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = OrangePrimary,
+                    contentColor = Color.Black,
+                ),
+            ) {
+                Icon(
+                    Icons.Filled.PlayCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    text = currentStatus?.label ?: "В списке",
-                    style = MaterialTheme.typography.labelMedium,
-                )
-            },
-            leadingIcon = if (currentStatus != null) {
-                { Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp)) }
-            } else null,
-            trailingIcon = {
-                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, modifier = Modifier.size(16.dp))
-            },
-            shape = RoundedCornerShape(16.dp),
-            colors = FilterChipDefaults.filterChipColors(
-                selectedContainerColor = OrangePrimary.copy(alpha = 0.15f),
-                selectedLabelColor = OrangePrimary,
-                selectedLeadingIconColor = OrangePrimary,
-                containerColor = Bg3,
-                labelColor = TextSecondary,
-            ),
-            border = FilterChipDefaults.filterChipBorder(
-                enabled = true,
-                selected = currentStatus != null,
-                borderColor = Color.Transparent,
-                selectedBorderColor = OrangePrimary.copy(alpha = 0.4f),
-            ),
-        )
-
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-        ) {
-            AnimeStatus.entries.forEach { status ->
-                DropdownMenuItem(
-                    text = { Text(status.label) },
-                    leadingIcon = {
-                        if (status == currentStatus) {
-                            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = OrangePrimary, modifier = Modifier.size(18.dp))
-                        }
-                    },
-                    onClick = {
-                        onStatusSelected(if (status == currentStatus) null else status)
-                        expanded = false
-                    },
-                )
-            }
-            if (currentStatus != null) {
-                HorizontalDivider()
-                DropdownMenuItem(
-                    text = { Text("Убрать из списка", color = MaterialTheme.colorScheme.error) },
-                    onClick = {
-                        onStatusSelected(null)
-                        expanded = false
-                    },
+                    text = if (isContinue) "Продолжить • ${continueEpisode!!.name}" else "Смотреть",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
+        WatchStatusSquareButton(
+            currentStatus = watchStatus,
+            onStatusSelected = onSetWatchStatus,
+            modifier = if (hasEpisodes)
+                Modifier.size(52.dp)
+            else
+                Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+            showLabel = !hasEpisodes,
+        )
     }
+}
+
+// ── Watch-list square / full-width button ─────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun WatchStatusSquareButton(
+    currentStatus: AnimeStatus?,
+    onStatusSelected: (AnimeStatus?) -> Unit,
+    modifier: Modifier = Modifier,
+    showLabel: Boolean = false,
+) {
+    var showSheet by remember { mutableStateOf(false) }
+    val isActive = currentStatus != null
+    val clickLabel = if (isActive) "Изменить статус просмотра" else "Добавить в список"
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (isActive) OrangeMuted else Bg3)
+            .clickable(onClickLabel = clickLabel) { showSheet = true },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (showLabel) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(horizontal = 16.dp),
+            ) {
+                Icon(
+                    imageVector = if (isActive) Icons.Filled.Bookmarks else Icons.Outlined.Bookmarks,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = if (isActive) OrangePrimary else TextSecondary,
+                )
+                Text(
+                    text = currentStatus?.label ?: "В список",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isActive) OrangePrimary else TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        } else {
+            Icon(
+                imageVector = if (isActive) Icons.Filled.Bookmarks else Icons.Outlined.Bookmarks,
+                contentDescription = clickLabel,
+                modifier = Modifier.size(22.dp),
+                tint = if (isActive) OrangePrimary else TextSecondary,
+            )
+        }
+    }
+
+    if (showSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = Bg2,
+            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+            dragHandle = {
+                Box(
+                    modifier = Modifier
+                        .padding(vertical = 10.dp)
+                        .width(36.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(TextSecondary.copy(alpha = 0.3f)),
+                )
+            },
+        ) {
+            Column(modifier = Modifier.padding(bottom = 32.dp)) {
+                Text(
+                    text = "Статус просмотра",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = TextPrimary,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                AnimeStatus.entries.forEach { status ->
+                    val isSelected = status == currentStatus
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onStatusSelected(if (isSelected) null else status)
+                                showSheet = false
+                            }
+                            .background(if (isSelected) OrangeMuted else androidx.compose.ui.graphics.Color.Transparent)
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = watchStatusIcon(status),
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
+                            tint = if (isSelected) OrangePrimary else TextSecondary,
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = status.label,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (isSelected) OrangePrimary else TextPrimary,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Filled.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = OrangePrimary,
+                            )
+                        }
+                    }
+                }
+                if (currentStatus != null) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                        color = Bg4,
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onStatusSelected(null)
+                                showSheet = false
+                            }
+                            .padding(horizontal = 20.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.BookmarkRemove,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp),
+                            tint = ErrorRed,
+                        )
+                        Spacer(modifier = Modifier.width(14.dp))
+                        Text(
+                            text = "Убрать из списка",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = ErrorRed,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun watchStatusIcon(status: AnimeStatus) = when (status) {
+    AnimeStatus.WATCHING  -> Icons.Outlined.Visibility
+    AnimeStatus.WATCHED   -> Icons.Outlined.CheckCircle
+    AnimeStatus.DROPPED   -> Icons.Outlined.Cancel
+    AnimeStatus.PLANNED   -> Icons.Outlined.WatchLater
+    AnimeStatus.ON_HOLD   -> Icons.Outlined.PauseCircle
 }
