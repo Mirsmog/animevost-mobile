@@ -235,6 +235,7 @@ private fun DetailContent(
     continuePositionMs: Long,
     watchStatus: AnimeStatus?,
     watchStatusEnabled: Boolean,
+    comments: List<Comment>,
     isLoadingComments: Boolean,
     commentTextValue: TextFieldValue,
     isAddingComment: Boolean,
