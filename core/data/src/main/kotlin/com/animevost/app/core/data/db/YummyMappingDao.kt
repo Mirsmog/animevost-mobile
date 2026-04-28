@@ -6,10 +6,10 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 
 @Dao
-interface MalMappingDao {
-    @Query("SELECT * FROM mal_mapping WHERE animeId = :animeId")
-    suspend fun get(animeId: Int): MalMappingEntity?
+interface YummyMappingDao {
+    @Query("SELECT * FROM yummy_mapping WHERE animeId = :animeId")
+    suspend fun get(animeId: Int): YummyMappingEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insert(entity: MalMappingEntity)
+    suspend fun insert(entity: YummyMappingEntity)
 }

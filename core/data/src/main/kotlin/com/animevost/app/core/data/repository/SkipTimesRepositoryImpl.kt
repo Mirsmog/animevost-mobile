@@ -1,25 +1,34 @@
 package com.animevost.app.core.data.repository
 
-import android.util.Log
-import com.animevost.app.core.data.db.MalMappingDao
-import com.animevost.app.core.data.db.MalMappingEntity
 import com.animevost.app.core.data.db.SkipTimeDao
 import com.animevost.app.core.data.db.SkipTimeEntity
+import com.animevost.app.core.data.db.YummyMappingDao
+import com.animevost.app.core.data.db.YummyMappingEntity
 import com.animevost.app.core.domain.model.SkipInterval
 import com.animevost.app.core.domain.model.SkipType
 import com.animevost.app.core.domain.repository.SkipTimesRepository
-import com.animevost.app.core.network.AniSkipApi
-import com.animevost.app.core.network.JikanApi
+import com.animevost.app.core.network.alloha.AllohaSkipClient
+import com.animevost.app.core.network.alloha.AllohaSkipType
+import com.animevost.app.core.network.alloha.YummyAnimeSearchClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 import javax.inject.Inject
 
-private const val TAG = "AniSkip"
-
+/**
+ * Resolves skip intervals via yummyanime.tv's Alloha JSON player.
+ *
+ * Pipeline:
+ *  1. Hit the local Room cache (`skip_times`).
+ *  2. Resolve animeVost id → yummyanime id (cached in `yummy_mapping`).
+ *  3. Run [AllohaSkipClient] which loads the iframe, builds the Borth header
+ *     and calls `POST /bnsi/movies/{idFile}` to get the raw `skipTime` string.
+ *  4. Persist resolved intervals back to the cache.
+ */
 class SkipTimesRepositoryImpl @Inject constructor(
-    private val jikanApi: JikanApi,
-    private val aniSkipApi: AniSkipApi,
-    private val malMappingDao: MalMappingDao,
+    private val searchClient: YummyAnimeSearchClient,
+    private val skipClient: AllohaSkipClient,
+    private val yummyMappingDao: YummyMappingDao,
     private val skipTimeDao: SkipTimeDao,
 ) : SkipTimesRepository {
 
@@ -29,97 +38,72 @@ class SkipTimesRepositoryImpl @Inject constructor(
         titleOriginal: String,
         titleAlternative: String,
     ): List<SkipInterval> = withContext(Dispatchers.IO) {
-        Log.d(TAG, "getSkipTimes: animeId=$animeId ep=$episodeNumber titleOriginal='$titleOriginal' titleAlternative='$titleAlternative'")
         val cached = skipTimeDao.get(animeId, episodeNumber)
         if (cached.isNotEmpty()) {
-            Log.d(TAG, "cache hit: ${cached.size} entries")
+            Timber.d("Alloha cache hit: animeId=%d ep=%d (%d entries)", animeId, episodeNumber, cached.size)
             return@withContext cached.toSkipIntervals()
         }
 
-        val malId = getMalId(animeId, titleOriginal, titleAlternative)
-        if (malId == null) {
-            Log.w(TAG, "malId not found, skip loading aborted")
+        val yummyId = resolveYummyId(animeId, titleOriginal, titleAlternative)
+        if (yummyId == null) {
+            Timber.w("Alloha: could not resolve yummyanime id for animeId=%d", animeId)
             return@withContext emptyList()
         }
 
-        Log.d(TAG, "malId=$malId, fetching AniSkip ep=$episodeNumber")
-        return@withContext try {
-            val response = aniSkipApi.getSkipTimes(malId, episodeNumber)
-            Log.d(TAG, "AniSkip response: found=${response.found} results=${response.results.size}")
-            if (!response.found || response.results.isEmpty()) return@withContext emptyList()
-            val entities = response.results.mapNotNull { result ->
-                Log.d(TAG, "  result: skipType=${result.skip_type} start=${result.interval.start_time} end=${result.interval.end_time}")
-                val type = when (result.skip_type) {
-                    "op" -> "OP"
-                    "ed" -> "ED"
-                    else -> return@mapNotNull null
-                }
-                SkipTimeEntity(
-                    animeId = animeId,
-                    episode = episodeNumber,
-                    type = type,
-                    startMs = (result.interval.start_time * 1000).toLong(),
-                    endMs = (result.interval.end_time * 1000).toLong(),
-                )
-            }
-            if (entities.isNotEmpty()) skipTimeDao.insertAll(entities)
-            Log.d(TAG, "saved ${entities.size} skip intervals")
-            entities.toSkipIntervals()
+        val ranges = try {
+            skipClient.loadSkipIntervals(yummyId, episodeNumber)
         } catch (e: Exception) {
-            Log.e(TAG, "AniSkip request failed: ${e.message}", e)
+            Timber.w(e, "Alloha skip request failed (yummyId=%d ep=%d)", yummyId, episodeNumber)
             emptyList()
         }
+        if (ranges.isEmpty()) return@withContext emptyList()
+
+        val entities = ranges.map { range ->
+            SkipTimeEntity(
+                animeId = animeId,
+                episode = episodeNumber,
+                type = when (range.type) {
+                    AllohaSkipType.OPENING -> "OP"
+                    AllohaSkipType.ENDING -> "ED"
+                },
+                startMs = range.startMs,
+                endMs = range.endMs,
+            )
+        }
+        // Multiple ranges of the same type collapse via PK → keep the latest.
+        skipTimeDao.insertAll(entities)
+        Timber.d("Alloha saved %d skip intervals for animeId=%d ep=%d", entities.size, animeId, episodeNumber)
+        entities.toSkipIntervals()
     }
 
-    private suspend fun getMalId(
+    private suspend fun resolveYummyId(
         animeId: Int,
         titleOriginal: String,
         titleAlternative: String,
     ): Int? {
-        malMappingDao.get(animeId)?.let {
-            Log.d(TAG, "malMapping cache hit: malId=${it.malId}")
-            return it.malId
-        }
-
+        yummyMappingDao.get(animeId)?.let { return it.yummyId }
         val candidates = buildSearchCandidates(titleOriginal, titleAlternative)
-        Log.d(TAG, "Jikan search candidates: $candidates")
-        for (query in candidates) {
-            if (query.isBlank()) continue
-            try {
-                val resp = jikanApi.searchAnime(query)
-                Log.d(TAG, "  Jikan '$query' → ${resp.data.size} results: ${resp.data.take(3).map { it.mal_id to it.title }}")
-                if (resp.data.isNotEmpty()) {
-                    val malId = resp.data[0].mal_id
-                    malMappingDao.insert(MalMappingEntity(animeId = animeId, malId = malId))
-                    return malId
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "  Jikan '$query' failed: ${e.message}")
-                continue
-            }
-        }
-        return null
+        val resolved = searchClient.searchFirstId(candidates) ?: return null
+        yummyMappingDao.insert(YummyMappingEntity(animeId = animeId, yummyId = resolved))
+        return resolved
     }
 
     private fun buildSearchCandidates(
         titleOriginal: String,
         titleAlternative: String,
     ): List<String> {
-        val candidates = mutableListOf<String>()
+        val out = LinkedHashSet<String>()
+        // Russian title is the strongest match on yummyanime.tv.
+        if (titleAlternative.isNotBlank()) out.add(titleAlternative.trim())
         if (titleOriginal.isNotBlank()) {
-            candidates.add(titleOriginal)
-            if (titleOriginal.contains(":")) {
-                candidates.add(titleOriginal.substringBefore(":").trim())
-                candidates.add(titleOriginal.substringAfter(":").trim())
+            val original = titleOriginal.trim()
+            out.add(original)
+            if (original.contains(":")) {
+                out.add(original.substringBefore(":").trim())
             }
-            titleOriginal.split(",").map { it.trim() }.filter { it.isNotBlank() }.forEach {
-                if (it !in candidates) candidates.add(it)
-            }
+            original.split(",").map { it.trim() }.filter { it.isNotBlank() }.forEach(out::add)
         }
-        if (titleAlternative.isNotBlank() && titleAlternative !in candidates) {
-            candidates.add(titleAlternative)
-        }
-        return candidates
+        return out.toList()
     }
 
     private fun List<SkipTimeEntity>.toSkipIntervals() = mapNotNull { e ->

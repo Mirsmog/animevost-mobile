@@ -8,10 +8,10 @@ import androidx.datastore.preferences.preferencesDataStoreFile
 import com.animevost.app.core.data.db.AppDatabase
 import com.animevost.app.core.data.db.FavoriteDao
 import com.animevost.app.core.data.db.HistoryDao
-import com.animevost.app.core.data.db.MalMappingDao
 import com.animevost.app.core.data.db.SkipTimeDao
 import com.animevost.app.core.data.db.UserListDao
 import com.animevost.app.core.data.db.WatchProgressDao
+import com.animevost.app.core.data.db.YummyMappingDao
 import com.animevost.app.core.data.repository.FeatureFlagsRepositoryImpl
 import com.animevost.app.core.data.repository.AnimeRepositoryImpl
 import com.animevost.app.core.data.repository.UpdateRepositoryImpl
@@ -70,7 +70,7 @@ object DataProvidesModule {
     fun provideUserListDao(db: AppDatabase): UserListDao = db.userListDao()
 
     @Provides
-    fun provideMalMappingDao(db: AppDatabase): MalMappingDao = db.malMappingDao()
+    fun provideYummyMappingDao(db: AppDatabase): YummyMappingDao = db.yummyMappingDao()
 
     @Provides
     fun provideSkipTimeDao(db: AppDatabase): SkipTimeDao = db.skipTimeDao()

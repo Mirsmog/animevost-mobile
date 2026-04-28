@@ -13,10 +13,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         HistoryEntity::class,
         WatchProgressEntity::class,
         UserListEntity::class,
-        MalMappingEntity::class,
+        YummyMappingEntity::class,
         SkipTimeEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -24,7 +24,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun historyDao(): HistoryDao
     abstract fun watchProgressDao(): WatchProgressDao
     abstract fun userListDao(): UserListDao
-    abstract fun malMappingDao(): MalMappingDao
+    abstract fun yummyMappingDao(): YummyMappingDao
     abstract fun skipTimeDao(): SkipTimeDao
 
     companion object {
@@ -122,9 +122,34 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS `mal_mapping`")
+                // Existing skip_times rows came from AniSkip MAL ids; drop them
+                // because the new Alloha pipeline uses different timing data.
+                db.execSQL("DELETE FROM `skip_times`")
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `yummy_mapping` (
+                        `animeId` INTEGER NOT NULL,
+                        `yummyId` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`animeId`)
+                    )""".trimIndent(),
+                )
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "animevost.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                .addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                    MIGRATION_6_7,
+                    MIGRATION_7_8,
+                )
                 .build()
     }
 }

@@ -77,7 +77,7 @@ fun SettingsScreen(
 private val betaFeatureUiMeta = mapOf(
     BetaFeature.SKIP_INTRO_OUTRO to Pair(
         "Пропуск интро/аутро",
-        "Кнопка «Пропустить» и метки на таймлайне. Работает через AniSkip — не все аниме охвачены.",
+        "Кнопка «Пропустить» и метки на таймлайне. Тайминги тянутся через альтернативный плеер — не все аниме охвачены.",
     ),
     BetaFeature.WATCH_STATUS to Pair(
         "Списки просмотра",
