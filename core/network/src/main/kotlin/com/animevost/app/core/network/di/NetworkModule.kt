@@ -111,8 +111,28 @@ object NetworkModule {
             override fun loadForRequest(url: HttpUrl): List<Cookie> =
                 store[url.host].orEmpty()
         }
+        // yummyanime DLE rejects AJAX without a Referer header (returns
+        // {"success":false}). Add it + a real-browser UA on every request that
+        // doesn't already set them. Alloha bnsi requests already supply their
+        // own headers via AllohaHeaders, so we leave those untouched.
+        val browserHeadersInterceptor = okhttp3.Interceptor { chain ->
+            val req = chain.request()
+            val builder = req.newBuilder()
+            if (req.header("User-Agent").isNullOrBlank()) {
+                builder.header(
+                    "User-Agent",
+                    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
+                        "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
+                )
+            }
+            if (req.header("Referer") == null && req.url.host == "yummyanime.tv") {
+                builder.header("Referer", "https://yummyanime.tv/")
+            }
+            chain.proceed(builder.build())
+        }
         return OkHttpClient.Builder()
             .cookieJar(cookieJar)
+            .addInterceptor(browserHeadersInterceptor)
             .addInterceptor(loggingInterceptor)
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
