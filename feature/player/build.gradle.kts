@@ -46,6 +46,7 @@ dependencies {
 
     implementation(libs.coil.compose)
     implementation(libs.coroutines.core)
+    implementation(libs.timber)
 
     implementation(libs.lifecycle.runtime.ktx)
     implementation(libs.lifecycle.viewmodel.compose)

@@ -21,7 +21,7 @@ class App : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
-        if (BuildConfig.DEBUG) Timber.plant(Timber.DebugTree())
+        Timber.plant(Timber.DebugTree())
         NotificationWorker.schedule(this)
     }
 }
