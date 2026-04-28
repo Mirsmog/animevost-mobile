@@ -3,6 +3,7 @@ package com.animevost.app
 import android.app.Application
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import com.animevost.app.BuildConfig
 import com.animevost.app.core.data.worker.NotificationWorker
 import dagger.hilt.android.HiltAndroidApp
 import timber.log.Timber
@@ -21,7 +22,9 @@ class App : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
-        Timber.plant(Timber.DebugTree())
+        if (BuildConfig.DEBUG) {
+            Timber.plant(Timber.DebugTree())
+        }
         NotificationWorker.schedule(this)
     }
 }

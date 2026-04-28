@@ -27,7 +27,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -433,32 +435,59 @@ fun PlayerScreen(
         }
 
         // ── Skip intro/outro button ─────────────────────────────
-        AnimatedVisibility(
-            visible = activeSkip != null,
-            enter = fadeIn(tween(300)) + slideInVertically(initialOffsetY = { it }),
-            exit = fadeOut(tween(200)) + slideOutVertically(targetOffsetY = { it }),
-            modifier = Modifier.align(Alignment.BottomStart).padding(start = 24.dp, bottom = 80.dp),
-        ) {
+        run {
             val skip = activeSkip
-            if (skip != null) {
-                val label = if (skip.type == com.animevost.app.core.domain.model.SkipType.OP) {
-                    "Пропустить интро"
-                } else {
-                    "Пропустить концовку"
-                }
-                Box(
-                    modifier = Modifier
-                        .background(Color.White.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-                        .border(1.dp, Color.White.copy(alpha = 0.8f), RoundedCornerShape(4.dp))
-                        .clickable { exoPlayer.seekTo(skip.endMs) }
-                        .padding(horizontal = 20.dp, vertical = 10.dp),
-                ) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
-                    )
+            val isEd = skip?.type == com.animevost.app.core.domain.model.SkipType.ED
+            val showAsNextEpisode = isEd && state.hasNext
+            val visible = skip != null && !(isEd && !state.hasNext)
+            AnimatedVisibility(
+                visible = visible,
+                enter = fadeIn(tween(220)) + slideInVertically(initialOffsetY = { it / 2 }),
+                exit = fadeOut(tween(160)) + slideOutVertically(targetOffsetY = { it / 2 }),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 80.dp),
+            ) {
+                if (skip != null) {
+                    val label = when {
+                        showAsNextEpisode -> "Следующая серия"
+                        skip.type == com.animevost.app.core.domain.model.SkipType.OP -> "Пропустить интро"
+                        else -> "Пропустить концовку"
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .background(Color.White, RoundedCornerShape(6.dp))
+                            .clickable {
+                                if (showAsNextEpisode) {
+                                    viewModel.onEvent(
+                                        PlayerEvent.NextEpisode(
+                                            exoPlayer.currentPosition,
+                                            exoPlayer.duration,
+                                        ),
+                                    )
+                                } else {
+                                    exoPlayer.seekTo(skip.endMs)
+                                }
+                            }
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                    ) {
+                        Icon(
+                            imageVector = if (showAsNextEpisode) {
+                                Icons.Filled.SkipNext
+                            } else {
+                                Icons.Filled.FastForward
+                            },
+                            contentDescription = null,
+                            tint = Color(0xFF111111),
+                            modifier = Modifier.size(18.dp),
+                        )
+                        androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF111111),
+                        )
+                    }
                 }
             }
         }

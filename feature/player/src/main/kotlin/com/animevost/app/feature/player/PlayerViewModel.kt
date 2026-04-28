@@ -30,7 +30,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import timber.log.Timber
 import javax.inject.Inject
 
 data class PlayerUiState(
@@ -238,12 +237,9 @@ class PlayerViewModel @Inject constructor(
     private fun loadSkipTimesForEpisode(animeId: Int, epName: String) {
         skipTimesJob?.cancel()
         val episodeNum = Regex("\\d+").find(epName)?.value?.toIntOrNull() ?: 1
-        Timber.i("SkipTimes: requesting animeId=%d ep=%d (epName=%s) titleOrig=%s titleAlt=%s",
-            animeId, episodeNum, epName, titleOriginal, titleAlternative)
         skipTimesJob = viewModelScope.launch {
             val isEnabled = featureFlagsRepository.isEnabled(BetaFeature.SKIP_INTRO_OUTRO).first()
             if (!isEnabled) {
-                Timber.i("SkipTimes: beta flag SKIP_INTRO_OUTRO is OFF — skipping")
                 currentSkipIntervals = emptyList()
                 _skipIntervals.value = emptyList()
                 _activeSkip.value = null
@@ -256,12 +252,9 @@ class PlayerViewModel @Inject constructor(
                     titleOriginal = titleOriginal,
                     titleAlternative = titleAlternative,
                 )
-            } catch (e: Exception) {
-                Timber.w(e, "SkipTimes: getSkipTimes threw")
+            } catch (_: Exception) {
                 emptyList()
             }
-            Timber.i("SkipTimes: got %d intervals for animeId=%d ep=%d",
-                currentSkipIntervals.size, animeId, episodeNum)
             _skipIntervals.value = currentSkipIntervals
         }
     }
