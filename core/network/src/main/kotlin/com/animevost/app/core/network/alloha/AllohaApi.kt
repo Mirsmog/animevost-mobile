@@ -19,6 +19,13 @@ interface YummyAnimeApi {
         @Query("action") action: String = "iframe",
         @Query("id") yummyAnimeId: Int,
     ): YummyIframeAjaxResponse
+
+    /**
+     * One-time warm-up GET on yummyanime root so the server issues a PHPSESSID
+     * cookie. Without it the AJAX controller responds `{"success":false}`.
+     */
+    @GET("/")
+    suspend fun warmUp(): retrofit2.Response<okhttp3.ResponseBody>
 }
 
 /** Alloha JSON endpoint that returns skipTime + media URLs for a given idFile. */

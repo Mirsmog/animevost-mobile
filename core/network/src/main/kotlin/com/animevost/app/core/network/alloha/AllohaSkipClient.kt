@@ -30,6 +30,7 @@ class AllohaSkipClient(
         yummyAnimeId: Int,
         episode: Int,
     ): List<AllohaSkipRange> {
+        warmUpIfNeeded()
         val iframeResp = runCatching { yummyApi.getAllohaIframeUrl(yummyAnimeId = yummyAnimeId) }
             .onFailure { Timber.w(it, "Failed to fetch yummyanime iframe URL for id=%d", yummyAnimeId) }
             .getOrNull() ?: return emptyList()
@@ -70,6 +71,16 @@ class AllohaSkipClient(
         val body = response.body()
         val skipTime = body?.skipTime ?: return emptyList()
         return parseSkipTime(skipTime)
+    }
+
+    @Volatile
+    private var warmedUp = false
+
+    private suspend fun warmUpIfNeeded() {
+        if (warmedUp) return
+        runCatching { yummyApi.warmUp() }
+            .onFailure { Timber.w(it, "Yummyanime warm-up failed") }
+            .onSuccess { warmedUp = true }
     }
 
     private fun pickTranslation(data: AllohaIframeData, episode: Int): AllohaTranslation? {
