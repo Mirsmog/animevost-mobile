@@ -169,8 +169,12 @@ fun DetailScreen(
         containerColor = Bg1,
         contentWindowInsets = WindowInsets(0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
-    ) { _ ->
-        Box(modifier = Modifier.fillMaxSize()) {
+    ) { innerPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+        ) {
             when {
                 state.isLoading -> LoadingState()
                 state.error != null -> ErrorState(
