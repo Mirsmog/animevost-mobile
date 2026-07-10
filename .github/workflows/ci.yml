@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64, animevost, android]
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Verify build environment
+        run: |
+          java -version
+          test -f "$ANDROID_HOME/platforms/android-35/android.jar"
+
+      - name: Verify
+        run: ./gradlew --no-daemon --max-workers=2 test lintDebug assembleDebug
+
+      - name: Clean workspace
+        if: always()
+        run: |
+          git submodule foreach --recursive git clean -ffdx
+          git clean -ffdx
