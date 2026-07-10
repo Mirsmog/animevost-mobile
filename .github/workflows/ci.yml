@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           submodules: true
 
@@ -31,7 +31,7 @@ jobs:
           test -f "$ANDROID_HOME/platforms/android-35/android.jar"
 
       - name: Verify
-        run: ./gradlew --no-daemon --max-workers=2 test lintDebug assembleDebug
+        run: ./gradlew --no-daemon --max-workers=2 -Pkotlin.compiler.execution.strategy=in-process test lintDebug assembleDebug
 
       - name: Clean workspace
         if: always()

@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           submodules: true
 
@@ -27,7 +27,7 @@ jobs:
         run: printf '%s' "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "${{ github.workspace }}/keystore.jks"
 
       - name: Build release APKs
-        run: ./gradlew --no-daemon --max-workers=2 test lintRelease assembleRelease
+        run: ./gradlew --no-daemon --max-workers=2 -Pkotlin.compiler.execution.strategy=in-process test lintRelease assembleRelease
         env:
           SIGNING_STORE_FILE: ${{ github.workspace }}/keystore.jks
           SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -43,23 +43,27 @@ jobs:
           done
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: AnimeVost ${{ github.ref_name }}
-          files: app/build/outputs/apk/release/AnimeVost-*.apk
-          body: |
-            ## Установка
-
-            Выберите APK под своё устройство:
-
-            | Файл | Устройство |
-            |---|---|
-            | `arm64-v8a` | Большинство современных Android-устройств |
-            | `armeabi-v7a` | Старые 32-битные устройства |
-            | `x86_64` | Эмуляторы |
-            | `universal` | Если не знаете какой выбрать |
-
-            > Перед установкой разрешите установку из неизвестных источников в настройках устройства.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RELEASE_NOTES=$(printf '%s\n' \
+            '## Установка' \
+            '' \
+            'Выберите APK под своё устройство:' \
+            '' \
+            '| Файл | Устройство |' \
+            '|---|---|' \
+            '| `arm64-v8a` | Большинство современных Android-устройств |' \
+            '| `armeabi-v7a` | Старые 32-битные устройства |' \
+            '| `x86_64` | Эмуляторы |' \
+            '| `universal` | Если не знаете какой выбрать |' \
+            '' \
+            '> Перед установкой разрешите установку из неизвестных источников в настройках устройства.')
+          gh release create "$GITHUB_REF_NAME" \
+            app/build/outputs/apk/release/AnimeVost-*.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "AnimeVost $GITHUB_REF_NAME" \
+            --notes "$RELEASE_NOTES"
 
       - name: Clean sensitive files and workspace
         if: always()
