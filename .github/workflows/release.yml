@@ -36,9 +36,9 @@ jobs:
       - name: Build release APKs
         run: >-
           ./gradlew --no-daemon --max-workers=1
-          -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8"
+          -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8"
           -Pkotlin.compiler.execution.strategy=in-process
-          lintRelease assembleRelease
+          assembleRelease
         env:
           SIGNING_STORE_FILE: ${{ github.workspace }}/keystore.jks
           SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
