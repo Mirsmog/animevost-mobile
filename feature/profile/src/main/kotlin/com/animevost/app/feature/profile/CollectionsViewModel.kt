@@ -6,7 +6,6 @@ import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.AnimeStatus
 import com.animevost.app.core.domain.model.FavoriteEntry
 import com.animevost.app.core.domain.model.HistoryEntry
-import com.animevost.app.core.domain.model.LibraryViewMode
 import com.animevost.app.core.domain.model.SortOption
 import com.animevost.app.core.domain.model.UserListEntry
 import com.animevost.app.core.domain.model.WatchProgress
@@ -14,7 +13,6 @@ import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.FavoriteRepository
 import com.animevost.app.core.domain.repository.HistoryRepository
 import com.animevost.app.core.domain.repository.UserListRepository
-import com.animevost.app.core.domain.repository.UserPreferencesRepository
 import com.animevost.app.core.domain.repository.WatchProgressRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -28,58 +26,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.net.URI
 import javax.inject.Inject
-
-/** Item rendered in the "Все" section of the library screen. */
-data class LibraryItem(
-    val anime: AnimePreview,
-    val sources: Set<CollectionSource>,
-    val lastActivityAt: Long,
-    val listStatus: AnimeStatus? = null,
-    val isFavorite: Boolean = false,
-)
-
-enum class CollectionSource {
-    FAVORITES,
-    HISTORY,
-    LISTS,
-}
-
-/** Continue-watching rail item — projection of [WatchProgress] joined with [AnimePreview]. */
-data class ContinueWatchingItem(
-    val anime: AnimePreview,
-    val episodeName: String,
-    val episodeIndex: Int,
-    val progressFraction: Float,
-    val updatedAt: Long,
-)
-
-/** Filter applied to the "Все" section. */
-sealed interface LibraryFilter {
-    object All : LibraryFilter
-    object Favorites : LibraryFilter
-    data class Status(val status: AnimeStatus) : LibraryFilter
-}
-
-data class LibraryUiState(
-    val isLoading: Boolean = true,
-    val query: String = "",
-    val items: List<LibraryItem> = emptyList(),
-    val totalCount: Int = 0,
-    val continueWatching: List<ContinueWatchingItem> = emptyList(),
-    val statusCounts: Map<AnimeStatus, Int> = emptyMap(),
-    val favoritesCount: Int = 0,
-    val sort: SortOption = SortOption.DATE,
-    val sortAscending: Boolean = false,
-    val viewMode: LibraryViewMode = LibraryViewMode.GRID,
-    val selectedFilter: LibraryFilter = LibraryFilter.All,
-)
-
-sealed interface LibraryEvent {
-    data class QueryChanged(val query: String) : LibraryEvent
-    data class FilterSelected(val filter: LibraryFilter) : LibraryEvent
-    data class SortSelected(val sort: SortOption) : LibraryEvent
-    data object ViewModeToggled : LibraryEvent
-}
 
 private data class ControlState(
     val query: String = "",
@@ -95,7 +41,6 @@ class CollectionsViewModel @Inject constructor(
     private val historyRepository: HistoryRepository,
     private val userListRepository: UserListRepository,
     private val watchProgressRepository: WatchProgressRepository,
-    private val userPreferencesRepository: UserPreferencesRepository,
     private val authRepository: AuthRepository,
 ) : ViewModel() {
 
@@ -106,18 +51,13 @@ class CollectionsViewModel @Inject constructor(
             if (isLoggedIn) {
                 viewModelScope.launch { favoriteRepository.loadRemoteFavorites() }
             }
-            val controlsAndViewMode = combine(
-                controls,
-                userPreferencesRepository.libraryViewMode(),
-            ) { c, vm -> c to vm }
-
             combine(
                 favoriteRepository.getAllFavoriteEntries(),
                 historyRepository.getHistoryFlow(),
                 userListRepository.getAllEntries(),
                 watchProgressRepository.observeLatestPerAnime(),
-                controlsAndViewMode,
-            ) { favorites, history, userListEntries, watchProgress, (controlState, viewMode) ->
+                controls,
+            ) { favorites, history, userListEntries, watchProgress, controlState ->
                 val merged = buildMergedItems(favorites, history, userListEntries)
                 val statusCounts = AnimeStatus.entries.associateWith { st ->
                     merged.count { it.listStatus == st }
@@ -143,7 +83,6 @@ class CollectionsViewModel @Inject constructor(
                     favoritesCount = favoritesCount,
                     sort = controlState.sort,
                     sortAscending = controlState.sortAscending,
-                    viewMode = viewMode,
                     selectedFilter = controlState.selectedFilter,
                 )
             }
@@ -155,13 +94,11 @@ class CollectionsViewModel @Inject constructor(
             is LibraryEvent.QueryChanged -> controls.update { it.copy(query = event.query) }
             is LibraryEvent.FilterSelected -> controls.update { it.copy(selectedFilter = event.filter) }
             is LibraryEvent.SortSelected -> controls.update {
-                val nextAscending = if (it.sort == event.sort) !it.sortAscending else event.sort == SortOption.TITLE
-                it.copy(sort = event.sort, sortAscending = nextAscending)
+                val defaultAscending = event.sort == SortOption.TITLE
+                it.copy(sort = event.sort, sortAscending = defaultAscending)
             }
-            LibraryEvent.ViewModeToggled -> viewModelScope.launch {
-                val current = uiState.value.viewMode
-                val next = if (current == LibraryViewMode.GRID) LibraryViewMode.LIST else LibraryViewMode.GRID
-                userPreferencesRepository.setLibraryViewMode(next)
+            is LibraryEvent.SortDirectionChanged -> controls.update {
+                it.copy(sortAscending = event.ascending)
             }
         }
     }
@@ -181,6 +118,7 @@ class CollectionsViewModel @Inject constructor(
                 } else 0f
                 ContinueWatchingItem(
                     anime = anime,
+                    episodeVideoId = wp.episodeVideoId,
                     episodeName = wp.episodeName,
                     episodeIndex = wp.episodeIndex,
                     progressFraction = fraction,

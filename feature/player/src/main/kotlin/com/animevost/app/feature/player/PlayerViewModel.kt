@@ -1,9 +1,5 @@
 package com.animevost.app.feature.player
 
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -11,54 +7,26 @@ import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.BetaFeature
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.model.SkipInterval
-import com.animevost.app.core.domain.model.VideoSource
 import com.animevost.app.core.domain.usecase.AddToHistoryUseCase
 import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
 import com.animevost.app.core.domain.usecase.GetVideoUrlUseCase
 import com.animevost.app.core.domain.model.WatchProgress
 import com.animevost.app.core.domain.repository.FeatureFlagsRepository
 import com.animevost.app.core.domain.repository.SkipTimesRepository
+import com.animevost.app.core.domain.repository.UserPreferencesRepository
 import com.animevost.app.core.domain.repository.WatchProgressRepository
 import com.animevost.app.core.domain.util.onError
 import com.animevost.app.core.domain.util.onSuccess
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-
-data class PlayerUiState(
-    val videoSources: List<VideoSource> = emptyList(),
-    val selectedQuality: String = "SD (480p)",
-    val currentEpisode: Episode? = null,
-    val isLoading: Boolean = false,
-    val error: String? = null,
-    val allEpisodes: List<Episode> = emptyList(),
-    val currentEpisodeIndex: Int = 0,
-    /** Position to seek to when the video finishes loading (cleared after use). */
-    val resumePositionMs: Long = 0L,
-) {
-    val hasPrevious: Boolean get() = currentEpisodeIndex > 0
-    val hasNext: Boolean get() = currentEpisodeIndex < allEpisodes.lastIndex
-    val currentVideoUrl: String?
-        get() = videoSources.firstOrNull { it.quality == selectedQuality }?.url
-            ?: videoSources.firstOrNull()?.url
-}
-
-sealed interface PlayerEvent {
-    data class SelectQuality(val quality: String) : PlayerEvent
-    data class NextEpisode(val currentPositionMs: Long = 0L, val currentDurationMs: Long = 0L) : PlayerEvent
-    data class PreviousEpisode(val currentPositionMs: Long = 0L, val currentDurationMs: Long = 0L) : PlayerEvent
-    /** Called periodically from PlayerScreen to persist playback position. */
-    data class UpdateProgress(val positionMs: Long, val durationMs: Long) : PlayerEvent
-    /** Signal that resume position has been consumed (seek done). */
-    data object ResumeConsumed : PlayerEvent
-}
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
@@ -66,15 +34,11 @@ class PlayerViewModel @Inject constructor(
     private val getVideoUrlUseCase: GetVideoUrlUseCase,
     private val getAnimeDetailUseCase: GetAnimeDetailUseCase,
     private val addToHistoryUseCase: AddToHistoryUseCase,
-    private val dataStore: DataStore<Preferences>,
+    private val userPreferencesRepository: UserPreferencesRepository,
     private val watchProgressRepository: WatchProgressRepository,
     private val skipTimesRepository: SkipTimesRepository,
     private val featureFlagsRepository: FeatureFlagsRepository,
 ) : ViewModel() {
-
-    private companion object {
-        val KEY_QUALITY = stringPreferencesKey("preferred_quality")
-    }
 
     private val videoId: String = savedStateHandle["videoId"] ?: ""
     private val episodeName: String = savedStateHandle["episodeName"] ?: ""
@@ -94,6 +58,8 @@ class PlayerViewModel @Inject constructor(
     private var titleOriginal: String = ""
     private var titleAlternative: String = ""
     private var skipTimesJob: Job? = null
+    private var videoLoadJob: Job? = null
+    private var resumeLoadJob: Job? = null
 
     init {
         val episode = Episode(name = episodeName, videoId = videoId, thumbnailUrl = "")
@@ -120,6 +86,7 @@ class PlayerViewModel @Inject constructor(
     private fun saveCurrentProgress(positionMs: Long, durationMs: Long) {
         val episode = _uiState.value.currentEpisode ?: return
         val animeId = animePreview?.id ?: return
+        val episodeIndex = _uiState.value.currentEpisodeIndex
         if (positionMs <= 0L) return
         viewModelScope.launch {
             watchProgressRepository.saveProgress(
@@ -127,7 +94,7 @@ class PlayerViewModel @Inject constructor(
                     animeId = animeId,
                     episodeVideoId = episode.videoId,
                     episodeName = episode.name,
-                    episodeIndex = _uiState.value.currentEpisodeIndex,
+                    episodeIndex = episodeIndex,
                     positionMs = positionMs,
                     durationMs = durationMs,
                 ),
@@ -163,32 +130,32 @@ class PlayerViewModel @Inject constructor(
                 if (currentEp != null && preview != null) {
                     addToHistoryUseCase(preview, currentEp)
                 }
-                loadSkipTimesForEpisode(detail.id, episodeName)
-            }
-            if (result is com.animevost.app.core.domain.util.Result.Success) {
-                val detail = result.data
-                val savedProgress = watchProgressRepository.getProgress(detail.id, videoId)
-                if (savedProgress != null && savedProgress.positionMs > 0L && !savedProgress.isCompleted) {
-                    _uiState.update { it.copy(resumePositionMs = savedProgress.positionMs) }
+                _uiState.value.currentEpisode?.let { currentEpisode ->
+                    loadSkipTimesForEpisode(detail.id, currentEpisode.name)
+                    loadResumePosition(detail.id, currentEpisode.videoId)
                 }
             }
         }
     }
 
     private fun loadVideo(episode: Episode, allEpisodes: List<Episode>, index: Int) {
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    isLoading = true,
-                    error = null,
-                    currentEpisode = episode,
-                    allEpisodes = if (allEpisodes.isNotEmpty()) allEpisodes else it.allEpisodes,
-                    currentEpisodeIndex = if (allEpisodes.isNotEmpty()) index else it.currentEpisodeIndex,
-                )
-            }
+        videoLoadJob?.cancel()
+        _uiState.update {
+            it.copy(
+                isLoading = true,
+                error = null,
+                currentEpisode = episode,
+                allEpisodes = if (allEpisodes.isNotEmpty()) allEpisodes else it.allEpisodes,
+                currentEpisodeIndex = if (allEpisodes.isNotEmpty()) index else it.currentEpisodeIndex,
+                resumePositionMs = 0L,
+            )
+        }
+        videoLoadJob = viewModelScope.launch {
             getVideoUrlUseCase(episode.videoId)
                 .onSuccess { sources ->
-                    val preferred = dataStore.data.map { it[KEY_QUALITY] }.first()
+                    if (_uiState.value.currentEpisode?.videoId != episode.videoId) return@onSuccess
+                    val preferred = userPreferencesRepository.preferredVideoQuality().first()
+                    if (_uiState.value.currentEpisode?.videoId != episode.videoId) return@onSuccess
                     val quality = if (preferred != null && sources.any { it.quality == preferred }) {
                         preferred
                     } else {
@@ -201,6 +168,7 @@ class PlayerViewModel @Inject constructor(
                     if (preview != null) addToHistoryUseCase(preview, episode)
                 }
                 .onError { _, msg ->
+                    if (_uiState.value.currentEpisode?.videoId != episode.videoId) return@onError
                     _uiState.update {
                         it.copy(isLoading = false, error = msg ?: "Не удалось загрузить видео")
                     }
@@ -211,7 +179,7 @@ class PlayerViewModel @Inject constructor(
     private fun selectQuality(quality: String) {
         _uiState.update { it.copy(selectedQuality = quality) }
         viewModelScope.launch {
-            dataStore.edit { it[KEY_QUALITY] = quality }
+            userPreferencesRepository.setPreferredVideoQuality(quality)
         }
     }
 
@@ -226,6 +194,20 @@ class PlayerViewModel @Inject constructor(
         loadVideo(episode, state.allEpisodes, newIndex)
         animePreview?.let { preview ->
             loadSkipTimesForEpisode(preview.id, episode.name)
+            loadResumePosition(preview.id, episode.videoId)
+        }
+    }
+
+    private fun loadResumePosition(animeId: Int, episodeVideoId: String) {
+        resumeLoadJob?.cancel()
+        resumeLoadJob = viewModelScope.launch {
+            val savedProgress = watchProgressRepository.getProgress(animeId, episodeVideoId)
+            if (_uiState.value.currentEpisode?.videoId != episodeVideoId) return@launch
+            val position = savedProgress
+                ?.takeIf { it.positionMs > 0L && !it.isCompleted }
+                ?.positionMs
+                ?: 0L
+            _uiState.update { it.copy(resumePositionMs = position) }
         }
     }
 
@@ -252,6 +234,8 @@ class PlayerViewModel @Inject constructor(
                     titleOriginal = titleOriginal,
                     titleAlternative = titleAlternative,
                 )
+            } catch (error: CancellationException) {
+                throw error
             } catch (_: Exception) {
                 emptyList()
             }

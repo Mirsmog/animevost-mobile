@@ -38,4 +38,7 @@ interface FavoriteRepository {
      * No-op when not logged in.
      */
     suspend fun loadRemoteFavorites(): com.animevost.app.core.domain.util.Result<Unit>
+
+    /** Clears local favorites and their account ownership on explicit logout. */
+    suspend fun clearLocal()
 }

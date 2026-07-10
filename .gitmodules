@@ -1,0 +1,3 @@
+[submodule "animevost-sdk"]
+	path = kotlin-sdk
+	url = https://github.com/Mirsmog/animevost-sdk-kotlin.git

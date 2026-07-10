@@ -25,7 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -46,7 +46,7 @@ fun ScheduleScreen(
     onAnimeClick: (String) -> Unit,
     viewModel: ScheduleViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -184,7 +184,7 @@ private fun ScheduleList(
     onItemClick: (String) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
-        itemsIndexed(items, key = { _, item -> item.url }) { index, item ->
+        itemsIndexed(items, key = { index, item -> "${item.url}#$index" }) { index, item ->
             ScheduleItemRow(
                 item = item,
                 onClick = { onItemClick(item.url) },

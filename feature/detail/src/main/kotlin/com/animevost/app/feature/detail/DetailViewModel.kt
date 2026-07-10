@@ -3,29 +3,33 @@ package com.animevost.app.feature.detail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
-import com.animevost.app.core.data.download.EpisodeDownloader
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.AnimeStatus
 import com.animevost.app.core.domain.model.Comment
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.model.VideoSource
 import com.animevost.app.core.domain.usecase.AddCommentUseCase
-import com.animevost.app.core.domain.usecase.DownloadEpisodeUseCase
+import com.animevost.app.core.domain.usecase.GetEpisodeDownloadSourcesUseCase
 import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
 import com.animevost.app.core.domain.usecase.GetCommentsUseCase
 import com.animevost.app.core.domain.usecase.RateAnimeUseCase
 import com.animevost.app.core.domain.usecase.ToggleFavoriteUseCase
 import com.animevost.app.core.domain.model.BetaFeature
 import com.animevost.app.core.domain.repository.FeatureFlagsRepository
+import com.animevost.app.core.domain.repository.EpisodeDownloadManager
 import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.FavoriteRepository
+import com.animevost.app.core.domain.repository.NotificationPreferencesRepository
+import com.animevost.app.core.domain.repository.UserPreferencesRepository
 import com.animevost.app.core.domain.model.WatchProgress
 import com.animevost.app.core.domain.repository.WatchProgressRepository
 import com.animevost.app.core.domain.repository.UserListRepository
+import com.animevost.app.core.domain.usecase.DeleteCommentUseCase
+import com.animevost.app.core.domain.usecase.GetCommentReplyTemplateUseCase
+import com.animevost.app.core.domain.usecase.ReportCommentUseCase
 import com.animevost.app.core.domain.util.onSuccess
 import com.animevost.app.core.domain.util.onError
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.TextRange
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -33,82 +37,37 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlin.math.max
 import javax.inject.Inject
-
-data class DetailUiState(
-    val anime: com.animevost.app.core.domain.model.AnimeDetail? = null,
-    val animeUrl: String = "",
-    val isLoading: Boolean = false,
-    val error: String? = null,
-    val isFavorite: Boolean = false,
-    val isLoggedIn: Boolean = false,
-    val userRating: Int = 0,
-    val isDescriptionExpanded: Boolean = false,
-    val comments: List<Comment> = emptyList(),
-    val isLoadingComments: Boolean = false,
-    val commentTextValue: TextFieldValue = TextFieldValue(),
-    val isAddingComment: Boolean = false,
-    val commentsPage: Int = 1,
-    val hasMoreComments: Boolean = false,
-    // Download quality sheet
-    val downloadEpisodePending: Episode? = null,
-    val downloadSources: List<VideoSource> = emptyList(),
-    val isLoadingDownloadSources: Boolean = false,
-    // Watch progress
-    val watchedEpisodeIds: Set<String> = emptySet(),
-    val continueEpisode: Episode? = null,
-    val continuePositionMs: Long = 0L,
-    // Watch status (user list)
-    val watchStatus: AnimeStatus? = null,
-    val watchStatusEnabled: Boolean = false,
-    // Episode pagination
-    val episodeRangeStart: Int = 0,
-)
-
-sealed interface DetailEvent {
-    data class LoadAnime(val url: String) : DetailEvent
-    data class RateAnime(val rating: Int) : DetailEvent
-    data object ToggleFavorite : DetailEvent
-    data class PlayEpisode(val episode: Episode, val allEpisodes: List<Episode>, val index: Int) : DetailEvent
-    data class DownloadEpisode(val episode: Episode) : DetailEvent
-    data object ToggleDescription : DetailEvent
-    data object LoadComments : DetailEvent
-    data object LoadMoreComments : DetailEvent
-    data class UpdateCommentTextValue(val value: TextFieldValue) : DetailEvent
-    data class ReplyToComment(val comment: Comment) : DetailEvent
-    data object SubmitComment : DetailEvent
-    // Download quality sheet
-    data class ShowDownloadSheet(val episode: Episode) : DetailEvent
-    data object HideDownloadSheet : DetailEvent
-    data class DownloadWithQuality(val source: VideoSource) : DetailEvent
-    // Watch status
-    data class SetWatchStatus(val status: AnimeStatus?) : DetailEvent
-    // Episode pagination
-    data class SelectEpisodeRange(val start: Int) : DetailEvent
-}
-
-sealed interface DetailEffect {
-    data class ShowSnackbar(val message: String) : DetailEffect
-}
 
 @HiltViewModel
 class DetailViewModel @Inject constructor(
     private val getAnimeDetailUseCase: GetAnimeDetailUseCase,
     private val toggleFavoriteUseCase: ToggleFavoriteUseCase,
     private val favoriteRepository: FavoriteRepository,
-    private val downloadEpisodeUseCase: DownloadEpisodeUseCase,
-    private val episodeDownloader: EpisodeDownloader,
+    private val notificationPreferencesRepository: NotificationPreferencesRepository,
+    private val getEpisodeDownloadSourcesUseCase: GetEpisodeDownloadSourcesUseCase,
+    private val episodeDownloadManager: EpisodeDownloadManager,
     private val rateAnimeUseCase: RateAnimeUseCase,
     private val getCommentsUseCase: GetCommentsUseCase,
     private val addCommentUseCase: AddCommentUseCase,
+    private val getCommentReplyTemplateUseCase: GetCommentReplyTemplateUseCase,
+    private val reportCommentUseCase: ReportCommentUseCase,
+    private val deleteCommentUseCase: DeleteCommentUseCase,
     private val authRepository: AuthRepository,
     private val watchProgressRepository: WatchProgressRepository,
     private val userListRepository: UserListRepository,
+    private val userPreferencesRepository: UserPreferencesRepository,
     private val featureFlagsRepository: FeatureFlagsRepository,
 ) : ViewModel() {
+
+    private var favoriteNotificationsEnabled = true
+    private var mutedFavoriteIds = emptySet<Int>()
 
     private val _uiState = MutableStateFlow(DetailUiState())
     val uiState: StateFlow<DetailUiState> = _uiState.asStateFlow()
@@ -122,6 +81,21 @@ class DetailViewModel @Inject constructor(
             .launchIn(viewModelScope)
         featureFlagsRepository.isEnabled(BetaFeature.WATCH_STATUS)
             .onEach { enabled -> _uiState.update { it.copy(watchStatusEnabled = enabled) } }
+            .launchIn(viewModelScope)
+        combine(
+            notificationPreferencesRepository.favoriteNotificationsEnabled,
+            notificationPreferencesRepository.mutedFavoriteIds,
+        ) { enabled, mutedIds -> enabled to mutedIds }
+            .onEach { (enabled, mutedIds) ->
+                favoriteNotificationsEnabled = enabled
+                mutedFavoriteIds = mutedIds
+                _uiState.update { state ->
+                    state.copy(
+                        areFavoriteNotificationsEnabled = enabled,
+                        isFavoriteNotificationMuted = state.anime?.id in mutedIds,
+                    )
+                }
+            }
             .launchIn(viewModelScope)
     }
 
@@ -139,14 +113,20 @@ class DetailViewModel @Inject constructor(
             is DetailEvent.LoadAnime -> loadAnime(event.url)
             is DetailEvent.RateAnime -> rateAnime(event.rating)
             is DetailEvent.ToggleFavorite -> toggleFavorite()
-            is DetailEvent.PlayEpisode -> { /* handled by navigation in UI */ }
-            is DetailEvent.DownloadEpisode -> downloadEpisode(event.episode)
+            is DetailEvent.ToggleFavoriteNotification -> toggleFavoriteNotification()
             is DetailEvent.ToggleDescription -> toggleDescription()
-            is DetailEvent.LoadComments -> loadComments()
             is DetailEvent.LoadMoreComments -> loadMoreComments()
             is DetailEvent.UpdateCommentTextValue -> _uiState.update { it.copy(commentTextValue = event.value) }
             is DetailEvent.ReplyToComment -> replyToComment(event.comment)
+            DetailEvent.CancelReply -> cancelReply()
             is DetailEvent.SubmitComment -> submitComment()
+            is DetailEvent.ReportComment -> openReport(event.comment)
+            is DetailEvent.UpdateReportTextValue -> _uiState.update { it.copy(reportTextValue = event.value) }
+            DetailEvent.SubmitReport -> submitReport()
+            DetailEvent.DismissReport -> dismissReport()
+            is DetailEvent.RequestDeleteComment -> _uiState.update { it.copy(deleteTarget = event.comment) }
+            DetailEvent.ConfirmDeleteComment -> deleteComment()
+            DetailEvent.DismissDeleteComment -> _uiState.update { it.copy(deleteTarget = null) }
             is DetailEvent.ShowDownloadSheet -> showDownloadSheet(event.episode)
             is DetailEvent.HideDownloadSheet -> hideDownloadSheet()
             is DetailEvent.DownloadWithQuality -> downloadWithQuality(event.source)
@@ -159,11 +139,35 @@ class DetailViewModel @Inject constructor(
         if (_uiState.value.isLoading) return
         observeWatchStatus(url)
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null, animeUrl = url) }
+            _uiState.update {
+                it.copy(
+                    isLoading = true,
+                    error = null,
+                    animeUrl = url,
+                    userRating = 0,
+                    comments = emptyList(),
+                    commentsPage = 1,
+                    commentsTotalPages = 1,
+                    hasMoreComments = false,
+                    commentTextValue = TextFieldValue(),
+                    replyTarget = null,
+                    replyMarkup = "",
+                    reportTarget = null,
+                    deleteTarget = null,
+                )
+            }
             val result = getAnimeDetailUseCase(url)
             result.onSuccess { anime ->
                 val isFav = favoriteRepository.isFavorite(anime.id)
-                _uiState.update { it.copy(anime = anime, isFavorite = isFav, isLoading = false) }
+                _uiState.update {
+                    it.copy(
+                        anime = anime,
+                        isFavorite = isFav,
+                        isLoading = false,
+                        areFavoriteNotificationsEnabled = favoriteNotificationsEnabled,
+                        isFavoriteNotificationMuted = anime.id in mutedFavoriteIds,
+                    )
+                }
                 loadComments()
                 viewModelScope.launch {
                     userListRepository.enrichPreview(
@@ -186,6 +190,8 @@ class DetailViewModel @Inject constructor(
             }
             // Load watch progress after anime is set (suspend call outside inline lambda)
             val anime = _uiState.value.anime ?: return@launch
+            val savedRating = userPreferencesRepository.getUserRating(anime.id)
+            _uiState.update { it.copy(userRating = savedRating) }
             val allProgress = watchProgressRepository.getAllProgress(anime.id)
             val watchedIds = allProgress
                 .filter { it.isCompleted }
@@ -205,38 +211,10 @@ class DetailViewModel @Inject constructor(
         }
     }
 
-    private fun downloadEpisode(episode: Episode) {
-        val animeTitle = _uiState.value.anime?.title ?: "Anime"
-        viewModelScope.launch {
-            downloadEpisodeUseCase(episode.videoId)
-                .onSuccess { sources ->
-                    val source = sources.firstOrNull()
-                    if (source != null) {
-                        val downloadUrl = source.downloadUrl.ifBlank { source.url }
-                        episodeDownloader.download(
-                            url = downloadUrl,
-                            fileName = "$animeTitle - ${episode.name}",
-                            title = "$animeTitle — ${episode.name}",
-                        )
-                        _effect.emit(DetailEffect.ShowSnackbar("Загрузка начата: ${episode.name}"))
-                    } else {
-                        _effect.emit(DetailEffect.ShowSnackbar("Нет доступных источников"))
-                    }
-                }
-                .onError { _, msg ->
-                    _effect.emit(
-                        DetailEffect.ShowSnackbar(
-                            "Ошибка загрузки: ${msg ?: "неизвестная ошибка"}",
-                        ),
-                    )
-                }
-        }
-    }
-
     private fun showDownloadSheet(episode: Episode) {
         _uiState.update { it.copy(isLoadingDownloadSources = true, downloadEpisodePending = episode) }
         viewModelScope.launch {
-            downloadEpisodeUseCase(episode.videoId)
+            getEpisodeDownloadSourcesUseCase(episode.videoId)
                 .onSuccess { sources ->
                     _uiState.update { it.copy(downloadSources = sources, isLoadingDownloadSources = false) }
                 }
@@ -257,14 +235,21 @@ class DetailViewModel @Inject constructor(
         val episode = _uiState.value.downloadEpisodePending ?: return
         val animeTitle = _uiState.value.anime?.title ?: "Anime"
         val downloadUrl = source.downloadUrl.ifBlank { source.url }
-        episodeDownloader.download(
-            url = downloadUrl,
-            fileName = "$animeTitle - ${episode.name}",
-            title = "$animeTitle — ${episode.name}",
-        )
-        hideDownloadSheet()
-        viewModelScope.launch {
-            _effect.emit(DetailEffect.ShowSnackbar("Загрузка начата: ${episode.name}"))
+        try {
+            episodeDownloadManager.enqueue(
+                url = downloadUrl,
+                fileName = "$animeTitle - ${episode.name}",
+                title = "$animeTitle - ${episode.name}",
+            )
+            hideDownloadSheet()
+            viewModelScope.launch {
+                _effect.emit(DetailEffect.ShowSnackbar("Загрузка начата: ${episode.name}"))
+            }
+        } catch (_: Exception) {
+            hideDownloadSheet()
+            viewModelScope.launch {
+                _effect.emit(DetailEffect.ShowSnackbar("Не удалось начать загрузку"))
+            }
         }
     }
 
@@ -274,11 +259,24 @@ class DetailViewModel @Inject constructor(
             viewModelScope.launch { _effect.emit(DetailEffect.ShowSnackbar("Войдите в аккаунт чтобы оценить")) }
             return
         }
+        if (_uiState.value.isRatingSubmitting) return
         viewModelScope.launch {
-            _uiState.update { it.copy(userRating = rating) }
+            _uiState.update { it.copy(isRatingSubmitting = true) }
             rateAnimeUseCase(anime.id, rating)
                 .onSuccess { newRating ->
-                    _uiState.update { it.copy(anime = it.anime?.copy(rating = newRating)) }
+                    userPreferencesRepository.setUserRating(anime.id, rating)
+                    _uiState.update {
+                        it.copy(
+                            userRating = rating,
+                            isRatingSubmitting = false,
+                            anime = it.anime?.copy(rating = newRating),
+                        )
+                    }
+                    _effect.emit(DetailEffect.ShowSnackbar("Оценка сохранена"))
+                }
+                .onError { _, msg ->
+                    _uiState.update { it.copy(isRatingSubmitting = false) }
+                    _effect.emit(DetailEffect.ShowSnackbar(msg ?: "Не удалось сохранить оценку"))
                 }
         }
     }
@@ -297,7 +295,40 @@ class DetailViewModel @Inject constructor(
             try {
                 val isFav = toggleFavoriteUseCase(anime.id, preview)
                 _uiState.update { it.copy(isFavorite = isFav) }
-            } catch (_: Exception) { }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                _effect.emit(DetailEffect.ShowSnackbar("Не удалось изменить избранное"))
+            }
+        }
+    }
+
+    private fun toggleFavoriteNotification() {
+        val state = _uiState.value
+        val anime = state.anime ?: return
+        if (!state.isFavorite) return
+        if (!state.areFavoriteNotificationsEnabled) {
+            viewModelScope.launch {
+                _effect.emit(
+                    DetailEffect.ShowSnackbar("Включите уведомления об избранном в настройках"),
+                )
+            }
+            return
+        }
+        viewModelScope.launch {
+            notificationPreferencesRepository.setFavoriteMuted(
+                animeId = anime.id,
+                muted = !state.isFavoriteNotificationMuted,
+            )
+            _effect.emit(
+                DetailEffect.ShowSnackbar(
+                    if (state.isFavoriteNotificationMuted) {
+                        "Уведомления для этого аниме включены"
+                    } else {
+                        "Уведомления для этого аниме отключены"
+                    },
+                ),
+            )
         }
     }
 
@@ -310,13 +341,14 @@ class DetailViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingComments = true) }
             getCommentsUseCase(anime.id, 1, anime.url)
-                .onSuccess { comments ->
+                .onSuccess { page ->
                     _uiState.update {
                         it.copy(
-                            comments = comments,
+                            comments = page.comments,
                             isLoadingComments = false,
-                            commentsPage = 1,
-                            hasMoreComments = anime.totalCommentPages > 1,
+                            commentsPage = page.currentPage,
+                            commentsTotalPages = page.totalPages,
+                            hasMoreComments = page.currentPage < page.totalPages,
                         )
                     }
                 }
@@ -330,17 +362,19 @@ class DetailViewModel @Inject constructor(
         val anime = _uiState.value.anime ?: return
         val state = _uiState.value
         val nextPage = state.commentsPage + 1
-        if (nextPage > anime.totalCommentPages) return
+        if (state.isLoadingComments || !state.hasMoreComments) return
         viewModelScope.launch {
             _uiState.update { it.copy(isLoadingComments = true) }
             getCommentsUseCase(anime.id, nextPage, anime.url)
-                .onSuccess { moreComments ->
+                .onSuccess { page ->
+                    val totalPages = max(state.commentsTotalPages, page.totalPages)
                     _uiState.update {
                         it.copy(
-                            comments = it.comments + moreComments,
+                            comments = it.comments + page.comments,
                             isLoadingComments = false,
-                            commentsPage = nextPage,
-                            hasMoreComments = nextPage < anime.totalCommentPages,
+                            commentsPage = page.currentPage,
+                            commentsTotalPages = totalPages,
+                            hasMoreComments = page.currentPage < totalPages,
                         )
                     }
                 }
@@ -351,11 +385,52 @@ class DetailViewModel @Inject constructor(
     }
 
     private fun replyToComment(comment: Comment) {
-        val quote = "[quote=${comment.author}]${comment.text.take(200)}[/quote]\n"
-        val newText = quote + _uiState.value.commentTextValue.text
-        _uiState.update { it.copy(
-            commentTextValue = TextFieldValue(newText, TextRange(newText.length)),
-        )}
+        if (!_uiState.value.isLoggedIn) {
+            viewModelScope.launch { _effect.emit(DetailEffect.ShowSnackbar("Войдите в аккаунт чтобы ответить")) }
+            return
+        }
+        _uiState.update {
+            it.copy(
+                replyTarget = comment,
+                replyMarkup = "",
+                isPreparingReply = true,
+                commentTextValue = TextFieldValue(),
+            )
+        }
+        viewModelScope.launch {
+            getCommentReplyTemplateUseCase(comment.id)
+                .onSuccess { markup ->
+                    val newText = markup.ensureTrailingLineBreak()
+                    _uiState.update {
+                        it.copy(
+                            replyMarkup = newText,
+                            commentTextValue = TextFieldValue(),
+                            isPreparingReply = false,
+                        )
+                    }
+                }
+                .onError { _, _ ->
+                    val fallback = "[quote=${comment.author}]${comment.text.stripHtml().take(200)}[/quote]\n"
+                    _uiState.update {
+                        it.copy(
+                            replyMarkup = fallback,
+                            commentTextValue = TextFieldValue(),
+                            isPreparingReply = false,
+                        )
+                    }
+                }
+        }
+    }
+
+    private fun cancelReply() {
+        _uiState.update {
+            it.copy(
+                replyTarget = null,
+                replyMarkup = "",
+                isPreparingReply = false,
+                commentTextValue = TextFieldValue(),
+            )
+        }
     }
 
     private fun submitComment() {
@@ -364,19 +439,33 @@ class DetailViewModel @Inject constructor(
             viewModelScope.launch { _effect.emit(DetailEffect.ShowSnackbar("Войдите в аккаунт чтобы комментировать")) }
             return
         }
-        val text = _uiState.value.commentTextValue.text.trim()
-        if (text.isBlank()) return
+        val state = _uiState.value
+        val visibleText = state.commentTextValue.text.trim()
+        if (visibleText.isBlank()) return
+        val text = buildString {
+            append(state.replyMarkup)
+            if (state.replyMarkup.isNotBlank() && !state.replyMarkup.endsWith('\n')) {
+                append('\n')
+            }
+            append(visibleText)
+        }.trim()
         viewModelScope.launch {
             _uiState.update { it.copy(isAddingComment = true) }
             addCommentUseCase(anime.id, text)
-                .onSuccess { comment ->
+                .onSuccess {
                     _uiState.update {
+                        val updatedAnime = it.anime?.let { anime ->
+                            anime.copy(commentCount = anime.commentCount + 1)
+                        }
                         it.copy(
-                            comments = listOf(comment) + it.comments,
                             commentTextValue = TextFieldValue(),
                             isAddingComment = false,
+                            replyTarget = null,
+                            replyMarkup = "",
+                            anime = updatedAnime,
                         )
                     }
+                    loadComments()
                     _effect.emit(DetailEffect.ShowSnackbar("Комментарий добавлен"))
                 }
                 .onError { _, msg ->
@@ -386,6 +475,74 @@ class DetailViewModel @Inject constructor(
                             "Ошибка: ${msg ?: "не удалось добавить комментарий"}",
                         ),
                     )
+                }
+        }
+    }
+
+    private fun openReport(comment: Comment) {
+        if (!_uiState.value.isLoggedIn) {
+            viewModelScope.launch { _effect.emit(DetailEffect.ShowSnackbar("Войдите в аккаунт чтобы пожаловаться")) }
+            return
+        }
+        _uiState.update {
+            it.copy(
+                reportTarget = comment,
+                reportTextValue = TextFieldValue(),
+            )
+        }
+    }
+
+    private fun dismissReport() {
+        _uiState.update {
+            it.copy(
+                reportTarget = null,
+                reportTextValue = TextFieldValue(),
+                isReportingComment = false,
+            )
+        }
+    }
+
+    private fun submitReport() {
+        val target = _uiState.value.reportTarget ?: return
+        val text = _uiState.value.reportTextValue.text.trim()
+        if (text.isBlank() || _uiState.value.isReportingComment) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isReportingComment = true) }
+            reportCommentUseCase(target.id, text)
+                .onSuccess {
+                    dismissReport()
+                    _effect.emit(DetailEffect.ShowSnackbar("Жалоба отправлена"))
+                }
+                .onError { _, msg ->
+                    _uiState.update { it.copy(isReportingComment = false) }
+                    _effect.emit(DetailEffect.ShowSnackbar(msg ?: "Не удалось отправить жалобу"))
+                }
+        }
+    }
+
+    private fun deleteComment() {
+        val target = _uiState.value.deleteTarget ?: return
+        if (_uiState.value.deletingCommentId != null) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(deletingCommentId = target.id) }
+            deleteCommentUseCase(target.id)
+                .onSuccess {
+                    _uiState.update {
+                        val updatedAnime = it.anime?.let { anime ->
+                            anime.copy(commentCount = (anime.commentCount - 1).coerceAtLeast(0))
+                        }
+                        it.copy(
+                            comments = it.comments.filterNot { comment -> comment.id == target.id },
+                            deleteTarget = null,
+                            deletingCommentId = null,
+                            anime = updatedAnime,
+                        )
+                    }
+                    _effect.emit(DetailEffect.ShowSnackbar("Комментарий удален"))
+                }
+                .onError { _, msg ->
+                    _uiState.update { it.copy(deletingCommentId = null, deleteTarget = null) }
+                    _effect.emit(DetailEffect.ShowSnackbar(msg ?: "Не удалось удалить комментарий"))
                 }
         }
     }
@@ -407,9 +564,23 @@ class DetailViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 userListRepository.setStatus(url, status, preview)
+            } catch (error: CancellationException) {
+                throw error
             } catch (e: Exception) {
                 _effect.emit(DetailEffect.ShowSnackbar("Ошибка сохранения статуса"))
             }
         }
     }
 }
+
+private fun String.ensureTrailingLineBreak(): String =
+    if (endsWith('\n')) this else "$this\n"
+
+private fun String.stripHtml(): String =
+    replace(Regex("""<[^>]+>"""), " ")
+        .replace("&nbsp;", " ")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&")
+        .replace(Regex("""\s+"""), " ")
+        .trim()

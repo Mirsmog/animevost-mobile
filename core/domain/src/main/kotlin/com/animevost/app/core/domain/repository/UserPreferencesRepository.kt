@@ -1,13 +1,15 @@
 package com.animevost.app.core.domain.repository
 
-import com.animevost.app.core.domain.model.LibraryViewMode
 import kotlinx.coroutines.flow.Flow
 
 /** Reactive access to user preferences persisted in DataStore. */
 interface UserPreferencesRepository {
 
-    /** Display mode used for the "All" section of the library screen. */
-    fun libraryViewMode(): Flow<LibraryViewMode>
+    fun preferredVideoQuality(): Flow<String?>
 
-    suspend fun setLibraryViewMode(mode: LibraryViewMode)
+    suspend fun setPreferredVideoQuality(quality: String)
+
+    suspend fun getUserRating(animeId: Int): Int
+
+    suspend fun setUserRating(animeId: Int, rating: Int)
 }

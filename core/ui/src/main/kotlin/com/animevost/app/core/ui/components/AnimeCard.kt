@@ -29,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -41,6 +42,7 @@ import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.ui.theme.AccentBlue
 import com.animevost.app.core.ui.theme.AccentPurple
 import com.animevost.app.core.ui.theme.OrangePrimary
+import java.util.Locale
 
 // ── Grid card (2-column): poster with title + info overlay ─────
 @Composable
@@ -48,6 +50,7 @@ fun AnimeCard(
     anime: AnimePreview,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(8.dp),
 ) {
     val episodeCount = remember(anime.episodeInfo) { extractEpisodeCount(anime.episodeInfo) }
     val hasStats = anime.rating > 0 || anime.viewCount > 0 || anime.commentCount > 0
@@ -55,7 +58,7 @@ fun AnimeCard(
 
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(shape)
             .clickable(onClick = onClick)
             .aspectRatio(0.67f),
     ) {
@@ -131,7 +134,7 @@ fun AnimeCard(
                     if (anime.rating > 0) {
                         StatBadge(
                             icon = { Icon(Icons.Filled.Star, null, modifier = Modifier.size(10.dp), tint = OrangePrimary) },
-                            text = String.format("%.1f", anime.rating),
+                            text = String.format(Locale.getDefault(), "%.1f", anime.rating),
                         )
                     }
                     if (anime.viewCount > 0) {
@@ -174,8 +177,8 @@ private fun StatBadge(
 }
 
 private fun formatCount(count: Int): String = when {
-    count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0)
-    count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
+    count >= 1_000_000 -> String.format(Locale.getDefault(), "%.1fM", count / 1_000_000.0)
+    count >= 1_000 -> String.format(Locale.getDefault(), "%.1fK", count / 1_000.0)
     else -> count.toString()
 }
 
@@ -271,7 +274,7 @@ fun AnimeCardHorizontal(
                             Icon(Icons.Filled.Star, null, modifier = Modifier.size(12.dp), tint = OrangePrimary)
                             Spacer(modifier = Modifier.width(2.dp))
                             Text(
-                                text = String.format("%.1f", anime.rating),
+                                text = String.format(Locale.getDefault(), "%.1f", anime.rating),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -307,72 +310,3 @@ fun AnimeCardHorizontal(
 }
 
 // ── Featured card: full-width hero for carousel ───────────────
-@Composable
-fun AnimeCardFeatured(
-    anime: AnimePreview,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val context = LocalContext.current
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(260.dp)
-            .clip(RoundedCornerShape(0.dp))
-            .clickable(onClick = onClick),
-    ) {
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(anime.posterUrl)
-                .diskCachePolicy(CachePolicy.ENABLED)
-                .memoryCachePolicy(CachePolicy.ENABLED)
-                .crossfade(true)
-                .build(),
-            contentDescription = anime.title,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop,
-        )
-        // Dark gradient from bottom
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(
-                    Brush.verticalGradient(
-                        colorStops = arrayOf(
-                            0.0f to Color.Transparent,
-                            0.45f to Color.Black.copy(alpha = 0.15f),
-                            1.0f to Color.Black.copy(alpha = 0.88f),
-                        ),
-                    ),
-                ),
-        )
-        // Info overlay at bottom-left
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(horizontal = 16.dp, vertical = 16.dp),
-        ) {
-            Text(
-                text = anime.title,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (anime.episodeInfo.isNotBlank()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                if (isAnnouncement(anime.episodeInfo)) {
-                    AnnouncementBadge()
-                } else {
-                    Text(
-                        text = anime.episodeInfo,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = Color.White.copy(alpha = 0.75f),
-                        maxLines = 1,
-                    )
-                }
-            }
-        }
-    }
-}

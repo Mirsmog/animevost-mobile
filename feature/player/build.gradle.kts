@@ -49,11 +49,13 @@ dependencies {
     implementation(libs.timber)
 
     implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.viewmodel.compose)
 
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.ui)
-    implementation(libs.datastore.preferences)
 
     debugImplementation(libs.compose.ui.tooling)
+
+    testImplementation(kotlin("test"))
 }

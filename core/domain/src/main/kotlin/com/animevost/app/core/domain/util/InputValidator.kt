@@ -28,29 +28,38 @@ object InputValidator {
     /** Validates that [username] is non-blank and within the allowed length range. */
     fun validateUsername(username: String): ValidationResult = when {
         username.isBlank() ->
-            ValidationResult.Invalid("Username cannot be empty")
+            ValidationResult.Invalid("Введите имя пользователя")
         username.length < MIN_USERNAME_LENGTH ->
-            ValidationResult.Invalid("Username must be at least $MIN_USERNAME_LENGTH characters")
+            ValidationResult.Invalid("Имя должно содержать не менее $MIN_USERNAME_LENGTH символов")
         username.length > MAX_USERNAME_LENGTH ->
-            ValidationResult.Invalid("Username must be at most $MAX_USERNAME_LENGTH characters")
+            ValidationResult.Invalid("Имя должно содержать не более $MAX_USERNAME_LENGTH символов")
         else -> ValidationResult.Valid
     }
 
     /** Validates that [password] is non-blank and meets the minimum length requirement. */
     fun validatePassword(password: String): ValidationResult = when {
         password.isBlank() ->
-            ValidationResult.Invalid("Password cannot be empty")
+            ValidationResult.Invalid("Введите пароль")
         password.length < MIN_PASSWORD_LENGTH ->
-            ValidationResult.Invalid("Password must be at least $MIN_PASSWORD_LENGTH characters")
+            ValidationResult.Invalid("Пароль должен содержать не менее $MIN_PASSWORD_LENGTH символов")
+        else -> ValidationResult.Valid
+    }
+
+    /** Validates that the repeated password matches the original password. */
+    fun validatePasswordConfirmation(password: String, confirmation: String): ValidationResult = when {
+        confirmation.isBlank() ->
+            ValidationResult.Invalid("Повторите пароль")
+        password != confirmation ->
+            ValidationResult.Invalid("Пароли не совпадают")
         else -> ValidationResult.Valid
     }
 
     /** Validates that [email] is non-blank and matches the expected email format. */
     fun validateEmail(email: String): ValidationResult = when {
         email.isBlank() ->
-            ValidationResult.Invalid("Email cannot be empty")
+            ValidationResult.Invalid("Введите адрес электронной почты")
         !EMAIL_REGEX.matches(email) ->
-            ValidationResult.Invalid("Invalid email address")
+            ValidationResult.Invalid("Введите корректный адрес электронной почты")
         else -> ValidationResult.Valid
     }
 }

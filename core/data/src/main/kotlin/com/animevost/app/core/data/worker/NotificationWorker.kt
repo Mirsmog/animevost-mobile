@@ -1,10 +1,6 @@
 package com.animevost.app.core.data.worker
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Context
-import android.os.Build
-import androidx.core.app.NotificationCompat
 import androidx.hilt.work.HiltWorker
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -13,106 +9,102 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import com.animevost.app.core.network.DleEndpoints
-import com.animevost.app.core.network.HtmlFetcher
+import com.animevost.app.core.data.db.FavoriteDao
+import com.animevost.app.core.data.notification.FavoriteEpisodeNotifier
+import com.animevost.app.core.data.notification.FavoriteEpisodeStateStore
+import com.animevost.app.core.data.notification.FavoriteEpisodeUpdateDetector
+import com.animevost.app.core.domain.repository.NotificationPreferencesRepository
 import com.animevost.app.core.network.parser.RssParser
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.util.concurrent.TimeUnit
+import javax.inject.Named
 
 @HiltWorker
 class NotificationWorker @AssistedInject constructor(
     @Assisted context: Context,
     @Assisted params: WorkerParameters,
-    private val htmlFetcher: HtmlFetcher,
+    @Named("rss") private val client: OkHttpClient,
     private val rssParser: RssParser,
+    private val favoriteDao: FavoriteDao,
+    private val detector: FavoriteEpisodeUpdateDetector,
+    private val stateStore: FavoriteEpisodeStateStore,
+    private val preferencesRepository: NotificationPreferencesRepository,
+    private val notifier: FavoriteEpisodeNotifier,
 ) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
         return try {
-            val xml = htmlFetcher.fetch(DleEndpoints.BASE_URL + "rss.xml")
-            val items = rssParser.parse(xml)
-            if (items.isEmpty()) return Result.success()
-
-            val prefs = applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            val lastKnownTitle = prefs.getString(KEY_LAST_RSS_TITLE, null)
-
-            val newItems = if (lastKnownTitle == null) {
-                // First run — save reference point, don't spam notifications
-                emptyList()
-            } else {
-                items.takeWhile { it.title != lastKnownTitle }
+            val favorites = favoriteDao.getAllList()
+            val state = stateStore.read()
+            if (favorites.isEmpty()) {
+                stateStore.replace(emptyMap())
+                return Result.success()
             }
 
-            // Always update the reference to the latest item
-            prefs.edit().putString(KEY_LAST_RSS_TITLE, items.first().title).apply()
+            val feedItems = rssParser.parse(fetchRss())
+            if (feedItems.isEmpty()) return Result.success()
 
-            newItems.take(MAX_NOTIFICATIONS).forEachIndexed { index, item ->
-                showNotification(item.title, item.description, index)
-            }
+            val detection = detector.detect(
+                favorites = favorites,
+                feedItems = feedItems,
+                knownEpisodes = state.episodesByAnimeId,
+            )
+            stateStore.replace(detection.episodesByAnimeId)
 
+            if (!state.initialized) return Result.success()
+            if (!preferencesRepository.favoriteNotificationsEnabled.first()) return Result.success()
+
+            val mutedIds = preferencesRepository.mutedFavoriteIds.first()
+            val updates = detection.updates
+                .filterNot { it.favorite.newsId in mutedIds }
+                .take(MAX_NOTIFICATIONS_PER_RUN)
+            notifier.show(updates)
             Result.success()
+        } catch (error: CancellationException) {
+            throw error
         } catch (_: Exception) {
             Result.retry()
         }
     }
 
-    private fun showNotification(title: String, body: String, id: Int) {
-        val manager =
-            applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                CHANNEL_ID,
-                "Обновления аниме",
-                NotificationManager.IMPORTANCE_DEFAULT,
-            ).apply {
-                description = "Уведомления о новых сериях"
-            }
-            manager.createNotificationChannel(channel)
+    private suspend fun fetchRss(): String = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url(RSS_URL).build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) error("RSS request failed: HTTP ${response.code}")
+            response.body?.string().orEmpty()
         }
-
-        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_popup_reminder)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-            .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .build()
-
-        manager.notify(NOTIFICATION_BASE_ID + id, notification)
     }
 
     companion object {
-        private const val CHANNEL_ID = "anime_updates"
-        private const val PREFS_NAME = "notifications"
-        private const val KEY_LAST_RSS_TITLE = "last_rss_title"
-        private const val NOTIFICATION_BASE_ID = 1000
-        private const val MAX_NOTIFICATIONS = 5
+        private const val RSS_URL = "https://v13.vost.pw/rss.xml"
+        private const val MAX_NOTIFICATIONS_PER_RUN = 10
         private const val WORK_NAME = "anime_notifications"
 
         fun schedule(context: Context) {
             val constraints = Constraints.Builder()
                 .setRequiredNetworkType(NetworkType.CONNECTED)
                 .build()
-
             val request = PeriodicWorkRequestBuilder<NotificationWorker>(
-                30, TimeUnit.MINUTES,
-                15, TimeUnit.MINUTES,
+                30,
+                TimeUnit.MINUTES,
+                15,
+                TimeUnit.MINUTES,
             )
                 .setConstraints(constraints)
                 .build()
 
             WorkManager.getInstance(context).enqueueUniquePeriodicWork(
                 WORK_NAME,
-                ExistingPeriodicWorkPolicy.KEEP,
+                ExistingPeriodicWorkPolicy.UPDATE,
                 request,
             )
-        }
-
-        fun cancel(context: Context) {
-            WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
         }
     }
 }

@@ -48,6 +48,7 @@ dependencies {
     implementation(libs.coroutines.core)
 
     implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.viewmodel.compose)
 
     debugImplementation(libs.compose.ui.tooling)

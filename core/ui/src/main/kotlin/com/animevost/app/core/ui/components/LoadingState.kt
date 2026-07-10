@@ -11,7 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 // Generic fallback loading indicator. Prefer screen-specific skeleton
-// shimmer composables (HomeShimmer, ListShimmer, etc.) over this.
+// Feature screens can use a dedicated shimmer when their layout is known.
 @Composable
 fun LoadingState(
     modifier: Modifier = Modifier,

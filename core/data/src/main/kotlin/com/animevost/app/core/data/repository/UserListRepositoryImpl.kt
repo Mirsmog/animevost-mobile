@@ -1,6 +1,9 @@
 package com.animevost.app.core.data.repository
 
-import android.util.Base64
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
 import com.animevost.app.core.data.db.UserListDao
 import com.animevost.app.core.data.db.UserListEntity
 import com.animevost.app.core.domain.model.AnimePreview
@@ -8,15 +11,15 @@ import com.animevost.app.core.domain.model.AnimeStatus
 import com.animevost.app.core.domain.model.UserListEntry
 import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.UserListRepository
-import com.animevost.app.core.network.EndpointResolver
-import com.animevost.app.core.network.HtmlFetcher
-import com.animevost.app.core.network.parser.UserInfoParser
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
+import com.animevost.sdk.AnimeVostClient
+import com.animevost.sdk.model.UserProfileUpdate
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -40,38 +43,35 @@ import javax.inject.Singleton
  * before writing to prevent stale `fullname`/`land`/`email` from overwriting user profile edits.
  *
  * **Sync strategy**: [syncFromRemote] re-reads the server. If there are unsent local changes
- * (`pendingUpload == true`), it uploads them first (local wins on conflict) before accepting
+ * (persisted pending upload marker), it uploads them first before accepting
  * the server state as authoritative.
  */
 @Singleton
 class UserListRepositoryImpl @Inject constructor(
     private val dao: UserListDao,
-    private val htmlFetcher: HtmlFetcher,
-    private val userInfoParser: UserInfoParser,
     private val authRepository: AuthRepository,
-    private val endpointResolver: EndpointResolver,
+    private val client: AnimeVostClient,
+    private val dataStore: DataStore<Preferences>,
 ) : UserListRepository {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutex = Mutex()
 
-    /**
-     * True when Room has changes that have not yet been confirmed written to the server.
-     * Guards against startup sync overwriting unsent local changes.
-     */
-    @Volatile private var pendingUpload = false
-
     init {
         scope.launch {
-            authRepository.isLoggedInFlow.collect { loggedIn ->
+            authRepository.isLoggedInFlow.collectLatest { loggedIn ->
                 if (loggedIn) {
-                    try { syncFromRemote() } catch (e: Exception) {
+                    try {
+                        syncFromRemote()
+                    } catch (error: CancellationException) {
+                        throw error
+                    } catch (e: Exception) {
                         Timber.w(e, "UserList initial sync failed")
                     }
                 } else {
                     mutex.withLock {
                         dao.deleteAll()
-                        pendingUpload = false
+                        setPendingUpload(false)
                     }
                 }
             }
@@ -116,10 +116,12 @@ class UserListRepositoryImpl @Inject constructor(
                 ),
             )
         }
-        pendingUpload = true
+        setPendingUpload(true)
         scope.launch {
             try {
                 flushToRemote()
+            } catch (error: CancellationException) {
+                throw error
             } catch (e: Exception) {
                 Timber.w(e, "UserList remote upload failed — will retry on next sync")
             }
@@ -138,21 +140,18 @@ class UserListRepositoryImpl @Inject constructor(
      */
     override suspend fun syncFromRemote() = mutex.withLock {
         val user = authRepository.getCurrentUser() ?: return@withLock
-        val profileUrl = profileUrlFor(user.name)
 
-        if (pendingUpload) {
-            uploadNow(profileUrl)
-            val html = htmlFetcher.fetch(profileUrl)
-            val parsed = userInfoParser.parse(html, profileUrl)
-            val remote = decodePayload(parsed.rawInfo)
+        if (hasPendingUpload()) {
+            uploadNow(user.name)
+            val profile = client.getProfile(user.name)
+            val remote = UserListPayloadCodec.decode(profile.info.orEmpty())
             addMissingFromRemote(remote)
-            if (parsed.avatarUrl.isNotBlank()) authRepository.saveAvatarUrl(parsed.avatarUrl)
+            profile.avatarUrl?.takeIf { it.isNotBlank() }?.let { authRepository.saveAvatarUrl(it) }
         } else {
-            val html = htmlFetcher.fetch(profileUrl)
-            val parsed = userInfoParser.parse(html, profileUrl)
-            val remote = decodePayload(parsed.rawInfo)
+            val profile = client.getProfile(user.name)
+            val remote = UserListPayloadCodec.decode(profile.info.orEmpty())
             overwriteLocalWithRemote(remote)
-            if (parsed.avatarUrl.isNotBlank()) authRepository.saveAvatarUrl(parsed.avatarUrl)
+            profile.avatarUrl?.takeIf { it.isNotBlank() }?.let { authRepository.saveAvatarUrl(it) }
         }
     }
 
@@ -163,35 +162,38 @@ class UserListRepositoryImpl @Inject constructor(
      * Always re-fetches form fields (hash, fullname, land, email) to avoid posting stale data.
      * Must be called within [mutex].
      */
-    private suspend fun uploadNow(profileUrl: String) {
-        val html = htmlFetcher.fetch(profileUrl)
-        val parsed = userInfoParser.parse(html, profileUrl)
-        if (parsed.hash.isBlank()) {
-            Timber.w("UserList upload skipped — could not read dle_allow_hash (not logged in?)")
+    private suspend fun uploadNow(username: String) {
+        val profile = client.getProfile(username)
+        if (!profile.canEdit) {
+            Timber.w("UserList upload skipped: could not read dle_allow_hash (not logged in?)")
             return
         }
         val entries = dao.getAll()
-        val b64 = encodePayload(entries).toBase64()
-        htmlFetcher.fetchMultipart(
-            url = profileUrl,
-            parts = buildOf(
-                "doaction" to "adduserinfo",
-                "id" to parsed.userId,
-                "dle_allow_hash" to parsed.hash,
-                "fullname" to parsed.fullname,
-                "land" to parsed.land,
-                "email" to parsed.email,
-                "info" to b64,
-            ),
+        val updatedInfo = UserListPayloadCodec.merge(
+            profileInfo = profile.info.orEmpty(),
+            statuses = entries.associate { it.animeUrl to it.status },
         )
-        pendingUpload = false
+        client.updateProfile(
+            username = username,
+            update = UserProfileUpdate(info = updatedInfo),
+        )
+        setPendingUpload(false)
         Timber.d("UserList uploaded ${entries.size} entries")
     }
 
     /** Background flush — acquires mutex and calls [uploadNow]. */
     private suspend fun flushToRemote() = mutex.withLock {
         val user = authRepository.getCurrentUser() ?: return@withLock
-        uploadNow(profileUrlFor(user.name))
+        uploadNow(user.name)
+    }
+
+    private suspend fun hasPendingUpload(): Boolean =
+        dataStore.data.first()[KEY_PENDING_UPLOAD] ?: false
+
+    private suspend fun setPendingUpload(value: Boolean) {
+        dataStore.edit { preferences ->
+            preferences[KEY_PENDING_UPLOAD] = value
+        }
     }
 
     /**
@@ -238,37 +240,6 @@ class UserListRepositoryImpl @Inject constructor(
         }
     }
 
-    private fun profileUrlFor(username: String): String =
-        endpointResolver.currentBaseUrl + "user/$username/"
-
-    // ── Serialization ─────────────────────────────────────────────────────────
-
-    private fun decodePayload(raw: String): Map<String, String> {
-        if (raw.isBlank()) return emptyMap()
-        return try {
-            val json = String(Base64.decode(raw, Base64.NO_WRAP), Charsets.UTF_8)
-            val obj = JsonParser.parseString(json).asJsonObject
-            if (obj.get("v")?.asInt != PAYLOAD_VERSION) return emptyMap()
-            val s = obj.getAsJsonObject("s") ?: return emptyMap()
-            s.entrySet().mapNotNull { (url, el) ->
-                val code = runCatching { el.asString }.getOrNull() ?: return@mapNotNull null
-                if (AnimeStatus.fromCode(code) != null) url to code else null
-            }.toMap()
-        } catch (e: Exception) {
-            Timber.d("UserList payload decode skipped (may be plain-text info field): ${e.message}")
-            emptyMap()
-        }
-    }
-
-    private fun encodePayload(entries: List<UserListEntity>): String {
-        val s = JsonObject()
-        entries.forEach { s.addProperty(it.animeUrl, it.status) }
-        return JsonObject().apply {
-            addProperty("v", PAYLOAD_VERSION)
-            add("s", s)
-        }.toString()
-    }
-
     // ── Static helpers ────────────────────────────────────────────────────────
 
     override suspend fun enrichPreview(animeUrl: String, preview: AnimePreview) {
@@ -281,7 +252,7 @@ class UserListRepositoryImpl @Inject constructor(
     }
 
     private companion object {
-        const val PAYLOAD_VERSION = 1
+        val KEY_PENDING_UPLOAD = booleanPreferencesKey("user_list_pending_upload")
 
         private val ID_IN_URL = Regex("""/(\d+)-[^/]+\.html""")
 
@@ -303,10 +274,5 @@ class UserListRepositoryImpl @Inject constructor(
             episodeInfo = "",
             url = animeUrl,
         )
-
-        fun String.toBase64(): String =
-            Base64.encodeToString(toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-
-        fun buildOf(vararg pairs: Pair<String, String>): Map<String, String> = mapOf(*pairs)
     }
 }

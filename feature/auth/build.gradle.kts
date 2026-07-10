@@ -39,6 +39,7 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
     implementation(libs.compose.navigation)
+    implementation(libs.activity.compose)
 
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
@@ -47,6 +48,7 @@ dependencies {
     implementation(libs.coroutines.core)
 
     implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.viewmodel.compose)
 
     debugImplementation(libs.compose.ui.tooling)

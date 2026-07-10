@@ -1,19 +1,22 @@
 package com.animevost.app.core.data.repository
 
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import com.animevost.app.core.data.db.FavoriteDao
 import com.animevost.app.core.data.db.FavoriteEntity
 import com.animevost.app.core.data.mapper.toAnimePreview
 import com.animevost.app.core.data.mapper.toFavoriteEntity
+import com.animevost.app.core.data.sdk.toDomain
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.FavoriteEntry
 import com.animevost.app.core.domain.repository.FavoriteRepository
 import com.animevost.app.core.domain.util.Result
-import com.animevost.app.core.network.DleEndpoints
-import com.animevost.app.core.network.HtmlFetcher
-import com.animevost.app.core.network.SessionCookieJar
-import com.animevost.app.core.network.parser.FavoritesParser
+import com.animevost.sdk.AnimeVostClient
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -24,9 +27,8 @@ import javax.inject.Singleton
 @Singleton
 class FavoriteRepositoryImpl @Inject constructor(
     private val favoriteDao: FavoriteDao,
-    private val htmlFetcher: HtmlFetcher,
-    private val favoritesParser: FavoritesParser,
-    private val cookieJar: SessionCookieJar,
+    private val client: AnimeVostClient,
+    private val dataStore: DataStore<Preferences>,
 ) : FavoriteRepository {
 
     private val favMutex = Mutex()
@@ -51,18 +53,22 @@ class FavoriteRepositoryImpl @Inject constructor(
 
     override suspend fun toggleFavorite(newsId: Int, preview: AnimePreview?): Boolean = favMutex.withLock {
         if (isLoggedIn()) {
+            val accountId = requireNotNull(client.currentSession()?.userId) {
+                "Authenticated session has no user id"
+            }
+            ensureCacheBelongsTo(accountId)
             val isFav = favoriteDao.isFavorite(newsId)
-            val endpoint = if (isFav) DleEndpoints.FAVORITES_REMOVE else DleEndpoints.FAVORITES_ADD
-            try {
-                htmlFetcher.fetch(DleEndpoints.BASE_URL + endpoint + newsId)
-            } catch (e: Exception) {
-                Timber.w(e, "Failed to toggle remote favorite newsId=$newsId")
+            if (isFav) {
+                client.removeFavorite(newsId)
+            } else {
+                client.addFavorite(newsId)
             }
             if (isFav) {
                 favoriteDao.deleteByNewsId(newsId)
             } else if (preview != null) {
                 favoriteDao.insert(preview.toFavoriteEntity())
             }
+            setOwnerAccountId(accountId)
             !isFav
         } else {
             val isFav = favoriteDao.isFavorite(newsId)
@@ -79,19 +85,23 @@ class FavoriteRepositoryImpl @Inject constructor(
     override suspend fun syncOnLogin(): Result<Unit> {
         return try {
             favMutex.withLock {
+                val accountId = requireNotNull(client.currentSession()?.userId) {
+                    "Authenticated session has no user id"
+                }
                 // 1. Fetch current remote favorites (all pages)
                 val remoteItems = fetchAllRemotePages()
                 val remoteIds = remoteItems.map { it.id }.toSet()
 
-                // 2. Push local-only items to remote (merge on login)
-                val localIds = favoriteDao.getAllIds()
+                // 2. Only anonymous or same-account local items may be merged.
+                val ownerAccountId = ownerAccountId()
+                val localIds = if (canMergeLocalFavorites(ownerAccountId, accountId)) {
+                    favoriteDao.getAllIds()
+                } else {
+                    emptyList()
+                }
                 val toPush = localIds.filter { it !in remoteIds }
                 toPush.forEach { id ->
-                    try {
-                        htmlFetcher.fetch(DleEndpoints.BASE_URL + DleEndpoints.FAVORITES_ADD + id)
-                    } catch (e: Exception) {
-                        Timber.w(e, "Failed to push local favorite id=$id to remote on login sync")
-                    }
+                    client.addFavorite(id)
                 }
 
                 // 3. Re-fetch remote if we pushed anything (now includes merged items)
@@ -99,6 +109,7 @@ class FavoriteRepositoryImpl @Inject constructor(
 
                 // 4. Cache merged server state locally
                 favoriteDao.replaceAll(finalRemote.toCachedEntities(previous = favoriteDao.getAllList()))
+                setOwnerAccountId(accountId)
 
                 Timber.d("Login sync: pushed=${toPush.size}, remote total=${finalRemote.size}")
                 Result.Success(Unit)
@@ -113,9 +124,18 @@ class FavoriteRepositoryImpl @Inject constructor(
 
     override suspend fun loadRemoteFavorites(): Result<Unit> {
         if (!isLoggedIn()) return Result.Success(Unit)
+        if (ownerAccountId() == null && favoriteDao.getAllIds().isNotEmpty()) {
+            return syncOnLogin()
+        }
         return try {
-            val items = fetchAllRemotePages()
-            favoriteDao.replaceAll(items.toCachedEntities(previous = favoriteDao.getAllList()))
+            favMutex.withLock {
+                val accountId = requireNotNull(client.currentSession()?.userId) {
+                    "Authenticated session has no user id"
+                }
+                val items = fetchAllRemotePages()
+                favoriteDao.replaceAll(items.toCachedEntities(previous = favoriteDao.getAllList()))
+                setOwnerAccountId(accountId)
+            }
             Result.Success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -125,26 +145,44 @@ class FavoriteRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun clearLocal() {
+        favMutex.withLock {
+            favoriteDao.deleteAll()
+            dataStore.edit { it.remove(KEY_OWNER_ACCOUNT_ID) }
+        }
+    }
+
+    private suspend fun ensureCacheBelongsTo(accountId: Int) {
+        val ownerAccountId = ownerAccountId() ?: return
+        if (ownerAccountId == accountId) return
+        val items = fetchAllRemotePages()
+        favoriteDao.replaceAll(items.toCachedEntities(previous = emptyList()))
+        setOwnerAccountId(accountId)
+    }
+
+    private suspend fun ownerAccountId(): Int? =
+        dataStore.data.first()[KEY_OWNER_ACCOUNT_ID]
+
+    private suspend fun setOwnerAccountId(accountId: Int) {
+        dataStore.edit { it[KEY_OWNER_ACCOUNT_ID] = accountId }
+    }
+
     private suspend fun fetchAllRemotePages(): List<AnimePreview> {
         val allItems = mutableListOf<AnimePreview>()
         var page = 1
         while (true) {
-            val url = if (page == 1)
-                DleEndpoints.BASE_URL + DleEndpoints.FAVORITES
-            else
-                DleEndpoints.BASE_URL + DleEndpoints.FAVORITES + "page/$page/"
-            val html = htmlFetcher.fetch(url)
-            val items = favoritesParser.parse(html)
+            val remotePage = client.getFavorites(page)
+            val items = remotePage.items.map { it.toDomain() }
             if (items.isEmpty()) break
             allItems.addAll(items)
+            if (page >= remotePage.totalPages) break
             page++
         }
-        // Deduplicate by ID in case the same item appears across pages
         return allItems.distinctBy { it.id }
     }
 
     private fun isLoggedIn(): Boolean =
-        cookieJar.getCookieValue("animevost.org", "dle_user_id") != null
+        client.isLoggedIn()
 
     private fun FavoriteEntity.toEntry() = FavoriteEntry(
         anime = toAnimePreview(),
@@ -159,4 +197,11 @@ class FavoriteRepositoryImpl @Inject constructor(
             )
         }
     }
+
+    private companion object {
+        val KEY_OWNER_ACCOUNT_ID = intPreferencesKey("favorite_owner_account_id")
+    }
 }
+
+internal fun canMergeLocalFavorites(ownerAccountId: Int?, currentAccountId: Int): Boolean =
+    ownerAccountId == null || ownerAccountId == currentAccountId

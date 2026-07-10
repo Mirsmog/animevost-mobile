@@ -7,5 +7,3 @@
     @com.google.gson.annotations.SerializedName <fields>;
 }
 -keep class com.animevost.app.core.network.alloha.** { *; }
--keep class com.animevost.app.core.network.AnimeVost*Response { *; }
--keep class com.animevost.app.core.network.dto.** { *; }

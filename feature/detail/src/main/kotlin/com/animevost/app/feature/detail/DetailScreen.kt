@@ -45,6 +45,8 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.outlined.Bookmarks
@@ -54,15 +56,10 @@ import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.outlined.EmojiEmotions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material.icons.outlined.BookmarkRemove
-import androidx.compose.material.icons.outlined.Cancel
-import androidx.compose.material.icons.outlined.CheckCircle
-import androidx.compose.material.icons.outlined.PauseCircle
-import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.WatchLater
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -79,7 +76,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -91,6 +88,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
@@ -121,6 +120,7 @@ import com.animevost.app.core.ui.theme.OrangeMuted
 import com.animevost.app.core.ui.theme.OrangePrimary
 import com.animevost.app.core.ui.theme.TextPrimary
 import com.animevost.app.core.ui.theme.TextSecondary
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,7 +132,7 @@ fun DetailScreen(
     onRelatedClick: (String) -> Unit,
     viewModel: DetailViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(animeUrl) {
@@ -184,8 +184,11 @@ fun DetailScreen(
                 state.anime != null -> DetailContent(
                     anime = state.anime!!,
                     isFavorite = state.isFavorite,
+                    areFavoriteNotificationsEnabled = state.areFavoriteNotificationsEnabled,
+                    isFavoriteNotificationMuted = state.isFavoriteNotificationMuted,
                     isLoggedIn = state.isLoggedIn,
                     userRating = state.userRating,
+                    isRatingSubmitting = state.isRatingSubmitting,
                     isDescriptionExpanded = state.isDescriptionExpanded,
                     episodeRangeStart = state.episodeRangeStart,
                     watchedEpisodeIds = state.watchedEpisodeIds,
@@ -197,9 +200,15 @@ fun DetailScreen(
                     isLoadingComments = state.isLoadingComments,
                     commentTextValue = state.commentTextValue,
                     isAddingComment = state.isAddingComment,
+                    replyTarget = state.replyTarget,
+                    isPreparingReply = state.isPreparingReply,
                     hasMoreComments = state.hasMoreComments,
+                    deletingCommentId = state.deletingCommentId,
                     onBack = onBack,
                     onToggleFavorite = { viewModel.onEvent(DetailEvent.ToggleFavorite) },
+                    onToggleFavoriteNotification = {
+                        viewModel.onEvent(DetailEvent.ToggleFavoriteNotification)
+                    },
                     onRate = { viewModel.onEvent(DetailEvent.RateAnime(it)) },
                     onToggleDescription = { viewModel.onEvent(DetailEvent.ToggleDescription) },
                     onSetWatchStatus = { viewModel.onEvent(DetailEvent.SetWatchStatus(it)) },
@@ -217,10 +226,140 @@ fun DetailScreen(
                     onCommentTextValueChange = { viewModel.onEvent(DetailEvent.UpdateCommentTextValue(it)) },
                     onSubmitComment = { viewModel.onEvent(DetailEvent.SubmitComment) },
                     onReplyToComment = { comment -> viewModel.onEvent(DetailEvent.ReplyToComment(comment)) },
+                    onCancelReply = { viewModel.onEvent(DetailEvent.CancelReply) },
+                    onReportComment = { comment -> viewModel.onEvent(DetailEvent.ReportComment(comment)) },
+                    onDeleteComment = { comment -> viewModel.onEvent(DetailEvent.RequestDeleteComment(comment)) },
                 )
             }
         }
     }
+
+    state.reportTarget?.let { comment ->
+        ReportCommentDialog(
+            comment = comment,
+            value = state.reportTextValue,
+            isSubmitting = state.isReportingComment,
+            onValueChange = { viewModel.onEvent(DetailEvent.UpdateReportTextValue(it)) },
+            onSubmit = { viewModel.onEvent(DetailEvent.SubmitReport) },
+            onDismiss = { viewModel.onEvent(DetailEvent.DismissReport) },
+        )
+    }
+
+    state.deleteTarget?.let { comment ->
+        DeleteCommentDialog(
+            comment = comment,
+            isDeleting = state.deletingCommentId == comment.id,
+            onConfirm = { viewModel.onEvent(DetailEvent.ConfirmDeleteComment) },
+            onDismiss = { viewModel.onEvent(DetailEvent.DismissDeleteComment) },
+        )
+    }
+}
+
+@Composable
+private fun ReportCommentDialog(
+    comment: Comment,
+    value: TextFieldValue,
+    isSubmitting: Boolean,
+    onValueChange: (TextFieldValue) -> Unit,
+    onSubmit: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = { if (!isSubmitting) onDismiss() },
+        containerColor = Bg2,
+        title = {
+            Text(
+                text = "Жалоба на ${comment.author}",
+                color = TextPrimary,
+                style = MaterialTheme.typography.titleMedium,
+            )
+        },
+        text = {
+            Column {
+                Text(
+                    text = "Коротко опиши нарушение. Жалоба уйдет администрации AnimeVost.",
+                    color = TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(10.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 92.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Bg3)
+                        .padding(12.dp),
+                ) {
+                    if (value.text.isBlank()) {
+                        Text(
+                            text = "Причина жалобы",
+                            color = TextSecondary,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    BasicTextField(
+                        value = value,
+                        onValueChange = onValueChange,
+                        enabled = !isSubmitting,
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = TextPrimary),
+                        cursorBrush = SolidColor(OrangePrimary),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onSubmit,
+                enabled = value.text.isNotBlank() && !isSubmitting,
+            ) {
+                Text(if (isSubmitting) "Отправка..." else "Отправить", color = OrangePrimary)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isSubmitting) {
+                Text("Отмена", color = TextSecondary)
+            }
+        },
+    )
+}
+
+@Composable
+private fun DeleteCommentDialog(
+    comment: Comment,
+    isDeleting: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = { if (!isDeleting) onDismiss() },
+        containerColor = Bg2,
+        title = {
+            Text(
+                text = "Удалить комментарий?",
+                color = TextPrimary,
+                style = MaterialTheme.typography.titleMedium,
+            )
+        },
+        text = {
+            Text(
+                text = comment.text.stripCommentPreview().ifBlank { "Это действие нельзя отменить." },
+                color = TextSecondary,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = !isDeleting) {
+                Text(if (isDeleting) "Удаление..." else "Удалить", color = ErrorRed)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isDeleting) {
+                Text("Отмена", color = TextSecondary)
+            }
+        },
+    )
 }
 
 // ── Main content ──────────────────────────────────────────────────────────────
@@ -230,8 +369,11 @@ fun DetailScreen(
 private fun DetailContent(
     anime: AnimeDetail,
     isFavorite: Boolean,
+    areFavoriteNotificationsEnabled: Boolean,
+    isFavoriteNotificationMuted: Boolean,
     isLoggedIn: Boolean,
     userRating: Int,
+    isRatingSubmitting: Boolean,
     isDescriptionExpanded: Boolean,
     episodeRangeStart: Int,
     watchedEpisodeIds: Set<String>,
@@ -243,9 +385,13 @@ private fun DetailContent(
     isLoadingComments: Boolean,
     commentTextValue: TextFieldValue,
     isAddingComment: Boolean,
+    replyTarget: Comment?,
+    isPreparingReply: Boolean,
     hasMoreComments: Boolean,
+    deletingCommentId: Int?,
     onBack: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onToggleFavoriteNotification: () -> Unit,
     onRate: (Int) -> Unit,
     onToggleDescription: () -> Unit,
     onSetWatchStatus: (AnimeStatus?) -> Unit,
@@ -258,6 +404,9 @@ private fun DetailContent(
     onCommentTextValueChange: (TextFieldValue) -> Unit,
     onSubmitComment: () -> Unit,
     onReplyToComment: (Comment) -> Unit,
+    onCancelReply: () -> Unit,
+    onReportComment: (Comment) -> Unit,
+    onDeleteComment: (Comment) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -269,8 +418,11 @@ private fun DetailContent(
         PosterHeader(
             anime = anime,
             isFavorite = isFavorite,
+            isFavoriteNotificationEnabled =
+                areFavoriteNotificationsEnabled && !isFavoriteNotificationMuted,
             onBack = onBack,
             onToggleFavorite = onToggleFavorite,
+            onToggleFavoriteNotification = onToggleFavoriteNotification,
         )
 
         // ── Info section ─────────────────────────────────────────────
@@ -281,6 +433,7 @@ private fun DetailContent(
                 rating = anime.rating,
                 userRating = userRating,
                 isLoggedIn = isLoggedIn,
+                isSubmitting = isRatingSubmitting,
                 onRate = onRate,
             )
             Spacer(Modifier.height(16.dp))
@@ -494,15 +647,22 @@ private fun DetailContent(
         Spacer(Modifier.height(16.dp))
         CommentsSection(
             comments = comments,
+            totalCommentCount = anime.commentCount,
             isLoading = isLoadingComments,
             isLoggedIn = isLoggedIn,
             commentTextValue = commentTextValue,
             isAddingComment = isAddingComment,
+            replyTarget = replyTarget,
+            isPreparingReply = isPreparingReply,
             hasMore = hasMoreComments,
+            deletingCommentId = deletingCommentId,
             onLoadMore = onLoadMoreComments,
             onTextValueChange = onCommentTextValueChange,
             onSubmit = onSubmitComment,
             onReply = onReplyToComment,
+            onCancelReply = onCancelReply,
+            onReport = onReportComment,
+            onDelete = onDeleteComment,
         )
 
         Spacer(Modifier.height(24.dp).navigationBarsPadding())
@@ -515,8 +675,10 @@ private fun DetailContent(
 private fun PosterHeader(
     anime: AnimeDetail,
     isFavorite: Boolean,
+    isFavoriteNotificationEnabled: Boolean,
     onBack: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onToggleFavoriteNotification: () -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -564,21 +726,44 @@ private fun PosterHeader(
             }
         }
 
-        // Favorite button — top right with scrim backdrop
-        Box(
+        Row(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .statusBarsPadding()
-                .padding(12.dp)
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(Bg0.copy(alpha = 0.45f)),
-            contentAlignment = Alignment.Center,
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            IconButton(onClick = onToggleFavorite, modifier = Modifier.size(40.dp)) {
+            if (isFavorite) {
+                HeaderActionButton(
+                    onClick = onToggleFavoriteNotification,
+                    contentDescription = if (isFavoriteNotificationEnabled) {
+                        "Отключить уведомления"
+                    } else {
+                        "Включить уведомления"
+                    },
+                ) {
+                    Icon(
+                        imageVector = if (isFavoriteNotificationEnabled) {
+                            Icons.Filled.Notifications
+                        } else {
+                            Icons.Filled.NotificationsOff
+                        },
+                        contentDescription = null,
+                        tint = if (isFavoriteNotificationEnabled) OrangePrimary else Color.White,
+                    )
+                }
+            }
+            HeaderActionButton(
+                onClick = onToggleFavorite,
+                contentDescription = "Избранное",
+            ) {
                 Icon(
-                    imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                    contentDescription = "Избранное",
+                    imageVector = if (isFavorite) {
+                        Icons.Filled.Favorite
+                    } else {
+                        Icons.Filled.FavoriteBorder
+                    },
+                    contentDescription = null,
                     tint = if (isFavorite) OrangePrimary else Color.White,
                 )
             }
@@ -606,6 +791,30 @@ private fun PosterHeader(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeaderActionButton(
+    onClick: () -> Unit,
+    contentDescription: String,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(Bg0.copy(alpha = 0.45f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        IconButton(
+            onClick = onClick,
+            modifier = Modifier.size(40.dp),
+        ) {
+            Box(modifier = Modifier.semantics { this.contentDescription = contentDescription }) {
+                content()
             }
         }
     }
@@ -836,32 +1045,56 @@ private fun DownloadQualitySheet(
 @Composable
 private fun CommentsSection(
     comments: List<Comment>,
+    totalCommentCount: Int,
     isLoading: Boolean,
     isLoggedIn: Boolean,
     commentTextValue: TextFieldValue,
     isAddingComment: Boolean,
+    replyTarget: Comment?,
+    isPreparingReply: Boolean,
     hasMore: Boolean,
+    deletingCommentId: Int?,
     onLoadMore: () -> Unit,
     onTextValueChange: (TextFieldValue) -> Unit,
     onSubmit: () -> Unit,
     onReply: (Comment) -> Unit,
+    onCancelReply: () -> Unit,
+    onReport: (Comment) -> Unit,
+    onDelete: (Comment) -> Unit,
 ) {
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-        Text(
-            text = "Комментарии (${comments.size})",
-            style = MaterialTheme.typography.titleLarge,
-            color = TextPrimary,
-        )
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = "Комментарии",
+                style = MaterialTheme.typography.titleLarge,
+                color = TextPrimary,
+            )
+            Spacer(Modifier.width(8.dp))
+            val counterText = if (totalCommentCount > comments.size) {
+                "${comments.size} из $totalCommentCount"
+            } else {
+                comments.size.toString()
+            }
+            Text(
+                text = counterText,
+                style = MaterialTheme.typography.labelLarge,
+                color = TextSecondary,
+                modifier = Modifier.padding(bottom = 2.dp),
+            )
+        }
         Spacer(Modifier.height(12.dp))
 
-        if (isLoggedIn) {
+        if (isLoggedIn && replyTarget == null) {
             CommentEditor(
                 commentTextValue = commentTextValue,
                 isAddingComment = isAddingComment,
+                title = null,
+                placeholder = "Написать комментарий...",
                 onTextValueChange = onTextValueChange,
                 onSubmit = onSubmit,
+                onCancel = null,
             )
-        } else {
+        } else if (!isLoggedIn) {
             Text(
                 text = "Войдите в аккаунт, чтобы оставить комментарий",
                 style = MaterialTheme.typography.bodyMedium,
@@ -871,12 +1104,33 @@ private fun CommentsSection(
 
         Spacer(Modifier.height(12.dp))
 
-        // Flat comment list
         comments.forEachIndexed { index, comment ->
-            CommentItem(comment = comment, onReply = onReply)
+            CommentItem(
+                comment = comment,
+                isLoggedIn = isLoggedIn,
+                isDeleting = deletingCommentId == comment.id,
+                onReply = onReply,
+                onReport = onReport,
+                onDelete = onDelete,
+            )
+            if (replyTarget?.id == comment.id && isLoggedIn) {
+                Spacer(Modifier.height(4.dp))
+                CommentEditor(
+                    commentTextValue = commentTextValue,
+                    isAddingComment = isAddingComment,
+                    isPreparing = isPreparingReply,
+                    title = "Ответ для ${comment.author}",
+                    placeholder = if (isPreparingReply) "Готовим цитату..." else "Написать ответ...",
+                    onTextValueChange = onTextValueChange,
+                    onSubmit = onSubmit,
+                    onCancel = onCancelReply,
+                    modifier = Modifier.padding(start = ((comment.depth + 1) * 14).coerceAtMost(56).dp),
+                )
+                Spacer(Modifier.height(8.dp))
+            }
             if (index < comments.lastIndex) {
                 HorizontalDivider(
-                    modifier = Modifier.padding(start = 40.dp),
+                    modifier = Modifier.padding(start = ((comment.depth + 1) * 14).coerceAtMost(56).dp),
                     color = Bg4,
                 )
             }
@@ -918,8 +1172,13 @@ private fun CommentsSection(
 private fun CommentEditor(
     commentTextValue: TextFieldValue,
     isAddingComment: Boolean,
+    modifier: Modifier = Modifier,
+    isPreparing: Boolean = false,
+    title: String?,
+    placeholder: String,
     onTextValueChange: (TextFieldValue) -> Unit,
     onSubmit: () -> Unit,
+    onCancel: (() -> Unit)?,
 ) {
     var showEmojiPicker by remember { mutableStateOf(false) }
     var showPreview by remember { mutableStateOf(false) }
@@ -954,26 +1213,52 @@ private fun CommentEditor(
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = Bg2),
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            // Preview toggle
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                TextButton(
-                    onClick = { showPreview = !showPreview },
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+        val topPadding = if (title == null && onCancel == null) 16.dp else 10.dp
+        Column(
+            modifier = Modifier.padding(
+                start = 10.dp,
+                top = topPadding,
+                end = 10.dp,
+                bottom = 10.dp,
+            ),
+        ) {
+            if (title != null || onCancel != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = if (showPreview) "Редактор" else "Превью",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = OrangePrimary,
-                    )
+                    if (title != null) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
+                    if (onCancel != null) {
+                        TextButton(
+                            onClick = onCancel,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            enabled = !isAddingComment,
+                        ) {
+                            Text(
+                                text = "Отмена",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextSecondary,
+                            )
+                        }
+                    }
                 }
+                Spacer(Modifier.height(6.dp))
             }
 
             // Text input or preview
@@ -981,7 +1266,7 @@ private fun CommentEditor(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 80.dp)
+                        .heightIn(min = 64.dp)
                         .padding(bottom = 8.dp),
                 ) {
                     if (commentTextValue.text.isBlank()) {
@@ -1001,12 +1286,12 @@ private fun CommentEditor(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 80.dp)
+                        .heightIn(min = 64.dp)
                         .padding(bottom = 8.dp),
                 ) {
                     if (commentTextValue.text.isEmpty()) {
                         Text(
-                            text = "Написать комментарий…",
+                            text = placeholder,
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary,
                         )
@@ -1017,14 +1302,14 @@ private fun CommentEditor(
                         modifier = Modifier.fillMaxWidth(),
                         textStyle = MaterialTheme.typography.bodyMedium.copy(color = TextPrimary),
                         cursorBrush = SolidColor(OrangePrimary),
-                        enabled = !isAddingComment,
+                        enabled = !isAddingComment && !isPreparing,
                         maxLines = 8,
                         visualTransformation = EmojiTagVisualTransformation,
                     )
                 }
             }
 
-            // Emoji grid — shown above toolbar
+            // Emoji grid shown above toolbar
             AnimatedVisibility(
                 visible = showEmojiPicker,
                 enter = expandVertically(),
@@ -1047,7 +1332,7 @@ private fun CommentEditor(
                             contentDescription = "emoji $id",
                             modifier = Modifier
                                 .size(36.dp)
-                                .clickable { insertAtCursor("<!--smile:$id-->") },
+                                .clickable { insertAtCursor(":$id:") },
                         )
                     }
                 }
@@ -1061,7 +1346,7 @@ private fun CommentEditor(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Formatting buttons group — active only when text is selected
+                // Formatting buttons group, active only when text is selected
                 val hasSelection = commentTextValue.selection.length > 0
                 Row(
                     modifier = Modifier
@@ -1081,7 +1366,6 @@ private fun CommentEditor(
                         enabled = hasSelection,
                     ) { applyFormat("[s]", "[/s]") }
 
-                    // Spoiler button: eye icon + text
                     Box(
                         modifier = Modifier
                             .height(32.dp)
@@ -1111,9 +1395,21 @@ private fun CommentEditor(
 
                 Spacer(Modifier.weight(1f))
 
-                // Emoji picker toggle
+                TextButton(
+                    onClick = { showPreview = !showPreview },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    enabled = !isPreparing,
+                ) {
+                    Text(
+                        text = if (showPreview) "Редактор" else "Превью",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = OrangePrimary,
+                    )
+                }
+
                 IconButton(
                     onClick = { showEmojiPicker = !showEmojiPicker },
+                    enabled = !isPreparing,
                     modifier = Modifier.size(36.dp),
                 ) {
                     Icon(
@@ -1124,13 +1420,12 @@ private fun CommentEditor(
                     )
                 }
 
-                // Send button
                 IconButton(
                     onClick = onSubmit,
-                    enabled = commentTextValue.text.isNotBlank() && !isAddingComment,
+                    enabled = commentTextValue.text.isNotBlank() && !isAddingComment && !isPreparing,
                     modifier = Modifier.size(36.dp),
                 ) {
-                    if (isAddingComment) {
+                    if (isAddingComment || isPreparing) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), color = OrangePrimary)
                     } else {
                         Icon(
@@ -1172,15 +1467,23 @@ private fun FormatTextButton(
     }
 }
 
-// ── Comment Item — flat Reddit-style design ───────────────────────────────────
+// ── Comment Item ──────────────────────────────────────────────────────────────
 
 @Composable
-private fun CommentItem(comment: Comment, onReply: (Comment) -> Unit) {
+private fun CommentItem(
+    comment: Comment,
+    isLoggedIn: Boolean,
+    isDeleting: Boolean,
+    onReply: (Comment) -> Unit,
+    onReport: (Comment) -> Unit,
+    onDelete: (Comment) -> Unit,
+) {
+    val depthPadding = (comment.depth * 14).coerceAtMost(56).dp
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
-            .padding(vertical = 8.dp),
+            .padding(start = depthPadding, top = 8.dp, bottom = 8.dp),
     ) {
         // Vertical thread line
         Box(
@@ -1217,6 +1520,21 @@ private fun CommentItem(comment: Comment, onReply: (Comment) -> Unit) {
                         color = TextSecondary,
                     )
                 }
+                comment.ordinal?.let { ordinal ->
+                    Text(
+                        text = "#$ordinal",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary.copy(alpha = 0.7f),
+                    )
+                }
+            }
+            comment.authorCommentCount?.let { count ->
+                Text(
+                    text = "$count комм.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(start = 36.dp, top = 1.dp),
+                )
             }
             Spacer(Modifier.height(6.dp))
 
@@ -1265,16 +1583,49 @@ private fun CommentItem(comment: Comment, onReply: (Comment) -> Unit) {
                 )
             }
 
-            // Compact reply button
-            TextButton(
-                onClick = { onReply(comment) },
-                contentPadding = PaddingValues(horizontal = 0.dp, vertical = 2.dp),
-            ) {
-                Text(
-                    text = "Ответить",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = OrangePrimary,
-                )
+            if (isLoggedIn && (comment.canReply || comment.canReport || comment.canDelete)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (comment.canReply) {
+                        TextButton(
+                            onClick = { onReply(comment) },
+                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                        ) {
+                            Text(
+                                text = "Ответить",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = OrangePrimary,
+                            )
+                        }
+                    }
+                    if (comment.canReport) {
+                        TextButton(
+                            onClick = { onReport(comment) },
+                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                        ) {
+                            Text(
+                                text = "Жалоба",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextSecondary,
+                            )
+                        }
+                    }
+                    if (comment.canDelete) {
+                        TextButton(
+                            onClick = { onDelete(comment) },
+                            enabled = !isDeleting,
+                            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+                        ) {
+                            Text(
+                                text = if (isDeleting) "Удаление..." else "Удалить",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = ErrorRed,
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -1315,28 +1666,50 @@ private fun RatingBar(
     rating: Double,
     userRating: Int,
     isLoggedIn: Boolean,
+    isSubmitting: Boolean,
     onRate: (Int) -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
-            text = String.format("%.1f", rating),
+            text = String.format(Locale.getDefault(), "%.1f", rating),
             style = MaterialTheme.typography.titleLarge,
             color = OrangePrimary,
         )
         Spacer(Modifier.width(8.dp))
         if (isLoggedIn) {
+            val hasUserRating = userRating > 0
+            val displayedRating = if (hasUserRating) {
+                userRating
+            } else {
+                rating.toInt().coerceIn(0, 5)
+            }
             (1..5).forEach { star ->
+                val isFilled = star <= displayedRating
                 IconButton(
                     onClick = { onRate(star) },
+                    enabled = !isSubmitting,
                     modifier = Modifier.size(28.dp),
                 ) {
                     Icon(
-                        imageVector = if (star <= userRating) Icons.Filled.Star else Icons.Filled.StarBorder,
+                        imageVector = if (isFilled) Icons.Filled.Star else Icons.Filled.StarBorder,
                         contentDescription = "Оценка $star",
-                        tint = if (star <= userRating) OrangePrimary else TextSecondary,
+                        tint = when {
+                            isSubmitting -> TextSecondary.copy(alpha = 0.35f)
+                            hasUserRating && isFilled -> OrangePrimary
+                            isFilled -> TextSecondary.copy(alpha = 0.65f)
+                            else -> TextSecondary
+                        },
                         modifier = Modifier.size(24.dp),
                     )
                 }
+            }
+            if (isSubmitting) {
+                Spacer(Modifier.width(6.dp))
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    color = OrangePrimary,
+                    strokeWidth = 2.dp,
+                )
             }
         } else {
             (1..5).forEach { star ->
@@ -1354,31 +1727,42 @@ private fun RatingBar(
 }
 
 private fun formatStatCount(count: Int): String = when {
-    count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000.0)
-    count >= 1_000 -> String.format("%.1fK", count / 1_000.0)
+    count >= 1_000_000 -> String.format(Locale.getDefault(), "%.1fM", count / 1_000_000.0)
+    count >= 1_000 -> String.format(Locale.getDefault(), "%.1fK", count / 1_000.0)
     else -> count.toString()
 }
 
-/**
- * Replaces <!--smile:N--> tags with [:N:] in the visual display
- * so the text field shows compact emoji tokens instead of raw HTML comments.
- */
+private fun String.stripCommentPreview(): String =
+    replace(Regex("""<!--smile:\d+-->.*?<!--/smile-->""", RegexOption.DOT_MATCHES_ALL), " ")
+        .replace(EMOJI_INPUT_TOKEN_REGEX) { match ->
+            if (match.animeVostEmojiIdOrNull() != null) " " else match.value
+        }
+        .replace(Regex("""<[^>]+>"""), " ")
+        .replace("&nbsp;", " ")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&amp;", "&")
+        .replace(Regex("""\s+"""), " ")
+        .trim()
+
+private val EMOJI_INPUT_TOKEN_REGEX = Regex("""<!--smile:(\d+)-->|(?<!\d):(\d{1,3}):""")
+
 private val EmojiTagVisualTransformation = VisualTransformation { text ->
     val original = text.text
-    val regex = Regex("""<!--smile:(\d+)-->""")
     val sb = StringBuilder()
     val originalToTransformed = IntArray(original.length + 1)
     val transformedToOriginal = mutableListOf<Int>()
     var lastEnd = 0
 
-    for (match in regex.findAll(original)) {
+    for (match in EMOJI_INPUT_TOKEN_REGEX.findAll(original)) {
+        val emojiId = match.animeVostEmojiIdOrNull() ?: continue
         val before = original.substring(lastEnd, match.range.first)
         for (i in before.indices) {
             originalToTransformed[lastEnd + i] = sb.length + i
             transformedToOriginal.add(lastEnd + i)
         }
         sb.append(before)
-        val replacement = "[:${match.groupValues[1]}:]"
+        val replacement = "[:$emojiId:]"
         val startOriginal = match.range.first
         for (i in match.value.indices) {
             originalToTransformed[startOriginal + i] = sb.length
@@ -1403,6 +1787,13 @@ private val EmojiTagVisualTransformation = VisualTransformation { text ->
             transformedToOriginal.getOrElse(offset) { original.length }
     }
     TransformedText(AnnotatedString(sb.toString()), offsetMapping)
+}
+
+private fun MatchResult.animeVostEmojiIdOrNull(): String? {
+    val raw = groupValues.getOrNull(1)?.takeIf { it.isNotBlank() }
+        ?: groupValues.getOrNull(2)?.takeIf { it.isNotBlank() }
+    val id = raw?.toIntOrNull() ?: return null
+    return id.takeIf { it in 1..100 || it == 102 }?.toString()
 }
 
 // ── CTA: Watch + Watch-list buttons row ───────────────────────────────────────
@@ -1471,161 +1862,4 @@ private fun ActionButtonsRow(
             )
         }
     }
-}
-
-// ── Watch-list square / full-width button ─────────────────────────────────────
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun WatchStatusSquareButton(
-    currentStatus: AnimeStatus?,
-    onStatusSelected: (AnimeStatus?) -> Unit,
-    modifier: Modifier = Modifier,
-    showLabel: Boolean = false,
-) {
-    var showSheet by remember { mutableStateOf(false) }
-    val isActive = currentStatus != null
-    val clickLabel = if (isActive) "Изменить статус просмотра" else "Добавить в список"
-
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (isActive) OrangeMuted else Bg3)
-            .clickable(onClickLabel = clickLabel) { showSheet = true },
-        contentAlignment = Alignment.Center,
-    ) {
-        if (showLabel) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.padding(horizontal = 16.dp),
-            ) {
-                Icon(
-                    imageVector = if (isActive) Icons.Filled.Bookmarks else Icons.Outlined.Bookmarks,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = if (isActive) OrangePrimary else TextSecondary,
-                )
-                Text(
-                    text = currentStatus?.label ?: "В список",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isActive) OrangePrimary else TextSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        } else {
-            Icon(
-                imageVector = if (isActive) Icons.Filled.Bookmarks else Icons.Outlined.Bookmarks,
-                contentDescription = clickLabel,
-                modifier = Modifier.size(22.dp),
-                tint = if (isActive) OrangePrimary else TextSecondary,
-            )
-        }
-    }
-
-    if (showSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showSheet = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-            containerColor = Bg2,
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-            dragHandle = {
-                Box(
-                    modifier = Modifier
-                        .padding(vertical = 10.dp)
-                        .width(36.dp)
-                        .height(4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(TextSecondary.copy(alpha = 0.3f)),
-                )
-            },
-        ) {
-            Column(modifier = Modifier.padding(bottom = 32.dp)) {
-                Text(
-                    text = "Статус просмотра",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = TextPrimary,
-                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                AnimeStatus.entries.forEach { status ->
-                    val isSelected = status == currentStatus
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                onStatusSelected(if (isSelected) null else status)
-                                showSheet = false
-                            }
-                            .background(if (isSelected) OrangeMuted else androidx.compose.ui.graphics.Color.Transparent)
-                            .padding(horizontal = 20.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = watchStatusIcon(status),
-                            contentDescription = null,
-                            modifier = Modifier.size(22.dp),
-                            tint = if (isSelected) OrangePrimary else TextSecondary,
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text(
-                            text = status.label,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (isSelected) OrangePrimary else TextPrimary,
-                            modifier = Modifier.weight(1f),
-                        )
-                        if (isSelected) {
-                            Icon(
-                                imageVector = Icons.Filled.CheckCircle,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = OrangePrimary,
-                            )
-                        }
-                    }
-                }
-                if (currentStatus != null) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-                        color = Bg4,
-                    )
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                onStatusSelected(null)
-                                showSheet = false
-                            }
-                            .padding(horizontal = 20.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.BookmarkRemove,
-                            contentDescription = null,
-                            modifier = Modifier.size(22.dp),
-                            tint = ErrorRed,
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text(
-                            text = "Убрать из списка",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = ErrorRed,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-private fun watchStatusIcon(status: AnimeStatus) = when (status) {
-    AnimeStatus.WATCHING  -> Icons.Outlined.Visibility
-    AnimeStatus.WATCHED   -> Icons.Outlined.CheckCircle
-    AnimeStatus.DROPPED   -> Icons.Outlined.Cancel
-    AnimeStatus.PLANNED   -> Icons.Outlined.WatchLater
-    AnimeStatus.ON_HOLD   -> Icons.Outlined.PauseCircle
 }

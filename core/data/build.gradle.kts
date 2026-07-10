@@ -31,6 +31,7 @@ room {
 dependencies {
     implementation(project(":core:domain"))
     implementation(project(":core:network"))
+    implementation(project(":animevost-sdk"))
 
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
@@ -53,4 +54,6 @@ dependencies {
 
     implementation(libs.timber)
     implementation(libs.security.crypto)
+
+    testImplementation(kotlin("test"))
 }

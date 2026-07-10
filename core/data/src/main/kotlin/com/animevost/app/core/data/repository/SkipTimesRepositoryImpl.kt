@@ -11,6 +11,7 @@ import com.animevost.app.core.network.alloha.AllohaSkipClient
 import com.animevost.app.core.network.alloha.AllohaSkipType
 import com.animevost.app.core.network.alloha.YummyAnimeSearchClient
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import javax.inject.Inject
@@ -52,6 +53,8 @@ class SkipTimesRepositoryImpl @Inject constructor(
 
         val ranges = try {
             skipClient.loadSkipIntervals(yummyId, episodeNumber)
+        } catch (error: CancellationException) {
+            throw error
         } catch (e: Exception) {
             Timber.w(e, "Alloha skip request failed (yummyId=%d ep=%d)", yummyId, episodeNumber)
             emptyList()

@@ -13,6 +13,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -24,12 +25,13 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.animevost.app.MainViewModel
 import com.animevost.app.UpdateState
 import com.animevost.app.update.UpdateDialog
 import com.animevost.app.feature.auth.LoginScreen
+import com.animevost.app.feature.auth.RegisterScreen
 import com.animevost.app.feature.catalog.FilteredListScreen
 import com.animevost.app.feature.detail.DetailScreen
 import com.animevost.app.feature.home.HomeScreen
@@ -40,12 +42,23 @@ import com.animevost.app.feature.profile.SettingsScreen
 import com.animevost.app.feature.schedule.ScheduleScreen
 
 @Composable
-fun AppNavGraph() {
+fun AppNavGraph(
+    notificationAnimeUrl: String? = null,
+    onNotificationNavigationHandled: () -> Unit = {},
+) {
     val mainViewModel = hiltViewModel<MainViewModel>()
-    val updateState by mainViewModel.updateState.collectAsState()
+    val updateState by mainViewModel.updateState.collectAsStateWithLifecycle()
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
+
+    LaunchedEffect(notificationAnimeUrl) {
+        val url = notificationAnimeUrl ?: return@LaunchedEffect
+        navController.navigate(NavRoutes.animeDetail(url)) {
+            launchSingleTop = true
+        }
+        onNotificationNavigationHandled()
+    }
 
     val showBottomBar = Screen.bottomNavItems.any { screen ->
         currentDestination?.hierarchy?.any { it.route == screen.route } == true
@@ -125,6 +138,15 @@ fun AppNavGraph() {
                     onAnimeClick = { url ->
                         navController.navigate(NavRoutes.animeDetail(url))
                     },
+                    onContinueClick = { item ->
+                        navController.navigate(
+                            NavRoutes.player(
+                                videoId = item.episodeVideoId,
+                                episodeName = item.episodeName,
+                                animeUrl = item.anime.url,
+                            ),
+                        )
+                    },
                 )
             }
             composable(Screen.Schedule.route) {
@@ -198,6 +220,16 @@ fun AppNavGraph() {
             composable(NavRoutes.LOGIN) {
                 LoginScreen(
                     onLoginSuccess = { navController.popBackStack() },
+                    onNavigateToRegister = { navController.navigate(NavRoutes.REGISTER) },
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(NavRoutes.REGISTER) {
+                RegisterScreen(
+                    onRegistrationSuccess = {
+                        navController.popBackStack(NavRoutes.LOGIN, inclusive = true)
+                    },
+                    onNavigateToLogin = { navController.popBackStack() },
                 )
             }
         }

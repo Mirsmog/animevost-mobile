@@ -18,14 +18,21 @@ android {
         versionName = "1.7.12"
     }
 
+    val releaseStoreFile = System.getenv("SIGNING_STORE_FILE")
+
     signingConfigs {
-        create("release") {
-            val storeFilePath = System.getenv("SIGNING_STORE_FILE")
-            if (storeFilePath != null) {
-                storeFile = file(storeFilePath)
-                storePassword = System.getenv("SIGNING_STORE_PASSWORD")
-                keyAlias = System.getenv("SIGNING_KEY_ALIAS")
-                keyPassword = System.getenv("SIGNING_KEY_PASSWORD")
+        if (!releaseStoreFile.isNullOrBlank()) {
+            create("release") {
+                storeFile = file(releaseStoreFile)
+                storePassword = requireNotNull(System.getenv("SIGNING_STORE_PASSWORD")) {
+                    "SIGNING_STORE_PASSWORD is required when SIGNING_STORE_FILE is set"
+                }
+                keyAlias = requireNotNull(System.getenv("SIGNING_KEY_ALIAS")) {
+                    "SIGNING_KEY_ALIAS is required when SIGNING_STORE_FILE is set"
+                }
+                keyPassword = requireNotNull(System.getenv("SIGNING_KEY_PASSWORD")) {
+                    "SIGNING_KEY_PASSWORD is required when SIGNING_STORE_FILE is set"
+                }
             }
         }
     }
@@ -42,10 +49,9 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
-            signingConfig = if (System.getenv("SIGNING_STORE_FILE") != null) {
+            if (!releaseStoreFile.isNullOrBlank()) {
                 signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+                    .also { signingConfig = it }
             }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -76,7 +82,6 @@ dependencies {
     implementation(project(":core:ui"))
     implementation(project(":feature:home"))
     implementation(project(":feature:catalog"))
-    implementation(project(":feature:search"))
     implementation(project(":feature:schedule"))
     implementation(project(":feature:detail"))
     implementation(project(":feature:player"))
@@ -94,6 +99,7 @@ dependencies {
     implementation(libs.activity.compose)
     implementation(libs.core.ktx)
     implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.viewmodel.compose)
 
     implementation(libs.hilt.android)
@@ -109,6 +115,7 @@ dependencies {
     implementation(libs.media3.exoplayer.hls)
 
     implementation(libs.coil.compose)
+    implementation(libs.coil.gif)
 
     implementation(libs.timber)
 

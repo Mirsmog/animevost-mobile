@@ -23,7 +23,7 @@
 ## Возможности
 
 - 🎬 Плеер с жестовым управлением, регулировкой скорости и автопереходом к следующей серии
-- ⏭️ Автопропуск интро и концовки через AniSkip
+- ⏭️ Автопропуск интро и концовки через альтернативный плеер
 - 📋 Списки просмотра «Смотрю», «Просмотрено», «Запланировано», «Брошено»
 - 🗂️ Каталог с фильтрацией по жанру, типу и году
 - 🔍 Поиск по названию
@@ -46,9 +46,15 @@
 ## Сборка из исходников
 
 ```bash
-git clone https://github.com/Mirsmog/animevost-mobile.git
+git clone --recurse-submodules https://github.com/Mirsmog/animevost-mobile.git
 cd animevost-mobile
 ./gradlew assembleDebug
+```
+
+Если репозиторий уже клонирован, инициализируйте SDK отдельно:
+
+```bash
+git submodule update --init --recursive
 ```
 
 Требования: Android 8.0+ (API 26), JDK 17, Android Studio Hedgehog+.

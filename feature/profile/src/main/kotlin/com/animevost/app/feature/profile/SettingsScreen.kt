@@ -22,7 +22,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,7 +37,8 @@ fun SettingsScreen(
     onBack: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
-    val betaFeatures by viewModel.betaFeatures.collectAsState()
+    val betaFeatures by viewModel.betaFeatures.collectAsStateWithLifecycle()
+    val favoriteNotificationsEnabled by viewModel.favoriteNotificationsEnabled.collectAsStateWithLifecycle()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -68,9 +69,59 @@ fun SettingsScreen(
             contentPadding = PaddingValues(bottom = 24.dp),
         ) {
             item {
+                NotificationsSection(
+                    enabled = favoriteNotificationsEnabled,
+                    onEnabledChange = viewModel::setFavoriteNotificationsEnabled,
+                )
+            }
+            item {
                 BetaFeaturesSection(betaFeatures = betaFeatures, onToggle = viewModel::toggle)
             }
         }
+    }
+}
+
+@Composable
+private fun NotificationsSection(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = "Уведомления",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Новые серии избранного",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Text(
+                    text = "Сообщать, когда у аниме из избранного выходит новая серия",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Switch(
+                checked = enabled,
+                onCheckedChange = onEnabledChange,
+            )
+        }
+        Spacer(modifier = Modifier.height(12.dp))
     }
 }
 

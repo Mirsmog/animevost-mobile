@@ -1,10 +1,17 @@
 package com.animevost.app.feature.home
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -59,7 +66,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -97,14 +104,14 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import com.animevost.app.core.ui.R as UiR
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onAnimeClick: (String) -> Unit,
     onNavigateToFilteredList: (filterType: String, filterValue: String, filterLabel: String) -> Unit = { _, _, _ -> },
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.uiState.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
 
@@ -282,7 +289,7 @@ fun HomeScreen(
 
 // ─── Catalog content ──────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CatalogContent(
     state: HomeUiState,
@@ -295,6 +302,7 @@ private fun CatalogContent(
 ) {
     val listState = rememberLazyListState()
     var showSortSheet by remember { mutableStateOf(false) }
+    var filtersVisible by remember { mutableStateOf(true) }
 
     LaunchedEffect(listState, state.animeList.size) {
         snapshotFlow {
@@ -307,6 +315,27 @@ private fun CatalogContent(
             .collect { if (state.canLoadMore && !state.isLoadingMore) onLoadMore() }
     }
 
+    LaunchedEffect(listState) {
+        var previousIndex = listState.firstVisibleItemIndex
+        var previousOffset = listState.firstVisibleItemScrollOffset
+
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .collect { (index, offset) ->
+                val atTop = index == 0 && offset <= 8
+                val scrollingDown = index > previousIndex || (index == previousIndex && offset > previousOffset + 8)
+                val scrollingUp = index < previousIndex || (index == previousIndex && offset < previousOffset - 4)
+
+                when {
+                    atTop -> filtersVisible = true
+                    scrollingDown -> filtersVisible = false
+                    scrollingUp -> filtersVisible = true
+                }
+
+                previousIndex = index
+                previousOffset = offset
+            }
+    }
+
     val rows = remember(state.animeList) { state.animeList.chunked(2) }
 
     PullToRefreshBox(
@@ -314,12 +343,24 @@ private fun CatalogContent(
         onRefresh = onRefresh,
         modifier = Modifier.fillMaxSize(),
     ) {
-        LazyColumn(
-            state = listState,
-            contentPadding = PaddingValues(bottom = 80.dp),
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            stickyHeader(key = "filter_header") {
+        Column(modifier = Modifier.fillMaxSize()) {
+            AnimatedVisibility(
+                visible = filtersVisible,
+                enter = slideInVertically(
+                    animationSpec = tween(durationMillis = 180),
+                    initialOffsetY = { -it },
+                ) + expandVertically(
+                    animationSpec = tween(durationMillis = 180),
+                    expandFrom = Alignment.Top,
+                ) + fadeIn(animationSpec = tween(durationMillis = 120)),
+                exit = slideOutVertically(
+                    animationSpec = tween(durationMillis = 160),
+                    targetOffsetY = { -it },
+                ) + shrinkVertically(
+                    animationSpec = tween(durationMillis = 160),
+                    shrinkTowards = Alignment.Top,
+                ) + fadeOut(animationSpec = tween(durationMillis = 100)),
+            ) {
                 FilterBar(
                     selectedSort = state.sort,
                     sortAscending = state.sortAscending,
@@ -329,20 +370,27 @@ private fun CatalogContent(
                     onSectionClick = onNavigateToFilteredList,
                 )
             }
-            items(rows, key = { it.first().id }) { row ->
-                AnimeGridRow(items = row, onAnimeClick = onAnimeClick)
-            }
-            if (state.isLoadingMore) {
-                item(key = "loading_more") {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(28.dp),
-                            color = MaterialTheme.colorScheme.primary,
-                            strokeWidth = 2.dp,
-                        )
+
+            LazyColumn(
+                state = listState,
+                contentPadding = PaddingValues(bottom = 80.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                items(rows, key = { it.first().id }) { row ->
+                    AnimeGridRow(items = row, onAnimeClick = onAnimeClick)
+                }
+                if (state.isLoadingMore) {
+                    item(key = "loading_more") {
+                        Box(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(28.dp),
+                                color = MaterialTheme.colorScheme.primary,
+                                strokeWidth = 2.dp,
+                            )
+                        }
                     }
                 }
             }
@@ -702,7 +750,7 @@ private fun FilterBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.background)
-            .padding(vertical = 6.dp),
+            .padding(top = 0.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val fadeBrush = Brush.horizontalGradient(

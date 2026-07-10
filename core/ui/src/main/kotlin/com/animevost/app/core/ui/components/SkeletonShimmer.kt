@@ -108,30 +108,4 @@ fun HomeShimmer(modifier: Modifier = Modifier) {
 
 // ── Horizontal list item skeleton ─────────────────────────────
 
-@Composable
-fun HorizontalCardShimmer(modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-    ) {
-        ShimmerBox(modifier = Modifier.width(56.dp).height(80.dp), radius = 6)
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            ShimmerBox(modifier = Modifier.fillMaxWidth(0.8f).height(14.dp))
-            Spacer(modifier = Modifier.height(6.dp))
-            ShimmerBox(modifier = Modifier.fillMaxWidth(0.5f).height(12.dp))
-        }
-    }
-}
-
 // ── Generic list of horizontal shimmer items ──────────────────
-
-@Composable
-fun ListShimmer(count: Int = 6, modifier: Modifier = Modifier) {
-    Column(modifier = modifier) {
-        repeat(count) {
-            HorizontalCardShimmer()
-        }
-    }
-}

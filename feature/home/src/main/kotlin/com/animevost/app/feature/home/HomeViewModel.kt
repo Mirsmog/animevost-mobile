@@ -42,6 +42,7 @@ class HomeViewModel @Inject constructor(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private var searchJob: Job? = null
+    private var searchLoadMoreJob: Job? = null
 
     init {
         // Keep HomeUiState's pagination fields in sync with base class flows.
@@ -85,10 +86,8 @@ class HomeViewModel @Inject constructor(
 
     fun onEvent(event: HomeEvent) {
         when (event) {
-            HomeEvent.LoadInitial           -> loadInitial()
             HomeEvent.LoadMore              -> loadMore()
             HomeEvent.Refresh               -> refresh()
-            HomeEvent.ClearError            -> _error.value = null
             is HomeEvent.SelectSort         -> selectSort(event.sort)
             is HomeEvent.SelectType         -> selectType(event.type)
             HomeEvent.ToggleSearch          -> toggleSearch()
@@ -140,23 +139,41 @@ class HomeViewModel @Inject constructor(
                 hasSearched = false,
                 searchError = null,
                 isSearchLoading = false,
+                isSearchLoadingMore = false,
+                canSearchLoadMore = false,
+                searchPage = 1,
             )
         }
-        if (!active) searchJob?.cancel()
+        if (!active) {
+            searchJob?.cancel()
+            searchLoadMoreJob?.cancel()
+        }
     }
 
     private fun onSearchQueryChanged(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
         searchJob?.cancel()
+        searchLoadMoreJob?.cancel()
+        _uiState.update { it.copy(isSearchLoading = false, isSearchLoadingMore = false) }
         if (query.isBlank() || query.trim().length < MIN_QUERY_LENGTH) {
-            _uiState.update { it.copy(searchResults = emptyList(), hasSearched = false, searchError = null) }
+            _uiState.update {
+                it.copy(
+                    searchResults = emptyList(),
+                    hasSearched = false,
+                    searchError = null,
+                    canSearchLoadMore = false,
+                    searchPage = 1,
+                )
+            }
             return
         }
+        val requestedQuery = query
         searchJob = viewModelScope.launch {
             delay(DEBOUNCE_MS)
             _uiState.update { it.copy(isSearchLoading = true, searchError = null) }
-            searchAnimeUseCase(query, 1)
+            searchAnimeUseCase(requestedQuery, 1)
                 .onSuccess { items ->
+                    if (_uiState.value.searchQuery != requestedQuery) return@onSuccess
                     _uiState.update {
                         it.copy(
                             searchResults = items,
@@ -168,6 +185,7 @@ class HomeViewModel @Inject constructor(
                     }
                 }
                 .onError { _, msg ->
+                    if (_uiState.value.searchQuery != requestedQuery) return@onError
                     _uiState.update { it.copy(isSearchLoading = false, searchError = msg ?: "Ошибка поиска") }
                 }
         }
@@ -177,10 +195,12 @@ class HomeViewModel @Inject constructor(
         val s = _uiState.value
         if (s.isSearchLoading || s.isSearchLoadingMore || !s.canSearchLoadMore || s.searchQuery.isBlank()) return
         val nextPage = s.searchPage + 1
+        val requestedQuery = s.searchQuery
         _uiState.update { it.copy(isSearchLoadingMore = true) }
-        viewModelScope.launch {
-            searchAnimeUseCase(s.searchQuery, nextPage)
+        searchLoadMoreJob = viewModelScope.launch {
+            searchAnimeUseCase(requestedQuery, nextPage)
                 .onSuccess { items ->
+                    if (_uiState.value.searchQuery != requestedQuery) return@onSuccess
                     _uiState.update {
                         it.copy(
                             searchResults = (it.searchResults + items).distinctBy { a -> a.id },
@@ -191,6 +211,7 @@ class HomeViewModel @Inject constructor(
                     }
                 }
                 .onError { _, msg ->
+                    if (_uiState.value.searchQuery != requestedQuery) return@onError
                     _uiState.update { it.copy(isSearchLoadingMore = false, searchError = msg ?: "Ошибка загрузки") }
                 }
         }

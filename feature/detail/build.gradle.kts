@@ -30,7 +30,6 @@ android {
 
 dependencies {
     implementation(project(":core:domain"))
-    implementation(project(":core:data"))
     implementation(project(":core:ui"))
 
     implementation(platform(libs.compose.bom))
@@ -49,7 +48,10 @@ dependencies {
     implementation(libs.coroutines.core)
 
     implementation(libs.lifecycle.runtime.ktx)
+    implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.viewmodel.compose)
 
     debugImplementation(libs.compose.ui.tooling)
+
+    testImplementation(kotlin("test"))
 }

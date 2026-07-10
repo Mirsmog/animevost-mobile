@@ -4,7 +4,7 @@ import com.animevost.app.core.domain.model.User
 import com.animevost.app.core.domain.repository.AuthRepository
 import javax.inject.Inject
 
-/** Registers a new account and returns the created [User] on success. */
+/** Registers a new account and returns its authentication state. */
 class RegisterUseCase @Inject constructor(
     private val repository: AuthRepository,
 ) {

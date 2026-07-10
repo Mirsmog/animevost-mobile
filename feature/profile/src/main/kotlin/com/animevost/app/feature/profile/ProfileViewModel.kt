@@ -17,9 +17,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -29,26 +33,18 @@ data class ProfileUiState(
     val favorites: List<AnimePreview> = emptyList(),
     val history: List<AnimePreview> = emptyList(),
     val watchLists: Map<AnimeStatus, List<AnimePreview>> = emptyMap(),
-    val selectedTab: ProfileTab = ProfileTab.FAVORITES,
     val isLoading: Boolean = false,
     val error: String? = null,
     val watchStatusEnabled: Boolean = false,
 )
 
-enum class ProfileTab(val title: String) {
-    FAVORITES("Избранное"),
-    HISTORY("История"),
-    LISTS("Списки"),
-}
-
 sealed interface ProfileEvent {
-    data object LoadProfile : ProfileEvent
-    data class SelectTab(val tab: ProfileTab) : ProfileEvent
     data object Logout : ProfileEvent
     data object Refresh : ProfileEvent
 }
 
 @HiltViewModel
+@OptIn(ExperimentalCoroutinesApi::class)
 class ProfileViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val favoriteRepository: FavoriteRepository,
@@ -64,15 +60,15 @@ class ProfileViewModel @Inject constructor(
     init {
         // Re-load profile (user info + history) on every auth state change
         viewModelScope.launch {
-            authRepository.isLoggedInFlow.collect { loadProfile() }
+            authRepository.isLoggedInFlow.collectLatest { refreshProfile() }
         }
-        // Reactive favorites preview — re-subscribes on login/logout
+        // Reactive favorites preview, with remote refresh cancelled immediately on logout.
         viewModelScope.launch {
             authRepository.isLoggedInFlow
                 .flatMapLatest { isLoggedIn ->
                     if (isLoggedIn) {
-                        launch { favoriteRepository.loadRemoteFavorites() }
                         favoriteRepository.getAllFavorites()
+                            .onStart { favoriteRepository.loadRemoteFavorites() }
                     } else {
                         flowOf(emptyList())
                     }
@@ -99,35 +95,43 @@ class ProfileViewModel @Inject constructor(
 
     fun onEvent(event: ProfileEvent) {
         when (event) {
-            is ProfileEvent.LoadProfile -> loadProfile()
-            is ProfileEvent.SelectTab -> _uiState.update { it.copy(selectedTab = event.tab) }
             is ProfileEvent.Logout -> logout()
             is ProfileEvent.Refresh -> loadProfile()
         }
     }
 
     private fun loadProfile() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
-            try {
-                val isLoggedIn = authRepository.isLoggedIn()
-                val user = if (isLoggedIn) authRepository.getCurrentUser() else null
-                val history = try { getWatchHistoryUseCase() } catch (_: Exception) { emptyList() }
-                _uiState.update {
-                    it.copy(
-                        user = user,
-                        isLoggedIn = isLoggedIn,
-                        history = history,
-                        isLoading = false,
-                    )
-                }
-            } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        error = e.message ?: "Ошибка загрузки профиля",
-                    )
-                }
+        viewModelScope.launch { refreshProfile() }
+    }
+
+    private suspend fun refreshProfile() {
+        _uiState.update { it.copy(isLoading = true, error = null) }
+        try {
+            val isLoggedIn = authRepository.isLoggedIn()
+            val user = if (isLoggedIn) authRepository.getCurrentUser() else null
+            val history = try {
+                getWatchHistoryUseCase()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                emptyList()
+            }
+            _uiState.update {
+                it.copy(
+                    user = user,
+                    isLoggedIn = isLoggedIn,
+                    history = history,
+                    isLoading = false,
+                )
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (e: Exception) {
+            _uiState.update {
+                it.copy(
+                    isLoading = false,
+                    error = e.message ?: "Ошибка загрузки профиля",
+                )
             }
         }
     }
@@ -136,6 +140,8 @@ class ProfileViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 logoutUseCase()
+            } catch (error: CancellationException) {
+                throw error
             } catch (_: Exception) {
                 // Server-side logout is best-effort; always clear local state below
             }

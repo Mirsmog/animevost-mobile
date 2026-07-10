@@ -1,11 +1,6 @@
 package com.animevost.app.core.network.di
 
-import com.animevost.app.core.network.AnimeVostApi
-import com.animevost.app.core.network.BaseUrlInterceptor
-import com.animevost.app.core.network.CookieStorage
-import com.animevost.app.core.network.DleEndpoints
-import com.animevost.app.core.network.HtmlFetcher
-import com.animevost.app.core.network.SessionCookieJar
+import com.animevost.app.core.network.BuildConfig
 import com.animevost.app.core.network.alloha.AllohaApi
 import com.animevost.app.core.network.alloha.AllohaIframeFetcher
 import com.animevost.app.core.network.alloha.AllohaSkipClient
@@ -23,7 +18,6 @@ import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Named
 import javax.inject.Singleton
 
@@ -35,64 +29,25 @@ object NetworkModule {
     @Singleton
     fun provideLoggingInterceptor(): HttpLoggingInterceptor {
         return HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = if (BuildConfig.DEBUG) {
+                HttpLoggingInterceptor.Level.BODY
+            } else {
+                HttpLoggingInterceptor.Level.NONE
+            }
         }
     }
 
     @Provides
     @Singleton
-    fun provideSessionCookieJar(storage: CookieStorage): SessionCookieJar {
-        return SessionCookieJar(storage)
-    }
-
-    @Provides
-    @Singleton
-    @Named("resolver")
-    fun provideResolverOkHttpClient(): OkHttpClient =
-        OkHttpClient.Builder()
-            .connectTimeout(4, TimeUnit.SECONDS)
-            .readTimeout(4, TimeUnit.SECONDS)
-            .build()
-
-    @Provides
-    @Singleton
-    fun provideOkHttpClient(
+    @Named("rss")
+    fun provideRssOkHttpClient(
         loggingInterceptor: HttpLoggingInterceptor,
-        cookieJar: SessionCookieJar,
-        baseUrlInterceptor: BaseUrlInterceptor,
-    ): OkHttpClient {
-        return OkHttpClient.Builder()
-            .cookieJar(cookieJar)
-            .addInterceptor(baseUrlInterceptor)
+    ): OkHttpClient =
+        OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
             .build()
-    }
-
-    @Provides
-    @Singleton
-    fun provideRetrofit(client: OkHttpClient): Retrofit {
-        return Retrofit.Builder()
-            .baseUrl(DleEndpoints.BASE_URL)
-            .client(client)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-    }
-
-    @Provides
-    @Singleton
-    fun provideAnimeVostApi(retrofit: Retrofit): AnimeVostApi {
-        return retrofit.create(AnimeVostApi::class.java)
-    }
-
-    @Provides
-    @Singleton
-    fun provideHtmlFetcher(client: OkHttpClient): HtmlFetcher {
-        return HtmlFetcher(client)
-    }
-
-    // ---------------------------------------------------------- Alloha / yummyanime
 
     @Provides
     @Singleton
@@ -100,21 +55,28 @@ object NetworkModule {
     fun provideAllohaOkHttpClient(
         loggingInterceptor: HttpLoggingInterceptor,
     ): OkHttpClient {
-        // Dedicated client: must NOT use BaseUrlInterceptor (which rewrites the
-        // host to the AnimeVost mirror) and must persist cookies across the
-        // yummyanime → iframe → POST chain.
         val cookieJar = object : CookieJar {
-            private val store = ConcurrentHashMap<String, List<Cookie>>()
+            private val lock = Any()
+            private val store = mutableListOf<Cookie>()
+
             override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-                store[url.host] = cookies
+                val now = System.currentTimeMillis()
+                synchronized(lock) {
+                    cookies.forEach { cookie ->
+                        store.removeAll {
+                            it.name == cookie.name && it.domain == cookie.domain && it.path == cookie.path
+                        }
+                        if (cookie.expiresAt > now) store += cookie
+                    }
+                    store.removeAll { it.expiresAt <= now }
+                }
             }
-            override fun loadForRequest(url: HttpUrl): List<Cookie> =
-                store[url.host].orEmpty()
+
+            override fun loadForRequest(url: HttpUrl): List<Cookie> = synchronized(lock) {
+                store.removeAll { it.expiresAt <= System.currentTimeMillis() }
+                store.filter { it.matches(url) }
+            }
         }
-        // yummyanime DLE rejects AJAX without a Referer header (returns
-        // {"success":false}). Add it + a real-browser UA on every request that
-        // doesn't already set them. Alloha bnsi requests already supply their
-        // own headers via AllohaHeaders, so we leave those untouched.
         val browserHeadersInterceptor = okhttp3.Interceptor { chain ->
             val req = chain.request()
             val builder = req.newBuilder()

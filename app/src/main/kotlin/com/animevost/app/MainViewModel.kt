@@ -7,6 +7,7 @@ import com.animevost.app.core.domain.repository.UpdateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
@@ -38,6 +39,8 @@ class MainViewModel @Inject constructor(
                 if (info != null) {
                     _updateState.value = UpdateState.Available(info)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Timber.w(e, "Update check error")
             }
@@ -52,6 +55,8 @@ class MainViewModel @Inject constructor(
                     _updateState.value = UpdateState.Downloading(progress)
                 }
                 _updateState.value = UpdateState.ReadyToInstall(file)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Timber.e(e, "Download failed")
                 _updateState.value = UpdateState.Available(info)

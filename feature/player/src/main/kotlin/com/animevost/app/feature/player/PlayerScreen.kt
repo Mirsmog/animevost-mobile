@@ -37,7 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -46,6 +46,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,8 +76,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
-private enum class SeekSide { BACK, FORWARD }
-
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(
@@ -85,17 +84,18 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     val activity = context as Activity
-    val state by viewModel.uiState.collectAsState()
-    val activeSkip by viewModel.activeSkip.collectAsState()
-    val skipIntervals by viewModel.skipIntervals.collectAsState()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val activeSkip by viewModel.activeSkip.collectAsStateWithLifecycle()
+    val skipIntervals by viewModel.skipIntervals.collectAsStateWithLifecycle()
     val lifecycleOwner = LocalLifecycleOwner.current
     val haptic = LocalHapticFeedback.current
 
     // ── Playback state ───────────────────────────────────────────
     var isPlaying by remember { mutableStateOf(true) }
     var isBuffering by remember { mutableStateOf(false) }
-    var currentPosition by remember { mutableLongStateOf(0L) }
+    var currentPosition by rememberSaveable { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
+    var savedPositionEpisodeId by rememberSaveable { mutableStateOf<String?>(null) }
 
     // ── UI state ─────────────────────────────────────────────────
     var controlsVisible by remember { mutableStateOf(true) }
@@ -148,11 +148,17 @@ fun PlayerScreen(
         val url = state.currentVideoUrl ?: return@LaunchedEffect
         val episodeId = state.currentEpisode?.videoId
         val isSameEpisode = previousVideoId != null && previousVideoId == episodeId
-        val savedPos = exoPlayer.currentPosition
+        val restoredPos = currentPosition.takeIf { savedPositionEpisodeId == episodeId } ?: 0L
+        val savedPos = maxOf(exoPlayer.currentPosition, restoredPos)
         exoPlayer.setMediaItem(MediaItem.fromUri(url))
         exoPlayer.prepare()
-        if (isSameEpisode && savedPos > 0) exoPlayer.seekTo(savedPos)
+        if ((isSameEpisode || restoredPos > 0L) && savedPos > 0L) exoPlayer.seekTo(savedPos)
         exoPlayer.playWhenReady = true
+        if (savedPositionEpisodeId != episodeId) {
+            currentPosition = 0L
+            duration = 0L
+        }
+        savedPositionEpisodeId = episodeId
         previousVideoId = episodeId
         showAutoNext = false
     }
@@ -268,44 +274,44 @@ fun PlayerScreen(
                 .pointerInput(isSpeedLocked, lockedSpeed) {
                     kotlinx.coroutines.coroutineScope {
                         launch {
-                            var lastTapUpMs = 0L
+                            var suppressNextTap = false
                             detectTapGestures(
-                                onPress = { offset ->
-                                    val pressTime = System.currentTimeMillis()
-                                    val isSecondTap = pressTime - lastTapUpMs < 400 && lastTapUpMs > 0
-                                    if (isSecondTap) {
-                                        lastTapUpMs = 0L
-                                        val releasedQuickly =
-                                            kotlinx.coroutines.withTimeoutOrNull(200L) {
-                                                tryAwaitRelease()
-                                            } != null
-                                        if (!releasedQuickly) {
-                                            val boostSpeed = if (isSpeedLocked) {
-                                                (lockedSpeed * 2f).coerceAtMost(5f)
-                                            } else 2.0f
-                                            try {
-                                                isSpeedBoosting = true
-                                                exoPlayer.setPlaybackParameters(PlaybackParameters(boostSpeed))
-                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                tryAwaitRelease()
-                                            } finally {
-                                                isSpeedBoosting = false
-                                                exoPlayer.setPlaybackParameters(
-                                                    PlaybackParameters(if (isSpeedLocked) lockedSpeed else 1.0f),
-                                                )
-                                            }
+                                onPress = {
+                                    suppressNextTap = false
+                                    val releasedBeforeBoost =
+                                        kotlinx.coroutines.withTimeoutOrNull(SPEED_BOOST_HOLD_DELAY_MS) {
+                                            tryAwaitRelease()
+                                        } != null
+                                    if (!releasedBeforeBoost) {
+                                        suppressNextTap = true
+                                        val boostSpeed = if (isSpeedLocked) {
+                                            (lockedSpeed * 2f).coerceAtMost(5f)
+                                        } else {
+                                            2.0f
                                         }
-                                    } else {
-                                        tryAwaitRelease()
-                                        lastTapUpMs = System.currentTimeMillis()
+                                        try {
+                                            isSpeedBoosting = true
+                                            exoPlayer.setPlaybackParameters(PlaybackParameters(boostSpeed))
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            tryAwaitRelease()
+                                        } finally {
+                                            isSpeedBoosting = false
+                                            exoPlayer.setPlaybackParameters(
+                                                PlaybackParameters(if (isSpeedLocked) lockedSpeed else 1.0f),
+                                            )
+                                        }
                                     }
                                 },
                                 onTap = {
-                                    if (!isSpeedBoosting) controlsVisible = !controlsVisible
+                                    if (suppressNextTap) {
+                                        suppressNextTap = false
+                                    } else {
+                                        controlsVisible = !controlsVisible
+                                    }
                                 },
                                 onDoubleTap = { offset ->
                                     if (isSpeedBoosting) return@detectTapGestures
-                                    lastTapUpMs = 0L
+                                    suppressNextTap = false
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     if (offset.x < size.width / 2) seekAccum -= 10_000L
                                     else seekAccum += 10_000L
@@ -535,7 +541,7 @@ fun PlayerScreen(
             visible = isSpeedBoosting || (isSpeedLocked && controlsVisible),
             enter = fadeIn(tween(100)),
             exit = fadeOut(tween(200)),
-            modifier = Modifier.align(Alignment.TopCenter).padding(top = 72.dp),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 32.dp),
         ) {
             Box {
                 Row(
@@ -602,3 +608,5 @@ fun PlayerScreen(
         }
     }
 }
+
+private const val SPEED_BOOST_HOLD_DELAY_MS = 300L

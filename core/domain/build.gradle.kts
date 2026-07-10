@@ -25,4 +25,7 @@ dependencies {
     implementation(libs.coroutines.core)
     implementation(libs.lifecycle.viewmodel.ktx)
     implementation("javax.inject:javax.inject:1")
+
+    testImplementation(kotlin("test"))
+    testImplementation(libs.coroutines.test)
 }

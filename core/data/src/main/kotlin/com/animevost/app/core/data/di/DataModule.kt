@@ -12,6 +12,7 @@ import com.animevost.app.core.data.db.SkipTimeDao
 import com.animevost.app.core.data.db.UserListDao
 import com.animevost.app.core.data.db.WatchProgressDao
 import com.animevost.app.core.data.db.YummyMappingDao
+import com.animevost.app.core.data.download.EpisodeDownloader
 import com.animevost.app.core.data.repository.FeatureFlagsRepositoryImpl
 import com.animevost.app.core.data.repository.AnimeRepositoryImpl
 import com.animevost.app.core.data.repository.UpdateRepositoryImpl
@@ -19,27 +20,28 @@ import com.animevost.app.core.data.repository.AuthRepositoryImpl
 import com.animevost.app.core.data.repository.CommentRepositoryImpl
 import com.animevost.app.core.data.repository.FavoriteRepositoryImpl
 import com.animevost.app.core.data.repository.HistoryRepositoryImpl
+import com.animevost.app.core.data.repository.NotificationPreferencesRepositoryImpl
 import com.animevost.app.core.data.repository.ScheduleRepositoryImpl
-import com.animevost.app.core.data.repository.SharedPrefsCookieStorage
 import com.animevost.app.core.data.repository.SkipTimesRepositoryImpl
 import com.animevost.app.core.data.repository.UserListRepositoryImpl
 import com.animevost.app.core.data.repository.UserPreferencesRepositoryImpl
 import com.animevost.app.core.data.repository.WatchProgressRepositoryImpl
 import com.animevost.app.core.data.repository.VideoRepositoryImpl
 import com.animevost.app.core.domain.repository.FeatureFlagsRepository
+import com.animevost.app.core.domain.repository.EpisodeDownloadManager
 import com.animevost.app.core.domain.repository.AnimeRepository
 import com.animevost.app.core.domain.repository.UpdateRepository
 import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.CommentRepository
 import com.animevost.app.core.domain.repository.FavoriteRepository
 import com.animevost.app.core.domain.repository.HistoryRepository
+import com.animevost.app.core.domain.repository.NotificationPreferencesRepository
 import com.animevost.app.core.domain.repository.ScheduleRepository
 import com.animevost.app.core.domain.repository.SkipTimesRepository
 import com.animevost.app.core.domain.repository.UserListRepository
 import com.animevost.app.core.domain.repository.UserPreferencesRepository
 import com.animevost.app.core.domain.repository.WatchProgressRepository
 import com.animevost.app.core.domain.repository.VideoRepository
-import com.animevost.app.core.network.CookieStorage
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -90,6 +92,10 @@ abstract class DataBindsModule {
 
     @Binds
     @Singleton
+    abstract fun bindEpisodeDownloadManager(impl: EpisodeDownloader): EpisodeDownloadManager
+
+    @Binds
+    @Singleton
     abstract fun bindAnimeRepository(impl: AnimeRepositoryImpl): AnimeRepository
 
     @Binds
@@ -114,15 +120,17 @@ abstract class DataBindsModule {
 
     @Binds
     @Singleton
+    abstract fun bindNotificationPreferencesRepository(
+        impl: NotificationPreferencesRepositoryImpl,
+    ): NotificationPreferencesRepository
+
+    @Binds
+    @Singleton
     abstract fun bindScheduleRepository(impl: ScheduleRepositoryImpl): ScheduleRepository
 
     @Binds
     @Singleton
     abstract fun bindWatchProgressRepository(impl: WatchProgressRepositoryImpl): WatchProgressRepository
-
-    @Binds
-    @Singleton
-    abstract fun bindCookieStorage(impl: SharedPrefsCookieStorage): CookieStorage
 
     @Binds
     @Singleton

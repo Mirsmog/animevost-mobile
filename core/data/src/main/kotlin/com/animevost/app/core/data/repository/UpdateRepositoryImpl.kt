@@ -6,12 +6,14 @@ import com.animevost.app.core.domain.model.UpdateInfo
 import com.animevost.app.core.domain.repository.UpdateRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import timber.log.Timber
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 
@@ -49,7 +51,10 @@ class UpdateRepositoryImpl @Inject constructor(
                 for (i in 0 until assets.length()) {
                     val asset = assets.getJSONObject(i)
                     val name = asset.getString("name")
-                    if (name.contains(preferredAbi, ignoreCase = true)) {
+                    if (
+                        name.endsWith(".apk", ignoreCase = true) &&
+                        name.contains(preferredAbi, ignoreCase = true)
+                    ) {
                         downloadUrl = asset.getString("browser_download_url")
                         break
                     }
@@ -58,7 +63,11 @@ class UpdateRepositoryImpl @Inject constructor(
                 if (downloadUrl == null) {
                     for (i in 0 until assets.length()) {
                         val asset = assets.getJSONObject(i)
-                        if (asset.getString("name").contains("universal", ignoreCase = true)) {
+                        val name = asset.getString("name")
+                        if (
+                            name.endsWith(".apk", ignoreCase = true) &&
+                            name.contains("universal", ignoreCase = true)
+                        ) {
                             downloadUrl = asset.getString("browser_download_url")
                             break
                         }
@@ -66,6 +75,8 @@ class UpdateRepositoryImpl @Inject constructor(
                 }
 
                 downloadUrl?.let { UpdateInfo(versionName = tagName, downloadUrl = it) }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Timber.w(e, "Update check failed")
                 null
@@ -75,41 +86,58 @@ class UpdateRepositoryImpl @Inject constructor(
     override suspend fun downloadUpdate(url: String, onProgress: (Int) -> Unit): File =
         withContext(Dispatchers.IO) {
             val request = Request.Builder().url(url).build()
-            val response = client.newCall(request).execute()
-            val body = response.body ?: error("Empty response body for APK download")
-            val contentLength = body.contentLength()
             val outFile = File(context.cacheDir, "animevost-update.apk")
+            val tempFile = File(context.cacheDir, "animevost-update.apk.part")
+            tempFile.delete()
 
-            body.byteStream().use { input ->
-                outFile.outputStream().use { output ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    var bytesRead = 0L
-                    var read: Int
-                    while (input.read(buffer).also { read = it } != -1) {
-                        output.write(buffer, 0, read)
-                        bytesRead += read
-                        if (contentLength > 0) {
-                            onProgress((bytesRead * 100 / contentLength).toInt())
+            try {
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        throw IOException("APK download failed: HTTP ${response.code}")
+                    }
+                    val body = response.body ?: throw IOException("Empty response body for APK download")
+                    val contentLength = body.contentLength()
+                    var totalBytesRead = 0L
+
+                    body.byteStream().use { input ->
+                        tempFile.outputStream().use { output ->
+                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                            var read: Int
+                            while (input.read(buffer).also { read = it } != -1) {
+                                output.write(buffer, 0, read)
+                                totalBytesRead += read
+                                if (contentLength > 0) {
+                                    onProgress((totalBytesRead * 100 / contentLength).toInt())
+                                }
+                            }
                         }
                     }
+
+                    if (contentLength > 0 && totalBytesRead != contentLength) {
+                        throw IOException(
+                            "Incomplete APK download: expected $contentLength bytes, got $totalBytesRead",
+                        )
+                    }
                 }
+
+                if (tempFile.length() == 0L) {
+                    throw IOException("Downloaded APK is empty")
+                }
+                outFile.delete()
+                if (!tempFile.renameTo(outFile)) {
+                    throw IOException("Could not finalize downloaded APK")
+                }
+                onProgress(100)
+                outFile
+            } catch (error: Exception) {
+                tempFile.delete()
+                throw error
             }
-            outFile
         }
 
     /** Returns true when [remote] version string is strictly greater than [current]. */
-    private fun isNewer(remote: String, current: String): Boolean {
-        val r = remote.split(".").mapNotNull { it.toIntOrNull() }
-        val c = current.split(".").mapNotNull { it.toIntOrNull() }
-        val len = maxOf(r.size, c.size)
-        for (i in 0 until len) {
-            val rv = r.getOrElse(i) { 0 }
-            val cv = c.getOrElse(i) { 0 }
-            if (rv > cv) return true
-            if (rv < cv) return false
-        }
-        return false
-    }
+    private fun isNewer(remote: String, current: String): Boolean =
+        isNewerVersion(remote, current)
 
     private fun preferredAbi(): String {
         val supported = Build.SUPPORTED_ABIS.toSet()

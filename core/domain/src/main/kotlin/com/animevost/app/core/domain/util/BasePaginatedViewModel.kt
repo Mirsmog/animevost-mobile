@@ -33,6 +33,7 @@ abstract class BasePaginatedViewModel<T> : ViewModel() {
 
     protected var currentPage = 1
     private var loadInitialJob: Job? = null
+    private var loadMoreJob: Job? = null
 
     /**
      * Fetch items for the given [page]. Return the list of items.
@@ -50,10 +51,12 @@ abstract class BasePaginatedViewModel<T> : ViewModel() {
     /** Reset to page 1 and load fresh data, cancelling any in-flight load. */
     protected fun loadInitial() {
         loadInitialJob?.cancel()
+        loadMoreJob?.cancel()
         currentPage = 1
         _hasMore.value = true
         _error.value = null
         _isLoading.value = true
+        _isLoadingMore.value = false
         loadInitialJob = viewModelScope.launch {
             try {
                 val result = fetchPage(currentPage)
@@ -72,13 +75,15 @@ abstract class BasePaginatedViewModel<T> : ViewModel() {
     /** Cancel any in-flight initial load and reset the loading flag. */
     protected fun cancelLoad() {
         loadInitialJob?.cancel()
+        loadMoreJob?.cancel()
         _isLoading.value = false
+        _isLoadingMore.value = false
     }
 
     fun loadMore() {
         if (_isLoading.value || _isLoadingMore.value || !_hasMore.value) return
         _isLoadingMore.value = true
-        viewModelScope.launch {
+        loadMoreJob = viewModelScope.launch {
             try {
                 val result = fetchPage(currentPage + 1)
                 if (result.isNotEmpty()) {

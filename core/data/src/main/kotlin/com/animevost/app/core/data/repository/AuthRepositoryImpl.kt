@@ -7,10 +7,10 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.animevost.app.core.domain.model.User
 import com.animevost.app.core.domain.repository.AuthRepository
-import com.animevost.app.core.network.AnimeVostApi
-import com.animevost.app.core.network.DleEndpoints
-import com.animevost.app.core.network.HtmlFetcher
-import com.animevost.app.core.network.SessionCookieJar
+import com.animevost.sdk.AnimeVostClient
+import com.animevost.sdk.error.AnimeVostAuthException
+import com.animevost.sdk.error.AnimeVostRegistrationException
+import com.animevost.sdk.model.RegistrationRequest
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,9 +21,7 @@ import javax.inject.Singleton
 
 @Singleton
 class AuthRepositoryImpl @Inject constructor(
-    private val api: AnimeVostApi,
-    private val htmlFetcher: HtmlFetcher,
-    private val cookieJar: SessionCookieJar,
+    private val client: AnimeVostClient,
     private val dataStore: DataStore<Preferences>,
 ) : AuthRepository {
 
@@ -33,71 +31,81 @@ class AuthRepositoryImpl @Inject constructor(
         val KEY_AVATAR_URL = stringPreferencesKey("auth_avatar_url")
     }
 
-    // Initialise synchronously from the cookie jar so the first emission is correct
-    private val _isLoggedInFlow = MutableStateFlow(
-        cookieJar.getCookieValueAnyAnimevost("dle_user_id")
-            .let { id -> id != null && id != "deleted" },
-    )
+    private val _isLoggedInFlow = MutableStateFlow(client.isLoggedIn())
     override val isLoggedInFlow: Flow<Boolean> = _isLoggedInFlow.asStateFlow()
 
     override suspend fun login(username: String, password: String): User {
-        val body = api.login(username, password).string()
-        if (body.contains("Ошибка авторизации") || body.contains("berrors")) {
-            throw IllegalArgumentException("Неверный логин или пароль")
+        val session = try {
+            client.login(username, password)
+        } catch (e: AnimeVostAuthException) {
+            throw IllegalArgumentException("Неверный логин или пароль", e)
         }
-        val userId = cookieJar.getCookieValueAnyAnimevost("dle_user_id")
-            ?.toIntOrNull() ?: 0
+        val displayName = session.username ?: username
         dataStore.edit { prefs ->
-            prefs[KEY_USERNAME] = username
-            prefs[KEY_USER_ID] = userId
+            prefs[KEY_USERNAME] = displayName
+            prefs[KEY_USER_ID] = session.userId
+            prefs.remove(KEY_AVATAR_URL)
         }
         _isLoggedInFlow.value = true
-        return User(id = userId, name = username, avatarUrl = "", isLoggedIn = true)
+        return User(id = session.userId, name = displayName, avatarUrl = "", isLoggedIn = true)
     }
 
     override suspend fun register(username: String, password: String, email: String): User {
-        val url = DleEndpoints.BASE_URL + "index.php?do=register"
-        val params = mapOf(
-            "submit_reg" to "submit",
-            "login_name" to username,
-            "login_password" to password,
-            "login_password2" to password,
-            "email" to email,
-        )
-        val html = htmlFetcher.fetchPost(url, params)
-        if (html.contains("уже используется") || html.contains("Ошибка")) {
-            throw IllegalArgumentException("Ошибка регистрации")
+        val result = try {
+            client.register(
+                RegistrationRequest(
+                    username = username,
+                    password = password,
+                    email = email,
+                ),
+            )
+        } catch (e: AnimeVostRegistrationException) {
+            val message = e.message
+                ?.takeUnless { it == "Registration failed" }
+                ?: "Не удалось зарегистрироваться. Проверьте введенные данные"
+            throw IllegalArgumentException(message, e)
         }
-        dataStore.edit { it[KEY_USERNAME] = username }
-        return User(id = 0, name = username, avatarUrl = "", isLoggedIn = true)
+        val session = result.session
+        dataStore.edit { prefs ->
+            prefs[KEY_USERNAME] = result.username
+            prefs.remove(KEY_AVATAR_URL)
+            if (session != null) {
+                prefs[KEY_USER_ID] = session.userId
+            }
+        }
+        _isLoggedInFlow.value = session != null
+        return User(
+            id = session?.userId ?: 0,
+            name = result.username,
+            avatarUrl = "",
+            isLoggedIn = session != null,
+        )
     }
 
     override suspend fun logout() {
+        // Stop authenticated background work before the network logout starts.
+        _isLoggedInFlow.value = false
         try {
-            htmlFetcher.fetch(DleEndpoints.BASE_URL + DleEndpoints.LOGOUT)
+            client.logout()
         } catch (_: Exception) {
-            // Server-side logout is best-effort; always clear local session
         }
-        cookieJar.clear()
         try {
             dataStore.edit { prefs ->
                 prefs.remove(KEY_USERNAME)
                 prefs.remove(KEY_USER_ID)
+                prefs.remove(KEY_AVATAR_URL)
             }
         } catch (_: Exception) { }
-        // Always emit false — even if dataStore.edit above failed
-        _isLoggedInFlow.value = false
     }
 
     override suspend fun getCurrentUser(): User? {
         val username = dataStore.data
             .map { it[KEY_USERNAME] }
             .firstOrNull() ?: return null
-        val cookieUserId = cookieJar.getCookieValueAnyAnimevost("dle_user_id")
-        if (cookieUserId == null || cookieUserId == "deleted") return null
+        if (!client.isLoggedIn()) return null
         val userId = dataStore.data
             .map { it[KEY_USER_ID] }
-            .firstOrNull() ?: cookieUserId.toIntOrNull() ?: 0
+            .firstOrNull() ?: client.currentSession()?.userId ?: 0
         val avatarUrl = dataStore.data
             .map { it[KEY_AVATAR_URL] }
             .firstOrNull() ?: ""
@@ -108,5 +116,9 @@ class AuthRepositoryImpl @Inject constructor(
         dataStore.edit { it[KEY_AVATAR_URL] = url }
     }
 
-    override suspend fun isLoggedIn(): Boolean = getCurrentUser() != null
+    override suspend fun isLoggedIn(): Boolean {
+        val loggedIn = getCurrentUser() != null
+        _isLoggedInFlow.value = loggedIn
+        return loggedIn
+    }
 }
