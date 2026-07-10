@@ -23,15 +23,22 @@ jobs:
           java -version
           test -f "$ANDROID_HOME/platforms/android-35/android.jar"
 
+      - name: Run unit tests
+        run: >-
+          ./gradlew --no-daemon --max-workers=1
+          -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8"
+          -Pkotlin.compiler.execution.strategy=in-process
+          testDebugUnitTest
+
       - name: Decode keystore
         run: printf '%s' "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "${{ github.workspace }}/keystore.jks"
 
       - name: Build release APKs
         run: >-
           ./gradlew --no-daemon --max-workers=1
-          -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8"
+          -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8"
           -Pkotlin.compiler.execution.strategy=in-process
-          test lintRelease assembleRelease
+          lintRelease assembleRelease
         env:
           SIGNING_STORE_FILE: ${{ github.workspace }}/keystore.jks
           SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}

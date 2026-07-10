@@ -30,12 +30,19 @@ jobs:
           java -version
           test -f "$ANDROID_HOME/platforms/android-35/android.jar"
 
-      - name: Verify
+      - name: Run unit tests
         run: >-
           ./gradlew --no-daemon --max-workers=1
-          -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8"
+          -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8"
           -Pkotlin.compiler.execution.strategy=in-process
-          test lintDebug assembleDebug
+          testDebugUnitTest
+
+      - name: Lint and assemble debug APK
+        run: >-
+          ./gradlew --no-daemon --max-workers=1
+          -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8"
+          -Pkotlin.compiler.execution.strategy=in-process
+          lintDebug assembleDebug
 
       - name: Clean workspace
         if: always()
