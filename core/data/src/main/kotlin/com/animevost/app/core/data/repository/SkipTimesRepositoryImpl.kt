@@ -39,7 +39,11 @@ class SkipTimesRepositoryImpl @Inject constructor(
         titleOriginal: String,
         titleAlternative: String,
     ): List<SkipInterval> = withContext(Dispatchers.IO) {
-        val cached = skipTimeDao.get(animeId, episodeNumber)
+        val cached = skipTimeDao.getBySource(
+            animeId,
+            episodeNumber,
+            SkipTimeEntity.SOURCE_ALLOHA,
+        )
         if (cached.isNotEmpty()) {
             Timber.d("Alloha cache hit: animeId=%d ep=%d (%d entries)", animeId, episodeNumber, cached.size)
             return@withContext cached.toSkipIntervals()
@@ -62,18 +66,20 @@ class SkipTimesRepositoryImpl @Inject constructor(
         if (ranges.isEmpty()) return@withContext emptyList()
 
         val entities = ranges.map { range ->
+            val type = when (range.type) {
+                AllohaSkipType.OPENING -> "OP"
+                AllohaSkipType.ENDING -> "ED"
+            }
             SkipTimeEntity(
                 animeId = animeId,
                 episode = episodeNumber,
-                type = when (range.type) {
-                    AllohaSkipType.OPENING -> "OP"
-                    AllohaSkipType.ENDING -> "ED"
-                },
+                type = type,
                 startMs = range.startMs,
                 endMs = range.endMs,
+                source = SkipTimeEntity.SOURCE_ALLOHA,
             )
         }
-        // Multiple ranges of the same type collapse via PK → keep the latest.
+        // Alloha is the primary source and replaces a previously cached local fallback.
         skipTimeDao.insertAll(entities)
         Timber.d("Alloha saved %d skip intervals for animeId=%d ep=%d", entities.size, animeId, episodeNumber)
         entities.toSkipIntervals()

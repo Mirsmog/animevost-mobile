@@ -3,6 +3,7 @@
 package com.animevost.app.feature.player
 
 import android.app.Activity
+import android.content.Context
 import android.content.pm.ActivityInfo
 import android.view.WindowManager
 import androidx.annotation.OptIn
@@ -68,8 +69,13 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
+import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -137,8 +143,34 @@ fun PlayerScreen(
         }
     }
 
-    val exoPlayer = remember {
-        ExoPlayer.Builder(context).build().apply { playWhenReady = true }
+    val pcmAudioProcessor = remember(viewModel) {
+        TeeAudioProcessor(
+            object : TeeAudioProcessor.AudioBufferSink {
+                override fun flush(sampleRateHz: Int, channelCount: Int, encoding: Int) {
+                    viewModel.onPcmFormat(sampleRateHz, channelCount, encoding)
+                }
+
+                override fun handleBuffer(buffer: java.nio.ByteBuffer) {
+                    viewModel.onPcmBuffer(buffer)
+                }
+            },
+        )
+    }
+    val renderersFactory = remember(context, pcmAudioProcessor) {
+        object : DefaultRenderersFactory(context) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean,
+            ): AudioSink = DefaultAudioSink.Builder(context)
+                .setAudioProcessors(arrayOf<AudioProcessor>(pcmAudioProcessor))
+                .setEnableFloatOutput(false)
+                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                .build()
+        }
+    }
+    val exoPlayer = remember(context, renderersFactory) {
+        ExoPlayer.Builder(context, renderersFactory).build().apply { playWhenReady = true }
     }
 
     var previousVideoId by remember { mutableStateOf<String?>(null) }
@@ -185,6 +217,14 @@ fun PlayerScreen(
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
             }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                viewModel.checkSkipPosition(newPosition.positionMs, exoPlayer.duration)
+            }
         }
         exoPlayer.addListener(listener)
         onDispose {
@@ -201,10 +241,11 @@ fun PlayerScreen(
         var saveCounter = 0
         while (true) {
             delay(500)
-            currentPosition = exoPlayer.currentPosition
+            val position = exoPlayer.currentPosition
+            currentPosition = position
             val dur = exoPlayer.duration
             if (dur > 0) duration = dur
-            viewModel.checkSkipPosition(exoPlayer.currentPosition)
+            viewModel.checkSkipPosition(position, dur)
             saveCounter++
             if (saveCounter >= 10) {
                 saveCounter = 0

@@ -12,6 +12,9 @@ import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
 import com.animevost.app.core.domain.usecase.GetVideoUrlUseCase
 import com.animevost.app.core.domain.model.WatchProgress
 import com.animevost.app.core.domain.repository.FeatureFlagsRepository
+import com.animevost.app.core.domain.repository.LocalSkipDetector
+import com.animevost.app.core.domain.repository.LocalSkipEvent
+import com.animevost.app.core.domain.repository.LocalSkipRequest
 import com.animevost.app.core.domain.repository.SkipTimesRepository
 import com.animevost.app.core.domain.repository.UserPreferencesRepository
 import com.animevost.app.core.domain.repository.WatchProgressRepository
@@ -24,8 +27,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import timber.log.Timber
+import java.nio.ByteBuffer
 import javax.inject.Inject
 
 @HiltViewModel
@@ -37,6 +43,7 @@ class PlayerViewModel @Inject constructor(
     private val userPreferencesRepository: UserPreferencesRepository,
     private val watchProgressRepository: WatchProgressRepository,
     private val skipTimesRepository: SkipTimesRepository,
+    private val localSkipDetector: LocalSkipDetector,
     private val featureFlagsRepository: FeatureFlagsRepository,
 ) : ViewModel() {
 
@@ -55,8 +62,14 @@ class PlayerViewModel @Inject constructor(
 
     private var animePreview: AnimePreview? = null
     private var currentSkipIntervals: List<SkipInterval> = emptyList()
+    private var localSkipIntervals: List<SkipInterval> = emptyList()
+    private var allohaSkipIntervals: List<SkipInterval> = emptyList()
+    private var activeSkipAnimeId: Int? = null
+    private var activeSkipEpisodeNumber: Int? = null
+    private var title: String = ""
     private var titleOriginal: String = ""
     private var titleAlternative: String = ""
+    private var animeYear: Int? = null
     private var skipTimesJob: Job? = null
     private var videoLoadJob: Job? = null
     private var resumeLoadJob: Job? = null
@@ -65,6 +78,24 @@ class PlayerViewModel @Inject constructor(
         val episode = Episode(name = episodeName, videoId = videoId, thumbnailUrl = "")
         loadVideo(episode, emptyList(), 0)
         loadEpisodeList()
+        viewModelScope.launch {
+            localSkipDetector.events.collect { event ->
+                if (
+                    event.animeId != activeSkipAnimeId ||
+                    event.episodeNumber != activeSkipEpisodeNumber
+                ) {
+                    return@collect
+                }
+                when (event) {
+                    is LocalSkipEvent.IntervalFound -> {
+                        if (allohaSkipIntervals.isNotEmpty()) return@collect
+                        localSkipIntervals = localSkipIntervals
+                            .filterNot { it.type == event.interval.type } + event.interval
+                        publishSkipIntervals()
+                    }
+                }
+            }
+        }
     }
 
     fun onEvent(event: PlayerEvent) {
@@ -109,8 +140,10 @@ class PlayerViewModel @Inject constructor(
             result.onSuccess { detail ->
                 val episodes = detail.episodes
                 val currentIdx = episodes.indexOfFirst { it.videoId == videoId }
+                title = detail.title
                 titleOriginal = detail.titleOriginal
                 titleAlternative = detail.titleAlternative
+                animeYear = Regex("\\d{4}").find(detail.year)?.value?.toIntOrNull()
                 animePreview = AnimePreview(
                     id = detail.id,
                     title = detail.title,
@@ -188,9 +221,7 @@ class PlayerViewModel @Inject constructor(
         val newIndex = state.currentEpisodeIndex + direction
         if (newIndex < 0 || newIndex > state.allEpisodes.lastIndex) return
         val episode = state.allEpisodes[newIndex]
-        _activeSkip.value = null
-        currentSkipIntervals = emptyList()
-        _skipIntervals.value = emptyList()
+        resetSkipState()
         loadVideo(episode, state.allEpisodes, newIndex)
         animePreview?.let { preview ->
             loadSkipTimesForEpisode(preview.id, episode.name)
@@ -211,23 +242,40 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    fun checkSkipPosition(positionMs: Long) {
-        val active = currentSkipIntervals.firstOrNull { positionMs in it.startMs..it.endMs }
+    fun checkSkipPosition(positionMs: Long, durationMs: Long) {
+        localSkipDetector.updatePlaybackPosition(positionMs, durationMs)
+        val active = currentSkipIntervals.firstOrNull {
+            positionMs in it.startMs..it.endMs
+        }
         if (_activeSkip.value != active) _activeSkip.value = active
+    }
+
+    fun onPcmFormat(sampleRateHz: Int, channelCount: Int, encoding: Int) {
+        localSkipDetector.onPcmFormat(sampleRateHz, channelCount, encoding)
+    }
+
+    fun onPcmBuffer(buffer: ByteBuffer) {
+        localSkipDetector.onPcmBuffer(buffer)
     }
 
     private fun loadSkipTimesForEpisode(animeId: Int, epName: String) {
         skipTimesJob?.cancel()
         val episodeNum = Regex("\\d+").find(epName)?.value?.toIntOrNull() ?: 1
+        activeSkipAnimeId = animeId
+        activeSkipEpisodeNumber = episodeNum
+        localSkipIntervals = emptyList()
+        allohaSkipIntervals = emptyList()
+        publishSkipIntervals()
         skipTimesJob = viewModelScope.launch {
             val isEnabled = featureFlagsRepository.isEnabled(BetaFeature.SKIP_INTRO_OUTRO).first()
             if (!isEnabled) {
-                currentSkipIntervals = emptyList()
-                _skipIntervals.value = emptyList()
-                _activeSkip.value = null
+                localSkipDetector.stop()
+                resetSkipState()
                 return@launch
             }
-            currentSkipIntervals = try {
+
+            localSkipDetector.stop()
+            val allohaIntervals = try {
                 skipTimesRepository.getSkipTimes(
                     animeId = animeId,
                     episodeNumber = episodeNum,
@@ -236,10 +284,85 @@ class PlayerViewModel @Inject constructor(
                 )
             } catch (error: CancellationException) {
                 throw error
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                Timber.w(
+                    error,
+                    "Alloha primary skip lookup failed: animeId=%d ep=%d",
+                    animeId,
+                    episodeNum,
+                )
                 emptyList()
             }
-            _skipIntervals.value = currentSkipIntervals
+            if (
+                animeId != activeSkipAnimeId ||
+                episodeNum != activeSkipEpisodeNumber
+            ) {
+                return@launch
+            }
+            if (allohaIntervals.isNotEmpty()) {
+                allohaSkipIntervals = allohaIntervals
+                publishSkipIntervals()
+                Timber.d(
+                    "Alloha primary skip selected: animeId=%d ep=%d intervals=%d",
+                    animeId,
+                    episodeNum,
+                    allohaIntervals.size,
+                )
+                return@launch
+            }
+
+            Timber.d(
+                "Alloha returned no skip intervals, starting local fallback: animeId=%d ep=%d",
+                animeId,
+                episodeNum,
+            )
+            val preparation = try {
+                localSkipDetector.prepare(
+                    LocalSkipRequest(
+                        animeId = animeId,
+                        episodeNumber = episodeNum,
+                        title = title,
+                        titleOriginal = titleOriginal,
+                        titleAlternative = titleAlternative,
+                        year = animeYear,
+                    ),
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
+            if (
+                animeId != activeSkipAnimeId ||
+                episodeNum != activeSkipEpisodeNumber
+            ) {
+                return@launch
+            }
+            localSkipIntervals = preparation?.cachedIntervals.orEmpty()
+            publishSkipIntervals()
         }
+    }
+
+    private fun publishSkipIntervals() {
+        currentSkipIntervals = (
+            if (allohaSkipIntervals.isNotEmpty()) allohaSkipIntervals else localSkipIntervals
+            ).sortedBy { it.startMs }
+        _skipIntervals.value = currentSkipIntervals
+    }
+
+    private fun resetSkipState() {
+        localSkipDetector.stop()
+        activeSkipAnimeId = null
+        activeSkipEpisodeNumber = null
+        currentSkipIntervals = emptyList()
+        localSkipIntervals = emptyList()
+        allohaSkipIntervals = emptyList()
+        _skipIntervals.value = emptyList()
+        _activeSkip.value = null
+    }
+
+    override fun onCleared() {
+        localSkipDetector.stop()
+        super.onCleared()
     }
 }

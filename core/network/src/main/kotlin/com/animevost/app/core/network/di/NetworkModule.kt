@@ -6,6 +6,7 @@ import com.animevost.app.core.network.alloha.AllohaIframeFetcher
 import com.animevost.app.core.network.alloha.AllohaSkipClient
 import com.animevost.app.core.network.alloha.YummyAnimeApi
 import com.animevost.app.core.network.alloha.YummyAnimeSearchClient
+import com.animevost.app.core.network.animethemes.AnimeThemesClient
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -153,4 +154,26 @@ object NetworkModule {
         allohaApi: AllohaApi,
         iframeFetcher: AllohaIframeFetcher,
     ): AllohaSkipClient = AllohaSkipClient(yummyApi, allohaApi, iframeFetcher)
+
+    @Provides
+    @Singleton
+    @Named("animethemes")
+    fun provideAnimeThemesOkHttpClient(): OkHttpClient =
+        OkHttpClient.Builder()
+            .addInterceptor { chain ->
+                chain.proceed(
+                    chain.request().newBuilder()
+                        .header("User-Agent", "AnimeVost-Android")
+                        .build(),
+                )
+            }
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(25, TimeUnit.SECONDS)
+            .build()
+
+    @Provides
+    @Singleton
+    fun provideAnimeThemesClient(
+        @Named("animethemes") client: OkHttpClient,
+    ): AnimeThemesClient = AnimeThemesClient(client)
 }

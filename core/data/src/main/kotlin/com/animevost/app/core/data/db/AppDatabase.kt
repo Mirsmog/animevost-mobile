@@ -15,8 +15,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         UserListEntity::class,
         YummyMappingEntity::class,
         SkipTimeEntity::class,
+        ThemeFingerprintEntity::class,
+        ThemeLookupEntity::class,
     ],
-    version = 8,
+    version = 12,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -26,6 +28,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun userListDao(): UserListDao
     abstract fun yummyMappingDao(): YummyMappingDao
     abstract fun skipTimeDao(): SkipTimeDao
+    abstract fun themeFingerprintDao(): ThemeFingerprintDao
+    abstract fun themeLookupDao(): ThemeLookupDao
 
     companion object {
         val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -139,6 +143,81 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE `skip_times` " +
+                        "ADD COLUMN `source` TEXT NOT NULL DEFAULT 'ALLOHA'",
+                )
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `theme_fingerprints` (
+                        `animeId` INTEGER NOT NULL,
+                        `referenceId` INTEGER NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `episodes` TEXT NOT NULL,
+                        `durationMs` INTEGER NOT NULL,
+                        `algorithmVersion` INTEGER NOT NULL,
+                        `landmarks` BLOB NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`animeId`, `referenceId`)
+                    )""".trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_theme_fingerprints_animeId_algorithmVersion` " +
+                        "ON `theme_fingerprints` (`animeId`, `algorithmVersion`)",
+                )
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `theme_lookups` (
+                        `animeId` INTEGER NOT NULL,
+                        `episode` INTEGER NOT NULL,
+                        `queryKey` TEXT NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`animeId`, `episode`)
+                    )""".trimIndent(),
+                )
+            }
+        }
+
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `skip_placements` (
+                        `animeId` INTEGER NOT NULL,
+                        `referenceId` INTEGER NOT NULL,
+                        `episode` INTEGER NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `startMs` INTEGER NOT NULL,
+                        `endMs` INTEGER NOT NULL,
+                        `episodeDurationMs` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`animeId`, `referenceId`, `episode`)
+                    )""".trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_skip_placements_animeId_referenceId` " +
+                        "ON `skip_placements` (`animeId`, `referenceId`)",
+                )
+            }
+        }
+
+        val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DELETE FROM `skip_times` WHERE `source` = 'LOCAL'")
+                db.execSQL("DELETE FROM `skip_placements`")
+                db.execSQL("DELETE FROM `theme_fingerprints`")
+                db.execSQL("DELETE FROM `theme_lookups`")
+            }
+        }
+
+        val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DELETE FROM `skip_times` WHERE `source` = 'LOCAL'")
+                db.execSQL("DELETE FROM `theme_fingerprints`")
+                db.execSQL("DELETE FROM `theme_lookups`")
+                db.execSQL("DROP TABLE IF EXISTS `skip_placements`")
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "animevost.db")
                 .addMigrations(
@@ -149,6 +228,10 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_5_6,
                     MIGRATION_6_7,
                     MIGRATION_7_8,
+                    MIGRATION_8_9,
+                    MIGRATION_9_10,
+                    MIGRATION_10_11,
+                    MIGRATION_11_12,
                 )
                 .build()
     }

@@ -9,6 +9,8 @@ import com.animevost.app.core.data.db.AppDatabase
 import com.animevost.app.core.data.db.FavoriteDao
 import com.animevost.app.core.data.db.HistoryDao
 import com.animevost.app.core.data.db.SkipTimeDao
+import com.animevost.app.core.data.db.ThemeFingerprintDao
+import com.animevost.app.core.data.db.ThemeLookupDao
 import com.animevost.app.core.data.db.UserListDao
 import com.animevost.app.core.data.db.WatchProgressDao
 import com.animevost.app.core.data.db.YummyMappingDao
@@ -27,6 +29,7 @@ import com.animevost.app.core.data.repository.UserListRepositoryImpl
 import com.animevost.app.core.data.repository.UserPreferencesRepositoryImpl
 import com.animevost.app.core.data.repository.WatchProgressRepositoryImpl
 import com.animevost.app.core.data.repository.VideoRepositoryImpl
+import com.animevost.app.core.data.skip.LocalSkipDetectorImpl
 import com.animevost.app.core.domain.repository.FeatureFlagsRepository
 import com.animevost.app.core.domain.repository.EpisodeDownloadManager
 import com.animevost.app.core.domain.repository.AnimeRepository
@@ -35,6 +38,7 @@ import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.CommentRepository
 import com.animevost.app.core.domain.repository.FavoriteRepository
 import com.animevost.app.core.domain.repository.HistoryRepository
+import com.animevost.app.core.domain.repository.LocalSkipDetector
 import com.animevost.app.core.domain.repository.NotificationPreferencesRepository
 import com.animevost.app.core.domain.repository.ScheduleRepository
 import com.animevost.app.core.domain.repository.SkipTimesRepository
@@ -76,6 +80,12 @@ object DataProvidesModule {
 
     @Provides
     fun provideSkipTimeDao(db: AppDatabase): SkipTimeDao = db.skipTimeDao()
+
+    @Provides
+    fun provideThemeFingerprintDao(db: AppDatabase): ThemeFingerprintDao = db.themeFingerprintDao()
+
+    @Provides
+    fun provideThemeLookupDao(db: AppDatabase): ThemeLookupDao = db.themeLookupDao()
 
     @Provides
     @Singleton
@@ -143,6 +153,10 @@ abstract class DataBindsModule {
     @Binds
     @Singleton
     abstract fun bindSkipTimesRepository(impl: SkipTimesRepositoryImpl): SkipTimesRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindLocalSkipDetector(impl: LocalSkipDetectorImpl): LocalSkipDetector
 
     @Binds
     @Singleton
