@@ -33,14 +33,14 @@ jobs:
       - name: Run unit tests
         run: >-
           ./gradlew --no-daemon --max-workers=1
-          -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8"
+          -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8"
           -Pkotlin.compiler.execution.strategy=in-process
           testDebugUnitTest
 
       - name: Lint and assemble debug APK
         run: >-
           ./gradlew --no-daemon --max-workers=1
-          -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8"
+          -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8"
           -Pkotlin.compiler.execution.strategy=in-process
           lintDebug assembleDebug
 
