@@ -10,6 +10,7 @@
 
   <p>
     <a href="https://github.com/Mirsmog/animevost-mobile/releases/latest"><img src="https://img.shields.io/github/v/release/Mirsmog/animevost-mobile?style=for-the-badge&amp;color=F59E0B&amp;logo=github&amp;logoColor=white" alt="Последний релиз"></a>
+    <a href="https://github.com/Mirsmog/animevost-mobile/releases"><img src="https://img.shields.io/github/downloads/Mirsmog/animevost-mobile/total?style=for-the-badge&amp;color=F59E0B&amp;logo=github&amp;logoColor=white" alt="Всего скачиваний"></a>
     <a href="https://github.com/Mirsmog/animevost-mobile/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Mirsmog/animevost-mobile/ci.yml?branch=main&amp;style=for-the-badge&amp;logo=githubactions&amp;logoColor=white&amp;label=build" alt="Статус сборки"></a>
     <img src="https://img.shields.io/badge/Android-8.0%2B-F59E0B?style=for-the-badge&amp;logo=android&amp;logoColor=white" alt="Android 8.0 и новее">
     <img src="https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?style=for-the-badge&amp;logo=kotlin&amp;logoColor=white" alt="Kotlin 2.0.21">
@@ -58,6 +59,10 @@
 <div align="center">
   <a href="https://github.com/Mirsmog/animevost-mobile/releases/latest">
     <img src="https://img.shields.io/badge/DOWNLOAD-LATEST_APK-F59E0B?style=for-the-badge&amp;logo=android&amp;logoColor=white" alt="Скачать последнюю версию AnimeVost Mobile">
+  </a>
+  <br>
+  <a href="https://github.com/Mirsmog/animevost-mobile/releases">
+    <img src="https://img.shields.io/github/downloads/Mirsmog/animevost-mobile/total?style=for-the-badge&amp;color=F59E0B&amp;logo=github&amp;logoColor=white" alt="Всего скачиваний AnimeVost Mobile">
   </a>
 </div>
 
