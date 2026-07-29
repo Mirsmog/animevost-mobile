@@ -35,6 +35,18 @@
   <img src="docs/screenshots/screen_4.png" width="23%" alt="Расписание AnimeVost Mobile">
 </div>
 
+<div align="center">
+  <h3>Не потеряйте AnimeVost Mobile ⭐</h3>
+  <p>
+    Добавьте проект в избранное, чтобы он всегда оставался под рукой.
+  </p>
+  <a href="https://github.com/Mirsmog/animevost-mobile">
+    <img src="https://img.shields.io/badge/%E2%AD%90_%D0%A1%D0%9E%D0%A5%D0%A0%D0%90%D0%9D%D0%98%D0%A2%D0%AC-%D0%9F%D0%A0%D0%9E%D0%95%D0%9A%D0%A2-F59E0B?style=for-the-badge&amp;logo=github&amp;logoColor=white" alt="Сохранить AnimeVost Mobile в избранном">
+  </a>
+  <br>
+  <sub>Кнопка Star находится вверху страницы</sub>
+</div>
+
 ## О приложении
 
 **AnimeVost Mobile** объединяет каталог, расписание, личную библиотеку и просмотр в одном быстром Android-приложении. Интерфейс полностью написан на Jetpack Compose, а воспроизведение работает на базе AndroidX Media3.
@@ -114,8 +126,6 @@ git submodule update --init --recursive
 ```
 
 ## Участие в разработке
-
-Если AnimeVost Mobile вам пригодился, [поставьте проекту ⭐](https://github.com/Mirsmog/animevost-mobile). Так другим будет проще заметить приложение.
 
 Сообщения об ошибках, идеи и pull request приветствуются.
 
