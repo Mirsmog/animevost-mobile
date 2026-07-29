@@ -59,11 +59,11 @@
 
 <div align="center">
   <a href="https://github.com/Mirsmog/animevost-mobile/releases/latest">
-    <img src="https://img.shields.io/badge/DOWNLOAD-LATEST_APK-F59E0B?style=for-the-badge&amp;logo=android&amp;logoColor=white" alt="Скачать последнюю версию AnimeVost Mobile">
+    <img src="https://img.shields.io/badge/%D0%A1%D0%9A%D0%90%D0%A7%D0%90%D0%A2%D0%AC-APK-F59E0B?style=for-the-badge&amp;logo=android&amp;logoColor=white" alt="Скачать последнюю версию AnimeVost Mobile">
   </a>
   <br>
   <a href="https://github.com/Mirsmog/animevost-mobile/releases">
-    <img src="https://img.shields.io/github/downloads/Mirsmog/animevost-mobile/total?style=for-the-badge&amp;color=F59E0B&amp;logo=github&amp;logoColor=white" alt="Всего скачиваний AnimeVost Mobile">
+    <img src="https://img.shields.io/github/downloads/Mirsmog/animevost-mobile/total?style=for-the-badge&amp;label=%D0%A1%D0%9A%D0%90%D0%A7%D0%98%D0%92%D0%90%D0%9D%D0%98%D0%99&amp;color=F59E0B&amp;logo=github&amp;logoColor=white" alt="Всего скачиваний AnimeVost Mobile">
   </a>
 </div>
 
