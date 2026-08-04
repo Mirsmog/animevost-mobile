@@ -15,6 +15,7 @@ import com.animevost.app.core.domain.repository.HistoryRepository
 import com.animevost.app.core.domain.repository.UserListRepository
 import com.animevost.app.core.domain.repository.WatchProgressRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -99,6 +100,19 @@ class CollectionsViewModel @Inject constructor(
             }
             is LibraryEvent.SortDirectionChanged -> controls.update {
                 it.copy(sortAscending = event.ascending)
+            }
+        }
+    }
+
+    fun hydratePreview(anime: AnimePreview) {
+        if (anime.id <= 0 || anime.title.isNotBlank()) return
+        viewModelScope.launch {
+            try {
+                userListRepository.hydratePreview(anime.id)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // A visible card can retry when it is composed again.
             }
         }
     }
@@ -245,6 +259,7 @@ class CollectionsViewModel @Inject constructor(
     }
 
     private fun keyFor(url: String, id: Int): String {
+        if (id > 0) return "id:$id"
         val normalizedUrl = try {
             URI(url).path.trimStart('/').ifBlank { url.trimStart('/') }
         } catch (_: Exception) {

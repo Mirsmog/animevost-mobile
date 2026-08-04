@@ -12,6 +12,7 @@ import com.animevost.app.core.domain.model.UserListEntry
 import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.UserListRepository
 import com.animevost.sdk.AnimeVostClient
+import com.animevost.sdk.model.UserProfile
 import com.animevost.sdk.model.UserProfileUpdate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
@@ -25,18 +26,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import timber.log.Timber
-import java.net.URI
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
  * Manages the user's anime watch list using the animevost profile `info` field as remote storage.
  *
- * **Remote format** (stored Base64-encoded in the `info` textarea):
- * ```json
- * {"v":1,"s":{"tip/tv/3774-slug.html":"w","tip/ona/5001-slug.html":"p"}}
- * ```
- * Base64 is required because DLE BBCode-processes the field and mangles raw JSON brackets.
+ * The remote payload stores sorted DLE news IDs as compact deltas plus one of five status codes.
+ * The binary data is protected by CRC32 and Base64-encoded for safe storage in the profile
+ * `info` field. Legacy JSON payloads containing full URLs are decoded and migrated automatically.
  *
  * **Write strategy**: Every [setStatus] call updates Room immediately (optimistic), marks
  * the state as dirty, and launches a background flush. The flush re-reads the profile page
@@ -56,6 +55,7 @@ class UserListRepositoryImpl @Inject constructor(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutex = Mutex()
+    private val hydrationInFlight = ConcurrentHashMap.newKeySet<Int>()
 
     init {
         scope.launch {
@@ -80,9 +80,16 @@ class UserListRepositoryImpl @Inject constructor(
 
     // ── Read ──────────────────────────────────────────────────────────────────
 
-    override fun getStatusFlow(animeUrl: String): Flow<AnimeStatus?> =
-        dao.getStatusFlow(animeUrl.toRelativePath())
+    override fun getStatusFlow(animeUrl: String): Flow<AnimeStatus?> {
+        val newsId = extractAnimeNewsId(animeUrl)
+        val statusFlow = if (newsId == null) {
+            dao.getStatusFlow(normalizeAnimePath(animeUrl))
+        } else {
+            dao.getStatusByNewsIdFlow(newsId)
+        }
+        return statusFlow
             .map { code -> code?.let { AnimeStatus.fromCode(it) } }
+    }
 
     override fun getByStatus(status: AnimeStatus): Flow<List<AnimePreview>> =
         dao.getByStatus(status.code).map { list -> list.map { it.toPreview() } }
@@ -102,28 +109,48 @@ class UserListRepositoryImpl @Inject constructor(
     // ── Write ─────────────────────────────────────────────────────────────────
 
     override suspend fun setStatus(animeUrl: String, status: AnimeStatus?, preview: AnimePreview?) {
-        val relUrl = animeUrl.toRelativePath()
-        if (status == null) {
-            dao.deleteByUrl(relUrl)
-        } else {
-            dao.upsert(
-                UserListEntity(
-                    animeUrl = relUrl,
-                    animeId = preview?.id ?: extractIdFromUrl(relUrl),
-                    title = preview?.title ?: "",
-                    posterUrl = preview?.posterUrl ?: "",
+        mutex.withLock {
+            val relativeUrl = normalizeAnimePath(animeUrl)
+            val newsId = preview?.id?.takeIf { it > 0 }
+                ?: extractAnimeNewsId(relativeUrl)
+            if (status == null) {
+                if (newsId == null) {
+                    dao.deleteByUrl(relativeUrl)
+                } else {
+                    dao.deleteByNewsId(newsId)
+                }
+            } else {
+                val existing = newsId?.let { dao.getByNewsId(it) }
+                val storedUrl = if (
+                    relativeUrl.startsWith(NEWS_ID_RESOLVER_PREFIX) && existing != null
+                ) {
+                    existing.animeUrl
+                } else {
+                    relativeUrl
+                }
+                val entity = UserListEntity(
+                    animeUrl = storedUrl,
+                    animeId = newsId ?: 0,
+                    title = preview?.title?.takeIf { it.isNotBlank() } ?: existing?.title.orEmpty(),
+                    posterUrl = preview?.posterUrl?.takeIf { it.isNotBlank() }
+                        ?: existing?.posterUrl.orEmpty(),
                     status = status.code,
-                ),
-            )
+                )
+                if (newsId == null) {
+                    dao.upsert(entity)
+                } else {
+                    dao.upsertByNewsId(entity)
+                }
+            }
+            setPendingUpload(true)
         }
-        setPendingUpload(true)
         scope.launch {
             try {
                 flushToRemote()
             } catch (error: CancellationException) {
                 throw error
             } catch (e: Exception) {
-                Timber.w(e, "UserList remote upload failed — will retry on next sync")
+                Timber.w(e, "UserList remote upload failed: will retry on next sync")
             }
         }
     }
@@ -134,55 +161,69 @@ class UserListRepositoryImpl @Inject constructor(
      * Synchronises the watch list with the server.
      *
      * - If there are pending local changes, they are flushed first so no data is lost.
-     * - After a successful flush the server state is read back and any entries that only
-     *   exist remotely (e.g. from another device) are merged into the local DB.
+     * - A successful flush is confirmed by reading back the exact compact payload.
      * - Without pending changes, the server is treated as authoritative.
      */
     override suspend fun syncFromRemote() = mutex.withLock {
         val user = authRepository.getCurrentUser() ?: return@withLock
 
         if (hasPendingUpload()) {
-            uploadNow(user.name)
-            val profile = client.getProfile(user.name)
-            val remote = UserListPayloadCodec.decode(profile.info.orEmpty())
-            addMissingFromRemote(remote)
+            val profile = uploadNow(user.name)
             profile.avatarUrl?.takeIf { it.isNotBlank() }?.let { authRepository.saveAvatarUrl(it) }
         } else {
             val profile = client.getProfile(user.name)
             val remote = UserListPayloadCodec.decode(profile.info.orEmpty())
-            overwriteLocalWithRemote(remote)
+            overwriteLocalWithRemote(remote.statuses)
             profile.avatarUrl?.takeIf { it.isNotBlank() }?.let { authRepository.saveAvatarUrl(it) }
+            if (remote.requiresMigration) {
+                setPendingUpload(true)
+                uploadNow(user.name, profile)
+            }
         }
     }
 
     // ── Internal helpers ──────────────────────────────────────────────────────
 
     /**
-     * Reads fresh profile form data, then writes local Room state back to the server.
-     * Always re-fetches form fields (hash, fullname, land, email) to avoid posting stale data.
+     * Reads fresh profile form data when it was not already fetched by the current sync, then
+     * writes local Room state back to the server without overwriting unrelated profile fields.
      * Must be called within [mutex].
      */
-    private suspend fun uploadNow(username: String) {
-        val profile = client.getProfile(username)
+    private suspend fun uploadNow(
+        username: String,
+        currentProfile: UserProfile? = null,
+    ): UserProfile {
+        val profile = currentProfile ?: client.getProfile(username)
         if (!profile.canEdit) {
-            Timber.w("UserList upload skipped: could not read dle_allow_hash (not logged in?)")
-            return
+            throw UserListSyncException("Profile is not editable")
         }
         val entries = dao.getAll()
+        val localStatuses = entries.toRemoteStatuses()
         val updatedInfo = UserListPayloadCodec.merge(
             profileInfo = profile.info.orEmpty(),
-            statuses = entries.associate { it.animeUrl to it.status },
+            statuses = localStatuses,
         )
         client.updateProfile(
-            username = username,
+            current = profile,
             update = UserProfileUpdate(info = updatedInfo),
         )
+
+        val confirmedProfile = client.getProfile(username)
+        val confirmed = UserListPayloadCodec.decode(confirmedProfile.info.orEmpty())
+        if (
+            confirmed.source != UserListPayloadCodec.Source.MARKER_V2 ||
+            confirmed.statuses != localStatuses
+        ) {
+            throw UserListSyncException("Server did not persist the user-list payload")
+        }
         setPendingUpload(false)
         Timber.d("UserList uploaded ${entries.size} entries")
+        return confirmedProfile
     }
 
-    /** Background flush — acquires mutex and calls [uploadNow]. */
+    /** Background flush acquires mutex and calls [uploadNow] only while local changes are pending. */
     private suspend fun flushToRemote() = mutex.withLock {
+        if (!hasPendingUpload()) return@withLock
         val user = authRepository.getCurrentUser() ?: return@withLock
         uploadNow(user.name)
     }
@@ -200,15 +241,18 @@ class UserListRepositoryImpl @Inject constructor(
      * Remote is authoritative: remove local entries not on remote, update status for changed ones,
      * but preserve existing title/posterUrl display data.
      */
-    private suspend fun overwriteLocalWithRemote(remote: Map<String, String>) {
-        val local = dao.getAll().associateBy { it.animeUrl }
-        remote.forEach { (relUrl, code) ->
-            val existing = local[relUrl]
+    private suspend fun overwriteLocalWithRemote(remote: Map<Int, String>) {
+        val localEntries = dao.getAll()
+        val local = localEntries.mapNotNull { entity ->
+            entity.newsIdOrNull()?.let { it to entity }
+        }.toMap()
+        remote.forEach { (newsId, code) ->
+            val existing = local[newsId]
             if (existing?.status != code) {
-                dao.upsert(
+                dao.upsertByNewsId(
                     UserListEntity(
-                        animeUrl = relUrl,
-                        animeId = existing?.animeId ?: extractIdFromUrl(relUrl),
+                        animeUrl = existing?.animeUrl ?: animeResolverPath(newsId),
+                        animeId = newsId,
                         title = existing?.title ?: "",
                         posterUrl = existing?.posterUrl ?: "",
                         status = code,
@@ -216,58 +260,85 @@ class UserListRepositoryImpl @Inject constructor(
                 )
             }
         }
-        local.keys.filter { it !in remote }.forEach { dao.deleteByUrl(it) }
-    }
-
-    /**
-     * After a flush, add remote entries that don't exist locally yet (from another device).
-     * Existing local entries are not touched (they were just uploaded and are correct).
-     */
-    private suspend fun addMissingFromRemote(remote: Map<String, String>) {
-        val localUrls = dao.getAll().map { it.animeUrl }.toSet()
-        remote.forEach { (relUrl, code) ->
-            if (relUrl !in localUrls) {
-                dao.upsert(
-                    UserListEntity(
-                        animeUrl = relUrl,
-                        animeId = extractIdFromUrl(relUrl),
-                        title = "",
-                        posterUrl = "",
-                        status = code,
-                    ),
-                )
-            }
-        }
+        localEntries
+            .filter { it.newsIdOrNull()?.let { newsId -> newsId !in remote } == true }
+            .forEach { dao.deleteByUrl(it.animeUrl) }
     }
 
     // ── Static helpers ────────────────────────────────────────────────────────
 
     override suspend fun enrichPreview(animeUrl: String, preview: AnimePreview) {
-        dao.enrichIfBlank(
-            url = animeUrl.toRelativePath(),
-            title = preview.title,
-            posterUrl = preview.posterUrl,
-            animeId = preview.id,
-        )
+        val newsId = preview.id.takeIf { it > 0 } ?: extractAnimeNewsId(animeUrl)
+        if (newsId == null) {
+            dao.enrichIfBlank(
+                url = normalizeAnimePath(animeUrl),
+                title = preview.title,
+                posterUrl = preview.posterUrl,
+                animeId = 0,
+            )
+        } else {
+            dao.enrichByNewsIdIfBlank(
+                newsId = newsId,
+                title = preview.title,
+                posterUrl = preview.posterUrl,
+            )
+        }
+    }
+
+    override suspend fun hydratePreview(newsId: Int) {
+        if (newsId <= 0 || !hydrationInFlight.add(newsId)) return
+        try {
+            val existing = dao.getByNewsId(newsId) ?: return
+            if (existing.title.isNotBlank()) return
+
+            val details = client.getAnimeDetails(animeResolverPath(newsId))
+            if (details.title.isBlank()) return
+            mutex.withLock {
+                val current = dao.getByNewsId(newsId) ?: return@withLock
+                if (current.title.isNotBlank()) return@withLock
+                val resolvedUrl = normalizeAnimePath(details.url)
+                    .takeIf { it.isNotBlank() }
+                    ?: current.animeUrl
+                dao.upsertByNewsId(
+                    current.copy(
+                        animeUrl = resolvedUrl,
+                        animeId = newsId,
+                        title = details.title,
+                        posterUrl = details.posterUrl.orEmpty(),
+                    ),
+                )
+            }
+        } finally {
+            hydrationInFlight.remove(newsId)
+        }
     }
 
     private companion object {
         val KEY_PENDING_UPLOAD = booleanPreferencesKey("user_list_pending_upload")
+        const val NEWS_ID_RESOLVER_PREFIX = "index.php?newsid="
 
-        private val ID_IN_URL = Regex("""/(\d+)-[^/]+\.html""")
-
-        /** Strips scheme + host, returning a path like "tip/tv/3774-slug.html". */
-        fun String.toRelativePath(): String = try {
-            URI(this).path.trimStart('/')
-        } catch (_: Exception) {
-            trimStart('/')
+        fun List<UserListEntity>.toRemoteStatuses(): Map<Int, String> {
+            val result = linkedMapOf<Int, String>()
+            forEach { entity ->
+                val newsId = entity.newsIdOrNull()
+                    ?: throw UserListSyncException(
+                        "Cannot sync user-list entry without an AnimeVost newsId",
+                    )
+                val previous = result.put(newsId, entity.status)
+                if (previous != null && previous != entity.status) {
+                    throw UserListSyncException(
+                        "Conflicting statuses found for AnimeVost newsId $newsId",
+                    )
+                }
+            }
+            return result
         }
 
-        fun extractIdFromUrl(relUrl: String): Int =
-            ID_IN_URL.find("/$relUrl")?.groupValues?.get(1)?.toIntOrNull() ?: 0
+        fun UserListEntity.newsIdOrNull(): Int? =
+            animeId.takeIf { it > 0 } ?: extractAnimeNewsId(animeUrl)
 
         fun UserListEntity.toPreview() = AnimePreview(
-            id = animeId,
+            id = newsIdOrNull() ?: 0,
             title = title,
             titleOriginal = "",
             posterUrl = posterUrl,
@@ -276,3 +347,5 @@ class UserListRepositoryImpl @Inject constructor(
         )
     }
 }
+
+private class UserListSyncException(message: String) : IllegalStateException(message)

@@ -49,6 +49,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.ui.components.LoadingState
 import kotlinx.coroutines.launch
 
@@ -144,6 +145,7 @@ fun CollectionsScreen(
                 showDashboard = showDashboard,
                 onAnimeClick = onAnimeClick,
                 onContinueClick = onContinueClick,
+                onAnimeVisible = viewModel::hydratePreview,
                 onFilterSelected = { filter ->
                     viewModel.onEvent(LibraryEvent.FilterSelected(filter))
                     scope.launch { gridState.scrollToItem(catalogHeaderIndex) }
@@ -261,6 +263,7 @@ private fun LibraryContent(
     showDashboard: Boolean,
     onAnimeClick: (String) -> Unit,
     onContinueClick: (ContinueWatchingItem) -> Unit,
+    onAnimeVisible: (AnimePreview) -> Unit,
     onFilterSelected: (LibraryFilter) -> Unit,
     onFilterClick: () -> Unit,
     onReset: () -> Unit,
@@ -335,6 +338,9 @@ private fun LibraryContent(
                 key = { "grid-${it.anime.id}-${it.anime.url}" },
                 contentType = { "grid-card" },
             ) { item ->
+                LaunchedEffect(item.anime.id, item.anime.title) {
+                    onAnimeVisible(item.anime)
+                }
                 LibraryGridCard(
                     item = item,
                     onClick = { onAnimeClick(item.anime.url) },

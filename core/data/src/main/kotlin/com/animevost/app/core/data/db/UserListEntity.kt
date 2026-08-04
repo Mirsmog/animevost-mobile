@@ -5,7 +5,8 @@ import androidx.room.PrimaryKey
 
 /**
  * Local cache of an anime's watch status.
- * [animeUrl] is the relative URL path (e.g. "tip/tv/3774-slug.html") — stable across mirrors.
+ * [animeUrl] is a relative canonical path when known. Entries restored only from compact remote
+ * data use `index.php?newsid=<id>` until their display metadata is enriched.
  * Title and posterUrl may be empty when the entry was synced from remote without local preview data.
  */
 @Entity(tableName = "user_list")

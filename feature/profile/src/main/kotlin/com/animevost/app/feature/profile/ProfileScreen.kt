@@ -37,6 +37,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -103,6 +104,7 @@ fun ProfileScreen(
                 state = state,
                 onLogout = { viewModel.onEvent(ProfileEvent.Logout) },
                 onAnimeClick = onAnimeClick,
+                onAnimeVisible = viewModel::hydratePreview,
                 onNavigateToFavorites = onNavigateToFavorites,
                 modifier = Modifier.padding(innerPadding),
             )
@@ -173,6 +175,7 @@ private fun LoggedInContent(
     state: ProfileUiState,
     onLogout: () -> Unit,
     onAnimeClick: (String) -> Unit,
+    onAnimeVisible: (AnimePreview) -> Unit,
     onNavigateToFavorites: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -296,6 +299,7 @@ private fun LoggedInContent(
                         AnimeHorizontalRow(
                             items = list,
                             onAnimeClick = onAnimeClick,
+                            onAnimeVisible = onAnimeVisible,
                         )
                     }
                 }
@@ -339,12 +343,16 @@ private fun LoggedInContent(
 private fun AnimeHorizontalRow(
     items: List<AnimePreview>,
     onAnimeClick: (String) -> Unit,
+    onAnimeVisible: (AnimePreview) -> Unit = {},
 ) {
     LazyRow(
         contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         items(items, key = { it.id }) { anime ->
+            LaunchedEffect(anime.id, anime.title) {
+                onAnimeVisible(anime)
+            }
             AnimeCard(
                 anime = anime,
                 onClick = { onAnimeClick(anime.url) },

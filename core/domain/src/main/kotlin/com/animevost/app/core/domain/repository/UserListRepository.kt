@@ -30,4 +30,7 @@ interface UserListRepository {
      * without local preview data. Only updates Room; does NOT trigger a remote upload.
      */
     suspend fun enrichPreview(animeUrl: String, preview: AnimePreview)
+
+    /** Resolve and cache display metadata for a compact remote entry when it becomes visible. */
+    suspend fun hydratePreview(newsId: Int)
 }

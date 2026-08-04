@@ -100,6 +100,19 @@ class ProfileViewModel @Inject constructor(
         }
     }
 
+    fun hydratePreview(anime: AnimePreview) {
+        if (anime.id <= 0 || anime.title.isNotBlank()) return
+        viewModelScope.launch {
+            try {
+                userListRepository.hydratePreview(anime.id)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // A visible card can retry when it is composed again.
+            }
+        }
+    }
+
     private fun loadProfile() {
         viewModelScope.launch { refreshProfile() }
     }
