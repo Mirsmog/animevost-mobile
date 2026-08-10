@@ -15,6 +15,7 @@ data class SkipTimeEntity(
 ) {
     companion object {
         const val SOURCE_ALLOHA = "ALLOHA"
+        const val SOURCE_ALLOHA_ANISKIP = "ALLOHA_ANISKIP_V1"
         const val SOURCE_LOCAL = "LOCAL"
     }
 }

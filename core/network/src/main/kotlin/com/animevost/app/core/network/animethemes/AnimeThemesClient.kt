@@ -4,13 +4,19 @@ import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import timber.log.Timber
 import java.io.IOException
 import java.util.Locale
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 data class AnimeThemeReference(
     val id: Int,
@@ -23,21 +29,76 @@ data class AnimeThemeReference(
 class AnimeThemesClient(
     private val client: OkHttpClient,
 ) {
+    suspend fun findMyAnimeListId(
+        searchQueries: List<String>,
+        year: Int?,
+    ): Int? = withContext(Dispatchers.IO) {
+        val candidate = findBestCandidate(
+            searchQueries = searchQueries,
+            year = year,
+            include = "resources",
+            lookupName = "MAL",
+        ) ?: return@withContext null
+        if (candidate.score < MIN_MAL_MATCH_SCORE) {
+            Timber.d(
+                "AnimeThemes MAL candidate rejected: anime='%s' score=%d",
+                candidate.name,
+                candidate.score,
+            )
+            return@withContext null
+        }
+
+        val malId = candidate.payload.array("resources")
+            .mapNotNull { it.takeIf { item -> item.isJsonObject }?.asJsonObject }
+            .firstOrNull { it.string("site") == "MyAnimeList" }
+            ?.intOrNull("external_id")
+        Timber.d(
+            "AnimeThemes MAL selected: anime='%s' year=%s malId=%s score=%d",
+            candidate.name,
+            candidate.year,
+            malId,
+            candidate.score,
+        )
+        malId
+    }
+
     suspend fun findReferences(
         searchQueries: List<String>,
         year: Int?,
         episodeNumber: Int,
     ): List<AnimeThemeReference> = withContext(Dispatchers.IO) {
+        val best = findBestCandidate(
+            searchQueries = searchQueries,
+            year = year,
+            include = "animethemes.animethemeentries.videos.audio",
+            lookupName = "references ep=$episodeNumber",
+        )
+        val references = best?.let { selectReferences(it.payload, episodeNumber) }.orEmpty()
+        Timber.d(
+            "AnimeThemes selected: anime='%s' ep=%d refs=%s",
+            best?.name,
+            episodeNumber,
+            references.map { "${it.type}:${it.id}:${it.episodes}" },
+        )
+        references
+    }
+
+    private suspend fun findBestCandidate(
+        searchQueries: List<String>,
+        year: Int?,
+        include: String,
+        lookupName: String,
+    ): AnimeCandidate? {
         var best: AnimeCandidate? = null
         Timber.d(
-            "AnimeThemes lookup: year=%s ep=%d queries=%s",
+            "AnimeThemes %s lookup: year=%s queries=%s",
+            lookupName,
             year,
-            episodeNumber,
             searchQueries,
         )
         for (query in searchQueries.distinct().take(MAX_SEARCH_QUERIES)) {
             if (query.isBlank()) continue
-            val candidates = search(query)
+            val candidates = search(query, include)
             if (candidates.isEmpty()) {
                 Timber.d("AnimeThemes query returned no anime: '%s'", query)
                 continue
@@ -56,41 +117,52 @@ class AnimeThemesClient(
             }
             if (score >= EXACT_MATCH_SCORE) break
         }
-        val references = best?.let { selectReferences(it.payload, episodeNumber) }.orEmpty()
-        Timber.d(
-            "AnimeThemes selected: anime='%s' ep=%d refs=%s",
-            best?.name,
-            episodeNumber,
-            references.map { "${it.type}:${it.id}:${it.episodes}" },
-        )
-        references
+        return best
     }
 
-    private fun search(query: String): List<AnimeCandidate> {
+    private suspend fun search(query: String, include: String): List<AnimeCandidate> {
         val url = API_URL.toHttpUrl().newBuilder()
             .addQueryParameter("q", query)
-            .addQueryParameter("include", "animethemes.animethemeentries.videos.audio")
+            .addQueryParameter("include", include)
             .addQueryParameter("page[size]", PAGE_SIZE.toString())
             .build()
         val request = Request.Builder()
             .url(url)
             .header("Accept", "application/json")
             .build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw IOException("AnimeThemes HTTP ${response.code}")
-            }
-            val json = response.body?.string().orEmpty()
-            val root = JsonParser.parseString(json).asJsonObject
-            return root.array("anime").mapNotNull { element ->
-                val anime = element.takeIf { it.isJsonObject }?.asJsonObject ?: return@mapNotNull null
-                AnimeCandidate(
-                    name = anime.string("name"),
-                    year = anime.intOrNull("year"),
-                    mediaFormat = anime.string("media_format"),
-                    payload = anime,
-                )
-            }
+        return suspendCancellableCoroutine { continuation ->
+            val call = client.newCall(request)
+            continuation.invokeOnCancellation { call.cancel() }
+            call.enqueue(object : Callback {
+                override fun onFailure(call: Call, error: IOException) {
+                    if (continuation.isActive) continuation.resumeWithException(error)
+                }
+
+                override fun onResponse(call: Call, response: Response) {
+                    response.use {
+                        try {
+                            if (!response.isSuccessful) {
+                                throw IOException("AnimeThemes HTTP ${response.code}")
+                            }
+                            val json = response.body?.string().orEmpty()
+                            val root = JsonParser.parseString(json).asJsonObject
+                            val candidates = root.array("anime").mapNotNull { element ->
+                                val anime = element.takeIf { it.isJsonObject }?.asJsonObject
+                                    ?: return@mapNotNull null
+                                AnimeCandidate(
+                                    name = anime.string("name"),
+                                    year = anime.intOrNull("year"),
+                                    mediaFormat = anime.string("media_format"),
+                                    payload = anime,
+                                )
+                            }
+                            if (continuation.isActive) continuation.resume(candidates)
+                        } catch (error: Exception) {
+                            if (continuation.isActive) continuation.resumeWithException(error)
+                        }
+                    }
+                }
+            })
         }
     }
 
@@ -220,5 +292,6 @@ class AnimeThemesClient(
         const val MAX_REFERENCES_PER_TYPE = 1
         const val MAX_AUDIO_BYTES = 8L * 1024L * 1024L
         const val EXACT_MATCH_SCORE = 1_200
+        const val MIN_MAL_MATCH_SCORE = 600
     }
 }

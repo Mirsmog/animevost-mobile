@@ -281,6 +281,7 @@ class PlayerViewModel @Inject constructor(
                     episodeNumber = episodeNum,
                     titleOriginal = titleOriginal,
                     titleAlternative = titleAlternative,
+                    year = animeYear,
                 )
             } catch (error: CancellationException) {
                 throw error

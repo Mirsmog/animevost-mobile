@@ -14,11 +14,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         WatchProgressEntity::class,
         UserListEntity::class,
         YummyMappingEntity::class,
+        MalMappingEntity::class,
         SkipTimeEntity::class,
         ThemeFingerprintEntity::class,
         ThemeLookupEntity::class,
     ],
-    version = 12,
+    version = 13,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -27,6 +28,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun watchProgressDao(): WatchProgressDao
     abstract fun userListDao(): UserListDao
     abstract fun yummyMappingDao(): YummyMappingDao
+    abstract fun malMappingDao(): MalMappingDao
     abstract fun skipTimeDao(): SkipTimeDao
     abstract fun themeFingerprintDao(): ThemeFingerprintDao
     abstract fun themeLookupDao(): ThemeLookupDao
@@ -218,6 +220,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS `mal_mapping` (
+                        `animeId` INTEGER NOT NULL,
+                        `malId` INTEGER NOT NULL,
+                        `updatedAt` INTEGER NOT NULL,
+                        PRIMARY KEY(`animeId`)
+                    )""".trimIndent(),
+                )
+                db.execSQL("DELETE FROM `skip_times` WHERE `source` = 'ALLOHA'")
+            }
+        }
+
         fun build(context: Context): AppDatabase =
             Room.databaseBuilder(context, AppDatabase::class.java, "animevost.db")
                 .addMigrations(
@@ -232,6 +248,7 @@ abstract class AppDatabase : RoomDatabase() {
                     MIGRATION_9_10,
                     MIGRATION_10_11,
                     MIGRATION_11_12,
+                    MIGRATION_12_13,
                 )
                 .build()
     }

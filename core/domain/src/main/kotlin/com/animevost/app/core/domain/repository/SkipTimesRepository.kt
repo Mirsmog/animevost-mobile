@@ -8,5 +8,6 @@ interface SkipTimesRepository {
         episodeNumber: Int,
         titleOriginal: String,
         titleAlternative: String,
+        year: Int? = null,
     ): List<SkipInterval>
 }

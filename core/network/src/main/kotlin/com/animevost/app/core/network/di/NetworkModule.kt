@@ -6,6 +6,8 @@ import com.animevost.app.core.network.alloha.AllohaIframeFetcher
 import com.animevost.app.core.network.alloha.AllohaSkipClient
 import com.animevost.app.core.network.alloha.YummyAnimeApi
 import com.animevost.app.core.network.alloha.YummyAnimeSearchClient
+import com.animevost.app.core.network.aniskip.AniSkipApi
+import com.animevost.app.core.network.aniskip.AniSkipClient
 import com.animevost.app.core.network.animethemes.AnimeThemesClient
 import dagger.Module
 import dagger.Provides
@@ -154,6 +156,39 @@ object NetworkModule {
         allohaApi: AllohaApi,
         iframeFetcher: AllohaIframeFetcher,
     ): AllohaSkipClient = AllohaSkipClient(yummyApi, allohaApi, iframeFetcher)
+
+    @Provides
+    @Singleton
+    @Named("aniskip")
+    fun provideAniSkipRetrofit(
+        loggingInterceptor: HttpLoggingInterceptor,
+    ): Retrofit = Retrofit.Builder()
+        .baseUrl("https://api.aniskip.com/")
+        .client(
+            OkHttpClient.Builder()
+                .addInterceptor { chain ->
+                    chain.proceed(
+                        chain.request().newBuilder()
+                            .header("User-Agent", "AnimeVost-Android")
+                            .build(),
+                    )
+                }
+                .addInterceptor(loggingInterceptor)
+                .connectTimeout(8, TimeUnit.SECONDS)
+                .readTimeout(8, TimeUnit.SECONDS)
+                .build(),
+        )
+        .addConverterFactory(GsonConverterFactory.create())
+        .build()
+
+    @Provides
+    @Singleton
+    fun provideAniSkipApi(@Named("aniskip") retrofit: Retrofit): AniSkipApi =
+        retrofit.create(AniSkipApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideAniSkipClient(api: AniSkipApi): AniSkipClient = AniSkipClient(api)
 
     @Provides
     @Singleton

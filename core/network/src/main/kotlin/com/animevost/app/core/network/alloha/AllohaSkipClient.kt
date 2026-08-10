@@ -98,7 +98,7 @@ class AllohaSkipClient(
         return null
     }
 
-    /** Parses Alloha `"0-135,1038-1152"` (seconds) into ms ranges. */
+    /** Parses Alloha `"0-135,1038-1152"` (seconds) into raw ms ranges. */
     internal fun parseSkipTime(raw: String): List<AllohaSkipRange> {
         if (raw.isBlank()) return emptyList()
         val segments = raw.split(',')
@@ -111,29 +111,16 @@ class AllohaSkipClient(
             }
         if (segments.isEmpty()) return emptyList()
 
-        return segments.mapIndexed { idx, (start, end) ->
-            // First segment that starts within 2 minutes is treated as opening.
-            val type = when {
-                idx == 0 && start <= OPENING_MAX_START_S -> AllohaSkipType.OPENING
-                else -> AllohaSkipType.ENDING
-            }
+        return segments.map { (start, end) ->
             AllohaSkipRange(
-                type = type,
                 startMs = start * 1000,
                 endMs = end * 1000,
             )
         }
     }
-
-    companion object {
-        private const val OPENING_MAX_START_S = 120L
-    }
 }
 
-enum class AllohaSkipType { OPENING, ENDING }
-
 data class AllohaSkipRange(
-    val type: AllohaSkipType,
     val startMs: Long,
     val endMs: Long,
 )

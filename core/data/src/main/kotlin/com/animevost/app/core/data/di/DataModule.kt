@@ -8,6 +8,7 @@ import androidx.datastore.preferences.preferencesDataStoreFile
 import com.animevost.app.core.data.db.AppDatabase
 import com.animevost.app.core.data.db.FavoriteDao
 import com.animevost.app.core.data.db.HistoryDao
+import com.animevost.app.core.data.db.MalMappingDao
 import com.animevost.app.core.data.db.SkipTimeDao
 import com.animevost.app.core.data.db.ThemeFingerprintDao
 import com.animevost.app.core.data.db.ThemeLookupDao
@@ -77,6 +78,9 @@ object DataProvidesModule {
 
     @Provides
     fun provideYummyMappingDao(db: AppDatabase): YummyMappingDao = db.yummyMappingDao()
+
+    @Provides
+    fun provideMalMappingDao(db: AppDatabase): MalMappingDao = db.malMappingDao()
 
     @Provides
     fun provideSkipTimeDao(db: AppDatabase): SkipTimeDao = db.skipTimeDao()
