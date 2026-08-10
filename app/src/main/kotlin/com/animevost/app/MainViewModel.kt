@@ -2,6 +2,7 @@ package com.animevost.app
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.animevost.app.core.domain.model.AppBuildInfo
 import com.animevost.app.core.domain.model.UpdateInfo
 import com.animevost.app.core.domain.repository.UpdateRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -23,19 +24,20 @@ sealed interface UpdateState {
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val updateRepository: UpdateRepository,
+    private val appBuildInfo: AppBuildInfo,
 ) : ViewModel() {
 
     private val _updateState = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val updateState: StateFlow<UpdateState> = _updateState
 
     init {
-        checkForUpdates()
+        if (appBuildInfo.inAppUpdatesEnabled) checkForUpdates()
     }
 
     private fun checkForUpdates() {
         viewModelScope.launch {
             try {
-                val info = updateRepository.checkForUpdate(BuildConfig.VERSION_NAME)
+                val info = updateRepository.checkForUpdate(appBuildInfo.versionName)
                 if (info != null) {
                     _updateState.value = UpdateState.Available(info)
                 }

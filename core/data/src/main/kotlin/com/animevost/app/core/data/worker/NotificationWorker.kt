@@ -106,5 +106,9 @@ class NotificationWorker @AssistedInject constructor(
                 request,
             )
         }
+
+        fun cancel(context: Context) {
+            WorkManager.getInstance(context).cancelUniqueWork(WORK_NAME)
+        }
     }
 }

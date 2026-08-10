@@ -14,13 +14,18 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import com.animevost.app.core.data.notification.AnimeNotificationIntent
+import com.animevost.app.core.domain.model.AppBuildInfo
 import com.animevost.app.core.ui.theme.AnimeVostTheme
 import com.animevost.app.navigation.AppNavGraph
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var appBuildInfo: AppBuildInfo
 
     private val notificationAnimeUrl = MutableStateFlow<String?>(null)
 
@@ -30,7 +35,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        requestNotificationPermissionIfNeeded()
+        if (appBuildInfo.backgroundNotificationsEnabled) {
+            requestNotificationPermissionIfNeeded()
+        }
         handleNotificationIntent(intent)
         enableEdgeToEdge()
         if (BuildConfig.DEBUG) {

@@ -28,7 +28,7 @@ jobs:
           ./gradlew --no-daemon --max-workers=1
           -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8"
           -Pkotlin.compiler.execution.strategy=in-process
-          testDebugUnitTest
+          testDebugUnitTest :app:testDevDebugUnitTest
 
       - name: Decode keystore
         run: printf '%s' "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > "${{ github.workspace }}/keystore.jks"
@@ -38,7 +38,7 @@ jobs:
           ./gradlew --no-daemon --max-workers=1
           -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8"
           -Pkotlin.compiler.execution.strategy=in-process
-          assembleRelease
+          :app:assembleProdRelease
         env:
           SIGNING_STORE_FILE: ${{ github.workspace }}/keystore.jks
           SIGNING_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -48,9 +48,9 @@ jobs:
       - name: Rename APKs
         run: |
           VERSION="${{ github.ref_name }}"
-          for apk in app/build/outputs/apk/release/*.apk; do
-            abi=$(basename "$apk" | sed 's/^app-//' | sed 's/-release\.apk$//')
-            mv "$apk" "app/build/outputs/apk/release/AnimeVost-${VERSION}-${abi}.apk"
+          for apk in app/build/outputs/apk/prod/release/*.apk; do
+            abi=$(basename "$apk" | sed 's/^app-prod-//' | sed 's/-release\.apk$//')
+            mv "$apk" "app/build/outputs/apk/prod/release/AnimeVost-${VERSION}-${abi}.apk"
           done
 
       - name: Create GitHub Release
@@ -71,7 +71,7 @@ jobs:
             '' \
             '> Перед установкой разрешите установку из неизвестных источников в настройках устройства.')
           gh release create "$GITHUB_REF_NAME" \
-            app/build/outputs/apk/release/AnimeVost-*.apk \
+            app/build/outputs/apk/prod/release/AnimeVost-*.apk \
             --repo "$GITHUB_REPOSITORY" \
             --title "AnimeVost $GITHUB_REF_NAME" \
             --notes "$RELEASE_NOTES"

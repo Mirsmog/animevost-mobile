@@ -35,14 +35,14 @@ jobs:
           ./gradlew --no-daemon --max-workers=1
           -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8"
           -Pkotlin.compiler.execution.strategy=in-process
-          testDebugUnitTest
+          testDebugUnitTest :app:testDevDebugUnitTest
 
       - name: Lint and assemble debug APK
         run: >-
           ./gradlew --no-daemon --max-workers=1
           -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8"
           -Pkotlin.compiler.execution.strategy=in-process
-          lintDebug assembleDebug
+          :app:lintDevDebug :app:assembleDevDebug
 
       - name: Clean workspace
         if: always()

@@ -104,7 +104,7 @@
 ```bash
 git clone --recurse-submodules https://github.com/Mirsmog/animevost-mobile.git
 cd animevost-mobile
-./gradlew assembleDebug
+./gradlew :app:assembleDevDebug
 ```
 
 Если репозиторий уже клонирован без submodules:
@@ -113,16 +113,16 @@ cd animevost-mobile
 git submodule update --init --recursive
 ```
 
-Готовые debug APK появятся в `app/build/outputs/apk/debug/`.
+Готовые локальные APK появятся в `app/build/outputs/apk/dev/debug/`.
 
 ### Проверки
 
 ```bash
 # Unit-тесты
-./gradlew testDebugUnitTest
+./gradlew testDebugUnitTest :app:testDevDebugUnitTest
 
 # Линтер и debug-сборка
-./gradlew lintDebug assembleDebug
+./gradlew :app:lintDevDebug :app:assembleDevDebug
 ```
 
 ## Участие в разработке

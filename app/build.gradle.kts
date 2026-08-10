@@ -60,6 +60,24 @@ android {
         }
     }
 
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("prod") {
+            dimension = "distribution"
+            buildConfigField("boolean", "IS_DEVELOPMENT", "false")
+            buildConfigField("boolean", "ENABLE_IN_APP_UPDATES", "true")
+            buildConfigField("boolean", "ENABLE_BACKGROUND_NOTIFICATIONS", "true")
+        }
+        create("dev") {
+            dimension = "distribution"
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            buildConfigField("boolean", "IS_DEVELOPMENT", "true")
+            buildConfigField("boolean", "ENABLE_IN_APP_UPDATES", "false")
+            buildConfigField("boolean", "ENABLE_BACKGROUND_NOTIFICATIONS", "false")
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -72,6 +90,19 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+}
+
+androidComponents {
+    beforeVariants { variant ->
+        val distribution = variant.productFlavors
+            .firstOrNull { (dimension, _) -> dimension == "distribution" }
+            ?.second
+        variant.enable = when (distribution) {
+            "dev" -> variant.buildType == "debug"
+            "prod" -> variant.buildType == "release"
+            else -> false
+        }
     }
 }
 

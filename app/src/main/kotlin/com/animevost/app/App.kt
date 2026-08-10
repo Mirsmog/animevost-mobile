@@ -11,6 +11,7 @@ import coil.decode.ImageDecoderDecoder
 import com.animevost.app.BuildConfig
 import com.animevost.app.core.data.notification.FavoriteEpisodeNotifier
 import com.animevost.app.core.data.worker.NotificationWorker
+import com.animevost.app.core.domain.model.AppBuildInfo
 import dagger.hilt.android.HiltAndroidApp
 import timber.log.Timber
 import javax.inject.Inject
@@ -23,6 +24,9 @@ class App : Application(), Configuration.Provider, ImageLoaderFactory {
 
     @Inject
     lateinit var favoriteEpisodeNotifier: FavoriteEpisodeNotifier
+
+    @Inject
+    lateinit var appBuildInfo: AppBuildInfo
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder()
@@ -45,7 +49,11 @@ class App : Application(), Configuration.Provider, ImageLoaderFactory {
         if (BuildConfig.DEBUG) {
             Timber.plant(Timber.DebugTree())
         }
-        favoriteEpisodeNotifier.prepare()
-        NotificationWorker.schedule(this)
+        if (appBuildInfo.backgroundNotificationsEnabled) {
+            favoriteEpisodeNotifier.prepare()
+            NotificationWorker.schedule(this)
+        } else {
+            NotificationWorker.cancel(this)
+        }
     }
 }
