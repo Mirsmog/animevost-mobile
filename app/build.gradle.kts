@@ -14,8 +14,8 @@ android {
         applicationId = "com.animevost.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 41
-        versionName = "1.7.17"
+        versionCode = 42
+        versionName = "1.7.18"
     }
 
     val releaseStoreFile = System.getenv("SIGNING_STORE_FILE")
