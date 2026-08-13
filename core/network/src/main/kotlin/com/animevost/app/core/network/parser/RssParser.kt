@@ -10,6 +10,7 @@ data class RssItem(
     val link: String,
     val pubDate: String,
     val description: String,
+    val categories: List<String> = emptyList(),
 )
 
 class RssParser @Inject constructor() {
@@ -26,6 +27,7 @@ class RssParser @Inject constructor() {
         var link = ""
         var pubDate = ""
         var description = ""
+        var category = ""
 
         var eventType = parser.eventType
         while (eventType != XmlPullParser.END_DOCUMENT) {
@@ -38,6 +40,7 @@ class RssParser @Inject constructor() {
                         link = ""
                         pubDate = ""
                         description = ""
+                        category = ""
                     }
                 }
 
@@ -49,6 +52,7 @@ class RssParser @Inject constructor() {
                             "link" -> link += text
                             "pubDate" -> pubDate += text
                             "description" -> description += text
+                            "category" -> category += text
                         }
                     }
                 }
@@ -61,6 +65,10 @@ class RssParser @Inject constructor() {
                             link = link,
                             pubDate = pubDate,
                             description = description,
+                            categories = category
+                                .split(',')
+                                .map { it.trim() }
+                                .filter { it.isNotEmpty() },
                         )
                     }
                     currentTag = ""

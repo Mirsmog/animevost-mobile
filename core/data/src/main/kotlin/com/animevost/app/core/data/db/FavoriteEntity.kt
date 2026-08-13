@@ -13,4 +13,5 @@ data class FavoriteEntity(
     val episodeInfo: String,
     val url: String,
     val addedAt: Long = System.currentTimeMillis(),
+    val releaseStatus: String = "UNKNOWN",
 )

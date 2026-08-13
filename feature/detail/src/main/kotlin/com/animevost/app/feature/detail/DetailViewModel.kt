@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import com.animevost.app.core.domain.model.AnimePreview
+import com.animevost.app.core.domain.model.AnimeDetail
 import com.animevost.app.core.domain.model.AnimeStatus
 import com.animevost.app.core.domain.model.Comment
 import com.animevost.app.core.domain.model.Episode
@@ -159,6 +160,9 @@ class DetailViewModel @Inject constructor(
             val result = getAnimeDetailUseCase(url)
             result.onSuccess { anime ->
                 val isFav = favoriteRepository.isFavorite(anime.id)
+                if (isFav) {
+                    favoriteRepository.updateMetadata(anime.toFavoritePreview(url))
+                }
                 _uiState.update {
                     it.copy(
                         anime = anime,
@@ -283,14 +287,7 @@ class DetailViewModel @Inject constructor(
 
     private fun toggleFavorite() {
         val anime = _uiState.value.anime ?: return
-        val preview = AnimePreview(
-            id = anime.id,
-            title = anime.title,
-            titleOriginal = anime.titleOriginal,
-            posterUrl = anime.posterUrl,
-            episodeInfo = anime.episodeCount,
-            url = _uiState.value.animeUrl,
-        )
+        val preview = anime.toFavoritePreview(_uiState.value.animeUrl)
         viewModelScope.launch {
             try {
                 val isFav = toggleFavoriteUseCase(anime.id, preview)
@@ -307,6 +304,7 @@ class DetailViewModel @Inject constructor(
         val state = _uiState.value
         val anime = state.anime ?: return
         if (!state.isFavorite) return
+        if (!anime.releaseStatus.supportsEpisodeNotifications) return
         if (!state.areFavoriteNotificationsEnabled) {
             viewModelScope.launch {
                 _effect.emit(
@@ -331,6 +329,16 @@ class DetailViewModel @Inject constructor(
             )
         }
     }
+
+    private fun AnimeDetail.toFavoritePreview(url: String): AnimePreview = AnimePreview(
+        id = id,
+        title = title,
+        titleOriginal = titleOriginal,
+        posterUrl = posterUrl,
+        episodeInfo = episodeInfo.ifBlank { episodeCount },
+        url = url,
+        releaseStatus = releaseStatus,
+    )
 
     private fun toggleDescription() {
         _uiState.update { it.copy(isDescriptionExpanded = !it.isDescriptionExpanded) }

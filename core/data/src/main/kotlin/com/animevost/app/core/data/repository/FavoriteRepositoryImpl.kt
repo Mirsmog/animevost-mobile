@@ -82,6 +82,20 @@ class FavoriteRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun updateMetadata(preview: AnimePreview) {
+        favMutex.withLock {
+            val existing = favoriteDao.getByNewsId(preview.id) ?: return
+            val incoming = preview.toFavoriteEntity()
+            favoriteDao.insert(
+                incoming.copy(
+                    addedAt = existing.addedAt,
+                    releaseStatus = incoming.releaseStatus.takeUnless { it == "UNKNOWN" }
+                        ?: existing.releaseStatus,
+                ),
+            )
+        }
+    }
+
     override suspend fun syncOnLogin(): Result<Unit> {
         return try {
             favMutex.withLock {
@@ -192,8 +206,13 @@ class FavoriteRepositoryImpl @Inject constructor(
     private fun List<AnimePreview>.toCachedEntities(previous: List<FavoriteEntity>): List<FavoriteEntity> {
         val previousMap = previous.associateBy { it.newsId }
         return map { anime ->
-            anime.toFavoriteEntity().copy(
+            val existing = previousMap[anime.id]
+            val incoming = anime.toFavoriteEntity()
+            incoming.copy(
                 addedAt = previousMap[anime.id]?.addedAt ?: System.currentTimeMillis(),
+                releaseStatus = incoming.releaseStatus.takeUnless { it == "UNKNOWN" }
+                    ?: existing?.releaseStatus
+                    ?: "UNKNOWN",
             )
         }
     }

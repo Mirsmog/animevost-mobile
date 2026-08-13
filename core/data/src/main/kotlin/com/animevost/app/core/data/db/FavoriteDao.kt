@@ -25,6 +25,9 @@ interface FavoriteDao {
     @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE newsId = :newsId)")
     fun isFavoriteFlow(newsId: Int): Flow<Boolean>
 
+    @Query("SELECT * FROM favorites WHERE newsId = :newsId LIMIT 1")
+    suspend fun getByNewsId(newsId: Int): FavoriteEntity?
+
     @Query("SELECT COUNT(*) FROM favorites")
     fun countFlow(): Flow<Int>
 
@@ -36,6 +39,12 @@ interface FavoriteDao {
 
     @Query("DELETE FROM favorites WHERE newsId = :newsId")
     suspend fun deleteByNewsId(newsId: Int)
+
+    @Query(
+        "UPDATE favorites SET releaseStatus = :releaseStatus " +
+            "WHERE newsId = :newsId AND releaseStatus != :releaseStatus",
+    )
+    suspend fun updateReleaseStatus(newsId: Int, releaseStatus: String)
 
     @Query("SELECT newsId FROM favorites")
     suspend fun getAllIds(): List<Int>

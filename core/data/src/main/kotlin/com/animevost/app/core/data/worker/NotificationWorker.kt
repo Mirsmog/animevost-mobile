@@ -14,6 +14,8 @@ import com.animevost.app.core.data.notification.FavoriteEpisodeNotifier
 import com.animevost.app.core.data.notification.FavoriteEpisodeStateStore
 import com.animevost.app.core.data.notification.FavoriteEpisodeUpdateDetector
 import com.animevost.app.core.domain.repository.NotificationPreferencesRepository
+import com.animevost.app.core.domain.model.AnimeReleaseStatus
+import com.animevost.app.core.network.parser.RssItem
 import com.animevost.app.core.network.parser.RssParser
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
@@ -47,16 +49,32 @@ class NotificationWorker @AssistedInject constructor(
                 stateStore.replace(emptyMap())
                 return Result.success()
             }
+            val hasTrackableFavorites = favorites.any { favorite ->
+                AnimeReleaseStatus.fromStorage(favorite.releaseStatus).shouldPollForEpisodes
+            }
+            if (!hasTrackableFavorites) {
+                stateStore.replace(emptyMap())
+                return Result.success()
+            }
 
             val feedItems = rssParser.parse(fetchRss())
             if (feedItems.isEmpty()) return Result.success()
+            val feedStatuses = releaseStatusesByAnimeId(feedItems)
 
             val detection = detector.detect(
-                favorites = favorites,
+                favorites = favorites.filter { favorite ->
+                    val storedStatus = AnimeReleaseStatus.fromStorage(favorite.releaseStatus)
+                    storedStatus.supportsEpisodeNotifications ||
+                        feedStatuses[favorite.newsId] == AnimeReleaseStatus.ONGOING
+                },
                 feedItems = feedItems,
                 knownEpisodes = state.episodesByAnimeId,
             )
             stateStore.replace(detection.episodesByAnimeId)
+            updateFavoriteReleaseStatuses(
+                statusesByAnimeId = feedStatuses,
+                favoriteIds = favorites.mapTo(mutableSetOf()) { it.newsId },
+            )
 
             if (!state.initialized) return Result.success()
             if (!preferencesRepository.favoriteNotificationsEnabled.first()) return Result.success()
@@ -79,6 +97,26 @@ class NotificationWorker @AssistedInject constructor(
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) error("RSS request failed: HTTP ${response.code}")
             response.body?.string().orEmpty()
+        }
+    }
+
+    private suspend fun updateFavoriteReleaseStatuses(
+        statusesByAnimeId: Map<Int, AnimeReleaseStatus>,
+        favoriteIds: Set<Int>,
+    ) {
+        statusesByAnimeId.forEach { (animeId, status) ->
+            if (animeId !in favoriteIds) return@forEach
+            favoriteDao.updateReleaseStatus(animeId, status.name)
+        }
+    }
+
+    private fun releaseStatusesByAnimeId(
+        feedItems: List<RssItem>,
+    ): Map<Int, AnimeReleaseStatus> = buildMap {
+        feedItems.forEach { item ->
+            val animeId = detector.extractAnimeId(item.link) ?: return@forEach
+            val status = AnimeReleaseStatus.fromCategories(item.categories)
+            if (status != AnimeReleaseStatus.UNKNOWN) put(animeId, status)
         }
     }
 

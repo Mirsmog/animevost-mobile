@@ -2,6 +2,7 @@ package com.animevost.app.core.data.sdk
 
 import com.animevost.app.core.domain.model.AnimeDetail
 import com.animevost.app.core.domain.model.AnimePreview
+import com.animevost.app.core.domain.model.AnimeReleaseStatus
 import com.animevost.app.core.domain.model.AnimeType
 import com.animevost.app.core.domain.model.CatalogFilter
 import com.animevost.app.core.domain.model.Comment
@@ -41,6 +42,7 @@ internal fun SdkAnimePreview.toDomain(): AnimePreview =
         rating = rating ?: 0.0,
         viewCount = viewCount ?: 0,
         commentCount = commentCount ?: 0,
+        releaseStatus = AnimeReleaseStatus.fromCategories(categories.map { it.title }),
     )
 
 internal fun AnimeDetails.toDomain(totalCommentPages: Int): AnimeDetail {
@@ -74,6 +76,8 @@ internal fun AnimeDetails.toDomain(totalCommentPages: Int): AnimeDetail {
         relatedAnime = emptyList(),
         relatedSeries = relatedSeries.map { it.toDomain() },
         episodes = episodes.map { it.toDomain() },
+        releaseStatus = AnimeReleaseStatus.fromCategories(categories.map { it.title }),
+        episodeInfo = episodeInfo.orEmpty(),
     )
 }
 

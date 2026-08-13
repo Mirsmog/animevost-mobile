@@ -418,6 +418,7 @@ private fun DetailContent(
         PosterHeader(
             anime = anime,
             isFavorite = isFavorite,
+            showFavoriteNotificationAction = anime.releaseStatus.supportsEpisodeNotifications,
             isFavoriteNotificationEnabled =
                 areFavoriteNotificationsEnabled && !isFavoriteNotificationMuted,
             onBack = onBack,
@@ -675,6 +676,7 @@ private fun DetailContent(
 private fun PosterHeader(
     anime: AnimeDetail,
     isFavorite: Boolean,
+    showFavoriteNotificationAction: Boolean,
     isFavoriteNotificationEnabled: Boolean,
     onBack: () -> Unit,
     onToggleFavorite: () -> Unit,
@@ -733,7 +735,7 @@ private fun PosterHeader(
                 .padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (isFavorite) {
+            if (isFavorite && showFavoriteNotificationAction) {
                 HeaderActionButton(
                     onClick = onToggleFavoriteNotification,
                     contentDescription = if (isFavoriteNotificationEnabled) {

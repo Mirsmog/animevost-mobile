@@ -17,4 +17,5 @@ data class AnimePreview(
     val rating: Double = 0.0,
     val viewCount: Int = 0,
     val commentCount: Int = 0,
+    val releaseStatus: AnimeReleaseStatus = AnimeReleaseStatus.UNKNOWN,
 )

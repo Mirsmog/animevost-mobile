@@ -30,4 +30,6 @@ data class AnimeDetail(
     val relatedAnime: List<AnimePreview>,
     val relatedSeries: List<RelatedSeries>,
     val episodes: List<Episode>,
+    val releaseStatus: AnimeReleaseStatus = AnimeReleaseStatus.UNKNOWN,
+    val episodeInfo: String = "",
 )

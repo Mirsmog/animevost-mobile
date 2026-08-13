@@ -27,6 +27,9 @@ interface FavoriteRepository {
      */
     suspend fun toggleFavorite(newsId: Int, preview: AnimePreview? = null): Boolean
 
+    /** Refreshes cached metadata when the favorite detail page provides newer values. */
+    suspend fun updateMetadata(preview: AnimePreview)
+
     /**
      * One-time merge performed on login: pushes local-only items to the remote server,
      * clears the local Room DB, and loads all remote favorites into in-memory state.
