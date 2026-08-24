@@ -32,4 +32,10 @@ data class AnimeDetail(
     val episodes: List<Episode>,
     val releaseStatus: AnimeReleaseStatus = AnimeReleaseStatus.UNKNOWN,
     val episodeInfo: String = "",
+    val upcomingEpisode: UpcomingEpisode? = null,
+)
+
+data class UpcomingEpisode(
+    val number: Int,
+    val scheduledAtEpochSeconds: Long,
 )

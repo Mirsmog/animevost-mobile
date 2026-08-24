@@ -54,6 +54,7 @@ import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.filled.RemoveRedEye
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.outlined.EmojiEmotions
@@ -93,6 +94,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
@@ -111,6 +113,7 @@ import com.animevost.app.core.domain.model.AnimeStatus
 import com.animevost.app.core.domain.model.Comment
 import com.animevost.app.core.domain.model.CommentScope
 import com.animevost.app.core.domain.model.Episode
+import com.animevost.app.core.domain.model.UpcomingEpisode
 import com.animevost.app.core.domain.model.VideoSource
 import com.animevost.app.core.ui.components.AnimeCard
 import com.animevost.app.core.ui.components.CommentHtmlRenderer
@@ -616,12 +619,13 @@ private fun DetailContent(
         }
 
         // ── Episodes ──────────────────────────────────────────────────
-        if (anime.episodes.isNotEmpty()) {
+        if (anime.episodes.isNotEmpty() || anime.upcomingEpisode != null) {
             Spacer(Modifier.height(8.dp))
             HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = Bg4)
             Spacer(Modifier.height(12.dp))
             EpisodesSection(
                 episodes = anime.episodes,
+                upcomingEpisode = anime.upcomingEpisode,
                 episodeRangeStart = episodeRangeStart,
                 watchedEpisodeIds = watchedEpisodeIds,
                 onPlayEpisode = onPlayEpisode,
@@ -869,6 +873,7 @@ private fun HeaderActionButton(
 @Composable
 private fun EpisodesSection(
     episodes: List<Episode>,
+    upcomingEpisode: UpcomingEpisode?,
     episodeRangeStart: Int,
     watchedEpisodeIds: Set<String>,
     onPlayEpisode: (Episode, Int) -> Unit,
@@ -937,6 +942,9 @@ private fun EpisodesSection(
         } else {
             episodes
         }
+        val showUpcomingEpisode = upcomingEpisode != null &&
+            episodes.none { it.number == upcomingEpisode.number } &&
+            (episodes.size <= 50 || episodeRangeStart + 50 >= episodes.size)
 
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             displayEpisodes.forEachIndexed { localIndex, episode ->
@@ -994,15 +1002,93 @@ private fun EpisodesSection(
                         )
                     }
                 }
-                if (localIndex < displayEpisodes.lastIndex) {
+                if (localIndex < displayEpisodes.lastIndex || showUpcomingEpisode) {
                     HorizontalDivider(
                         modifier = Modifier.padding(start = 56.dp),
                         color = Bg4,
                     )
                 }
             }
+            if (showUpcomingEpisode) {
+                UpcomingEpisodeRow(upcomingEpisode)
+            }
         }
     }
+}
+
+@Composable
+private fun UpcomingEpisodeRow(upcomingEpisode: UpcomingEpisode) {
+    var currentEpochSeconds by remember(upcomingEpisode.scheduledAtEpochSeconds) {
+        mutableStateOf(System.currentTimeMillis() / 1_000L)
+    }
+    LaunchedEffect(upcomingEpisode.scheduledAtEpochSeconds) {
+        while (true) {
+            val currentTimeMillis = System.currentTimeMillis()
+            currentEpochSeconds = currentTimeMillis / 1_000L
+            delay(60_000L - currentTimeMillis % 60_000L)
+        }
+    }
+
+    val remainingSeconds = upcomingEpisode.scheduledAtEpochSeconds - currentEpochSeconds
+    val countdown = formatEpisodeCountdown(remainingSeconds)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .semantics {
+                contentDescription = "${upcomingEpisode.number} серия. $countdown"
+                disabled()
+            }
+            .padding(vertical = 10.dp, horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(32.dp)
+                .clip(CircleShape)
+                .background(Bg3),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Schedule,
+                contentDescription = null,
+                modifier = Modifier.size(17.dp),
+                tint = TextSecondary,
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = "${upcomingEpisode.number} серия",
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextSecondary,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = countdown,
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextSecondary,
+            maxLines = 1,
+        )
+    }
+}
+
+private fun formatEpisodeCountdown(remainingSeconds: Long): String {
+    if (remainingSeconds <= 0L) return "Ожидаем серию"
+
+    val totalMinutes = ((remainingSeconds + 59L) / 60L).coerceAtLeast(1L)
+    val days = totalMinutes / (24L * 60L)
+    val hours = totalMinutes % (24L * 60L) / 60L
+    val minutes = totalMinutes % 60L
+
+    return buildList {
+        if (days > 0L) add("${days}дн")
+        if (hours > 0L) add("${hours}ч")
+        if (minutes > 0L || isEmpty()) add("${minutes}м")
+    }.joinToString(" ")
 }
 
 // ── Download Quality Sheet ────────────────────────────────────────────────────

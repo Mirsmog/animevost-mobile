@@ -15,6 +15,7 @@ import com.animevost.app.core.domain.model.RelatedSeries
 import com.animevost.app.core.domain.model.Schedule
 import com.animevost.app.core.domain.model.ScheduleItem
 import com.animevost.app.core.domain.model.SortOption
+import com.animevost.app.core.domain.model.UpcomingEpisode
 import com.animevost.app.core.domain.model.VideoSource
 import com.animevost.sdk.model.AnimeCategory
 import com.animevost.sdk.model.AnimeComment
@@ -79,6 +80,12 @@ internal fun AnimeDetails.toDomain(totalCommentPages: Int): AnimeDetail {
         episodes = episodes.map { it.toDomain() },
         releaseStatus = AnimeReleaseStatus.fromCategories(categories.map { it.title }),
         episodeInfo = episodeInfo.orEmpty(),
+        upcomingEpisode = upcomingEpisode?.let {
+            UpcomingEpisode(
+                number = it.number,
+                scheduledAtEpochSeconds = it.scheduledAtEpochSeconds,
+            )
+        },
     )
 }
 
