@@ -3,11 +3,11 @@
 package com.animevost.app.feature.player
 
 import android.app.Activity
-import android.content.Context
 import android.content.pm.ActivityInfo
+import android.net.Uri
 import android.view.WindowManager
 import androidx.activity.compose.BackHandler
-import androidx.annotation.OptIn
+import androidx.activity.ComponentActivity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -59,33 +59,26 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.app.PictureInPictureModeChangedInfo
+import androidx.core.util.Consumer
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
-import androidx.media3.common.audio.AudioProcessor
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.audio.AudioSink
-import androidx.media3.exoplayer.audio.DefaultAudioSink
-import androidx.media3.exoplayer.audio.TeeAudioProcessor
+import androidx.media3.common.VideoSize
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 
-@OptIn(UnstableApi::class)
 @Composable
 fun PlayerScreen(
     onBack: () -> Unit,
@@ -94,18 +87,42 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     val activity = context as Activity
+    val componentActivity = activity as ComponentActivity
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val activeSkip by viewModel.activeSkip.collectAsStateWithLifecycle()
     val skipIntervals by viewModel.skipIntervals.collectAsStateWithLifecycle()
-    val lifecycleOwner = LocalLifecycleOwner.current
     val haptic = LocalHapticFeedback.current
+    val player = rememberPlaybackController()
+
+    if (player == null) {
+        BackHandler {
+            PlaybackService.stop(context.applicationContext)
+            onBack()
+        }
+        Box(
+            modifier = Modifier.fillMaxSize().background(Color.Black),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator(
+                color = MaterialTheme.colorScheme.primary,
+                strokeWidth = 3.dp,
+            )
+        }
+        return
+    }
 
     // ── Playback state ───────────────────────────────────────────
-    var isPlaying by remember { mutableStateOf(true) }
-    var isBuffering by remember { mutableStateOf(false) }
-    var currentPosition by rememberSaveable { mutableLongStateOf(0L) }
-    var duration by remember { mutableLongStateOf(0L) }
-    var savedPositionEpisodeId by rememberSaveable { mutableStateOf<String?>(null) }
+    var isPlaying by remember(player) { mutableStateOf(player.isPlaying) }
+    var isBuffering by remember(player) {
+        mutableStateOf(player.playbackState == Player.STATE_BUFFERING)
+    }
+    var currentPosition by rememberSaveable { mutableLongStateOf(player.currentPosition) }
+    var duration by remember { mutableLongStateOf(player.duration.coerceAtLeast(0L)) }
+    var videoWidth by remember { mutableIntStateOf(16) }
+    var videoHeight by remember { mutableIntStateOf(9) }
+    var isInPictureInPictureMode by remember {
+        mutableStateOf(activity.isInPictureInPictureMode)
+    }
 
     // ── UI state ─────────────────────────────────────────────────
     var controlsVisible by remember { mutableStateOf(true) }
@@ -113,11 +130,6 @@ fun PlayerScreen(
     var seekPreviewMs by remember { mutableLongStateOf(0L) }
     var forcePortraitOnExit by remember { mutableStateOf(false) }
     val forcePortraitOnExitState = rememberUpdatedState(forcePortraitOnExit)
-
-    BackHandler(enabled = state.isCommentsPanelVisible) {
-        viewModel.onEvent(PlayerEvent.HideEpisodeComments)
-        controlsVisible = true
-    }
 
     // ── YouTube-style accumulated seek ───────────────────────────
     val seekScope = rememberCoroutineScope()
@@ -135,6 +147,31 @@ fun PlayerScreen(
     var isSpeedLocked by remember { mutableStateOf(false) }
     var lockedSpeed by remember { mutableFloatStateOf(2.0f) }
     var showSpeedPopup by remember { mutableStateOf(false) }
+
+    val stopPlayback = {
+        val position = player.currentPosition
+        val playbackDuration = player.duration
+        if (position > 0L) {
+            viewModel.onEvent(PlayerEvent.UpdateProgress(position, playbackDuration))
+        }
+        PlayerPictureInPicture.clear(activity)
+        player.stop()
+        player.clearMediaItems()
+        PlaybackService.stop(context.applicationContext)
+    }
+    val closePlayer = {
+        stopPlayback()
+        onBack()
+    }
+
+    BackHandler {
+        if (state.isCommentsPanelVisible) {
+            viewModel.onEvent(PlayerEvent.HideEpisodeComments)
+            controlsVisible = true
+        } else {
+            closePlayer()
+        }
+    }
 
     DisposableEffect(Unit) {
         val origOrientation = activity.requestedOrientation
@@ -157,69 +194,98 @@ fun PlayerScreen(
         }
     }
 
-    val pcmAudioProcessor = remember(viewModel) {
-        TeeAudioProcessor(
-            object : TeeAudioProcessor.AudioBufferSink {
-                override fun flush(sampleRateHz: Int, channelCount: Int, encoding: Int) {
-                    viewModel.onPcmFormat(sampleRateHz, channelCount, encoding)
-                }
-
-                override fun handleBuffer(buffer: java.nio.ByteBuffer) {
-                    viewModel.onPcmBuffer(buffer)
-                }
-            },
-        )
-    }
-    val renderersFactory = remember(context, pcmAudioProcessor) {
-        object : DefaultRenderersFactory(context) {
-            override fun buildAudioSink(
-                context: Context,
-                enableFloatOutput: Boolean,
-                enableAudioTrackPlaybackParams: Boolean,
-            ): AudioSink = DefaultAudioSink.Builder(context)
-                .setAudioProcessors(arrayOf<AudioProcessor>(pcmAudioProcessor))
-                .setEnableFloatOutput(false)
-                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-                .build()
+    val playbackActive by rememberUpdatedState(
+        isPlaying && player.mediaItemCount > 0,
+    )
+    DisposableEffect(componentActivity) {
+        val pipModeListener = Consumer<PictureInPictureModeChangedInfo> { info ->
+            isInPictureInPictureMode = info.isInPictureInPictureMode
+        }
+        val userLeaveHintListener = Runnable {
+            PlayerPictureInPicture.onUserLeaveHint(componentActivity, playbackActive)
+        }
+        componentActivity.addOnPictureInPictureModeChangedListener(pipModeListener)
+        componentActivity.addOnUserLeaveHintListener(userLeaveHintListener)
+        onDispose {
+            componentActivity.removeOnPictureInPictureModeChangedListener(pipModeListener)
+            componentActivity.removeOnUserLeaveHintListener(userLeaveHintListener)
+            PlayerPictureInPicture.clear(componentActivity)
         }
     }
-    val exoPlayer = remember(context, renderersFactory) {
-        ExoPlayer.Builder(context, renderersFactory).build().apply { playWhenReady = true }
+
+    LaunchedEffect(playbackActive, videoWidth, videoHeight) {
+        PlayerPictureInPicture.update(
+            activity = activity,
+            playbackActive = playbackActive,
+            videoWidth = videoWidth,
+            videoHeight = videoHeight,
+        )
     }
 
-    var previousVideoId by remember { mutableStateOf<String?>(null) }
-
     // ── Load video when URL / episode changes ────────────────────
-    LaunchedEffect(state.currentVideoUrl, state.currentEpisode?.videoId) {
+    LaunchedEffect(
+        state.currentVideoUrl,
+        state.currentEpisode?.videoId,
+        state.selectedQuality,
+        state.resumePositionMs,
+        state.animeTitle,
+        state.posterUrl,
+    ) {
         val url = state.currentVideoUrl ?: return@LaunchedEffect
-        val episodeId = state.currentEpisode?.videoId
-        val isSameEpisode = previousVideoId != null && previousVideoId == episodeId
-        val restoredPos = currentPosition.takeIf { savedPositionEpisodeId == episodeId } ?: 0L
-        val savedPos = maxOf(exoPlayer.currentPosition, restoredPos)
-        exoPlayer.setMediaItem(MediaItem.fromUri(url))
-        exoPlayer.prepare()
-        if ((isSameEpisode || restoredPos > 0L) && savedPos > 0L) exoPlayer.seekTo(savedPos)
-        exoPlayer.playWhenReady = true
-        if (savedPositionEpisodeId != episodeId) {
+        val episode = state.currentEpisode ?: return@LaunchedEffect
+        val mediaId = playbackMediaId(episode.videoId, state.selectedQuality)
+        val mediaMetadata = MediaMetadata.Builder()
+            .setTitle(state.animeTitle.ifBlank { episode.name })
+            .setSubtitle(episode.name)
+            .setArtist(episode.name)
+            .setAlbumTitle("AnimeVost")
+            .apply {
+                state.posterUrl.takeIf(String::isNotBlank)?.let { posterUrl ->
+                    setArtworkUri(Uri.parse(posterUrl))
+                }
+            }
+            .build()
+        val mediaItem = MediaItem.Builder()
+            .setMediaId(mediaId)
+            .setUri(url)
+            .setMediaMetadata(mediaMetadata)
+            .build()
+        val currentItem = player.currentMediaItem
+        val sameMedia = currentItem?.mediaId == mediaId
+        val sameEpisode = currentItem?.episodeVideoId() == episode.videoId
+
+        if (sameMedia) {
+            if (currentItem.mediaMetadata != mediaMetadata) {
+                player.replaceMediaItem(player.currentMediaItemIndex, mediaItem)
+            }
+            if (state.resumePositionMs > 0L) {
+                player.seekTo(state.resumePositionMs)
+                viewModel.onEvent(PlayerEvent.ResumeConsumed)
+            }
+            return@LaunchedEffect
+        }
+
+        val startPosition = when {
+            sameEpisode -> player.currentPosition
+            state.resumePositionMs > 0L -> state.resumePositionMs
+            else -> 0L
+        }
+        val shouldPlay = currentItem == null || player.playWhenReady
+        player.setMediaItem(mediaItem, startPosition)
+        player.prepare()
+        player.playWhenReady = shouldPlay
+        if (!sameEpisode) {
             currentPosition = 0L
             duration = 0L
         }
-        savedPositionEpisodeId = episodeId
-        previousVideoId = episodeId
+        if (state.resumePositionMs > 0L) {
+            viewModel.onEvent(PlayerEvent.ResumeConsumed)
+        }
         showAutoNext = false
     }
 
-    // Seek to saved resume position once the player becomes ready
-    LaunchedEffect(state.resumePositionMs) {
-        val resumeMs = state.resumePositionMs
-        if (resumeMs > 0L) {
-            exoPlayer.seekTo(resumeMs)
-            viewModel.onEvent(PlayerEvent.ResumeConsumed)
-        }
-    }
-
     // ── Player listener ──────────────────────────────────────────
-    DisposableEffect(exoPlayer) {
+    DisposableEffect(player, state.hasNext) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 isBuffering = playbackState == Player.STATE_BUFFERING
@@ -232,38 +298,46 @@ fun PlayerScreen(
                 isPlaying = playing
             }
 
+            override fun onVideoSizeChanged(videoSize: VideoSize) {
+                if (videoSize.width > 0 && videoSize.height > 0) {
+                    videoWidth = videoSize.width
+                    videoHeight = videoSize.height
+                }
+            }
+
             override fun onPositionDiscontinuity(
                 oldPosition: Player.PositionInfo,
                 newPosition: Player.PositionInfo,
                 reason: Int,
             ) {
-                viewModel.checkSkipPosition(newPosition.positionMs, exoPlayer.duration)
+                viewModel.checkSkipPosition(newPosition.positionMs, player.duration)
             }
         }
-        exoPlayer.addListener(listener)
+        isPlaying = player.isPlaying
+        isBuffering = player.playbackState == Player.STATE_BUFFERING
+        player.addListener(listener)
         onDispose {
-            val pos = exoPlayer.currentPosition
-            val dur = exoPlayer.duration
+            val pos = player.currentPosition
+            val dur = player.duration
             if (pos > 0L) viewModel.onEvent(PlayerEvent.UpdateProgress(pos, dur))
-            exoPlayer.removeListener(listener)
-            exoPlayer.release()
+            player.removeListener(listener)
         }
     }
 
     // ── Position ticker (every 500 ms) + progress save every 5 s ─
-    LaunchedEffect(Unit) {
+    LaunchedEffect(player) {
         var saveCounter = 0
         while (true) {
             delay(500)
-            val position = exoPlayer.currentPosition
+            val position = player.currentPosition
             currentPosition = position
-            val dur = exoPlayer.duration
+            val dur = player.duration
             if (dur > 0) duration = dur
             viewModel.checkSkipPosition(position, dur)
             saveCounter++
             if (saveCounter >= 10) {
                 saveCounter = 0
-                val pos = exoPlayer.currentPosition
+                val pos = player.currentPosition
                 if (pos > 0L && dur > 0L) {
                     viewModel.onEvent(PlayerEvent.UpdateProgress(pos, dur))
                 }
@@ -287,22 +361,9 @@ fun PlayerScreen(
             autoNextCountdown = i
         }
         if (showAutoNext) {
-            viewModel.onEvent(PlayerEvent.NextEpisode(exoPlayer.currentPosition, exoPlayer.duration))
+            viewModel.onEvent(PlayerEvent.NextEpisode(player.currentPosition, player.duration))
             showAutoNext = false
         }
-    }
-
-    // ── Lifecycle pause / resume ─────────────────────────────────
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_PAUSE -> exoPlayer.pause()
-                Lifecycle.Event.ON_RESUME -> if (isPlaying) exoPlayer.play()
-                else -> {}
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -312,15 +373,17 @@ fun PlayerScreen(
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
 
         // Video surface
-        if (state.currentVideoUrl != null) {
+        if (state.currentVideoUrl != null || player.mediaItemCount > 0) {
             AndroidView(
                 factory = { ctx ->
-                    PlayerView(ctx).apply { player = exoPlayer; useController = false }
+                    PlayerView(ctx).apply { this.player = player; useController = false }
                 },
                 modifier = Modifier.fillMaxSize(),
-                update = { view -> view.player = exoPlayer },
+                update = { view -> view.player = player },
             )
         }
+
+        if (isInPictureInPictureMode) return@Box
 
         // ── Gesture layer ────────────────────────────────────────
         Box(
@@ -346,12 +409,12 @@ fun PlayerScreen(
                                         }
                                         try {
                                             isSpeedBoosting = true
-                                            exoPlayer.setPlaybackParameters(PlaybackParameters(boostSpeed))
+                                            player.setPlaybackParameters(PlaybackParameters(boostSpeed))
                                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                             tryAwaitRelease()
                                         } finally {
                                             isSpeedBoosting = false
-                                            exoPlayer.setPlaybackParameters(
+                                            player.setPlaybackParameters(
                                                 PlaybackParameters(if (isSpeedLocked) lockedSpeed else 1.0f),
                                             )
                                         }
@@ -374,8 +437,8 @@ fun PlayerScreen(
                                     seekJob = seekScope.launch {
                                         delay(600)
                                         val accum = seekAccum
-                                        exoPlayer.seekTo(
-                                            (exoPlayer.currentPosition + accum).coerceIn(0L, duration),
+                                        player.seekTo(
+                                            (player.currentPosition + accum).coerceIn(0L, duration),
                                         )
                                         seekAccum = 0L
                                     }
@@ -390,7 +453,7 @@ fun PlayerScreen(
                             var isHorizontal: Boolean? = null
                             detectDragGestures(
                                 onDragStart = {
-                                    startMs = exoPlayer.currentPosition
+                                    startMs = player.currentPosition
                                     totalX = 0f; totalY = 0f; isHorizontal = null
                                 },
                                 onDrag = { change, drag ->
@@ -402,7 +465,7 @@ fun PlayerScreen(
                                     if (isHorizontal == true) {
                                         val delta = (totalX / size.width.toFloat() * 120_000L).toLong()
                                         seekPreviewMs = (startMs + delta).coerceIn(0L, duration)
-                                        exoPlayer.seekTo(seekPreviewMs)
+                                        player.seekTo(seekPreviewMs)
                                         showSeekPreview = true
                                     }
                                     change.consume()
@@ -488,7 +551,7 @@ fun PlayerScreen(
                 countdown = autoNextCountdown,
                 nextName = state.allEpisodes.getOrNull(state.currentEpisodeIndex + 1)?.name ?: "",
                 onConfirm = {
-                    viewModel.onEvent(PlayerEvent.NextEpisode(exoPlayer.currentPosition, exoPlayer.duration))
+                    viewModel.onEvent(PlayerEvent.NextEpisode(player.currentPosition, player.duration))
                     showAutoNext = false
                 },
                 onCancel = { showAutoNext = false },
@@ -521,12 +584,12 @@ fun PlayerScreen(
                                 if (showAsNextEpisode) {
                                     viewModel.onEvent(
                                         PlayerEvent.NextEpisode(
-                                            exoPlayer.currentPosition,
-                                            exoPlayer.duration,
+                                            player.currentPosition,
+                                            player.duration,
                                         ),
                                     )
                                 } else {
-                                    exoPlayer.seekTo(skip.endMs)
+                                    player.seekTo(skip.endMs)
                                 }
                             }
                             .padding(horizontal = 16.dp, vertical = 10.dp),
@@ -569,27 +632,27 @@ fun PlayerScreen(
                 duration = duration,
                 hasPrevious = state.hasPrevious,
                 hasNext = state.hasNext,
-                onBack = onBack,
+                onBack = closePlayer,
                 onOpenComments = {
                     controlsVisible = false
                     viewModel.onEvent(PlayerEvent.ShowEpisodeComments)
                 },
                 onPlayPause = {
-                    if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                    if (player.isPlaying) player.pause() else player.play()
                 },
                 onPrevious = {
-                    viewModel.onEvent(PlayerEvent.PreviousEpisode(exoPlayer.currentPosition, exoPlayer.duration))
+                    viewModel.onEvent(PlayerEvent.PreviousEpisode(player.currentPosition, player.duration))
                 },
                 onNext = {
-                    viewModel.onEvent(PlayerEvent.NextEpisode(exoPlayer.currentPosition, exoPlayer.duration))
+                    viewModel.onEvent(PlayerEvent.NextEpisode(player.currentPosition, player.duration))
                 },
                 onSeekBack = {
-                    exoPlayer.seekTo(maxOf(0L, exoPlayer.currentPosition - 10_000L))
+                    player.seekTo(maxOf(0L, player.currentPosition - 10_000L))
                 },
                 onSeekForward = {
-                    exoPlayer.seekTo(minOf(duration, exoPlayer.currentPosition + 10_000L))
+                    player.seekTo(minOf(duration, player.currentPosition + 10_000L))
                 },
-                onSeek = { fraction -> exoPlayer.seekTo((fraction * duration).toLong()) },
+                onSeek = { fraction -> player.seekTo((fraction * duration).toLong()) },
                 onSelectQuality = { viewModel.onEvent(PlayerEvent.SelectQuality(it)) },
                 skipIntervals = skipIntervals,
             )
@@ -650,15 +713,15 @@ fun PlayerScreen(
                 isLocked = isSpeedLocked,
                 onSpeedSelect = { speed ->
                     lockedSpeed = speed
-                    if (isSpeedLocked) exoPlayer.setPlaybackParameters(PlaybackParameters(speed))
+                    if (isSpeedLocked) player.setPlaybackParameters(PlaybackParameters(speed))
                 },
                 onLockToggle = {
                     if (isSpeedLocked) {
                         isSpeedLocked = false
-                        exoPlayer.setPlaybackParameters(PlaybackParameters(1.0f))
+                        player.setPlaybackParameters(PlaybackParameters(1.0f))
                     } else {
                         isSpeedLocked = true
-                        exoPlayer.setPlaybackParameters(PlaybackParameters(lockedSpeed))
+                        player.setPlaybackParameters(PlaybackParameters(lockedSpeed))
                     }
                     showSpeedPopup = false
                 },
@@ -691,15 +754,10 @@ fun PlayerScreen(
                 onWriteComment = {
                     forcePortraitOnExit = true
                     activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-                    viewModel.onEvent(
-                        PlayerEvent.UpdateProgress(
-                            exoPlayer.currentPosition,
-                            exoPlayer.duration,
-                        ),
-                    )
                     val episodeNumber = state.commentsEpisodeNumber
                         ?: state.currentEpisode?.number
                         ?: state.currentEpisodeIndex + 1
+                    stopPlayback()
                     onWriteEpisodeComment(episodeNumber)
                 },
             )
@@ -708,3 +766,10 @@ fun PlayerScreen(
 }
 
 private const val SPEED_BOOST_HOLD_DELAY_MS = 300L
+
+private const val MEDIA_ID_SEPARATOR = "::quality::"
+
+private fun playbackMediaId(videoId: String, quality: String): String =
+    "$videoId$MEDIA_ID_SEPARATOR$quality"
+
+private fun MediaItem.episodeVideoId(): String = mediaId.substringBefore(MEDIA_ID_SEPARATOR)

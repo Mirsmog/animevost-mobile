@@ -5,6 +5,8 @@ import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.model.VideoSource
 
 data class PlayerUiState(
+    val animeTitle: String = "",
+    val posterUrl: String = "",
     val videoSources: List<VideoSource> = emptyList(),
     val selectedQuality: String = "SD (480p)",
     val currentEpisode: Episode? = null,

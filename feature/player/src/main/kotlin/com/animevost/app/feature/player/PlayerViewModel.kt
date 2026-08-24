@@ -34,7 +34,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import timber.log.Timber
-import java.nio.ByteBuffer
 import javax.inject.Inject
 
 @HiltViewModel
@@ -166,6 +165,8 @@ class PlayerViewModel @Inject constructor(
                 val resolvedCurrentEpisode = episodes.getOrNull(currentIdx)
                 _uiState.update {
                     it.copy(
+                        animeTitle = detail.title,
+                        posterUrl = detail.posterUrl,
                         allEpisodes = episodes,
                         currentEpisodeIndex = if (currentIdx >= 0) currentIdx else 0,
                         currentEpisode = resolvedCurrentEpisode ?: it.currentEpisode,
@@ -195,6 +196,7 @@ class PlayerViewModel @Inject constructor(
                 isLoading = true,
                 error = null,
                 currentEpisode = episode,
+                videoSources = emptyList(),
                 allEpisodes = if (allEpisodes.isNotEmpty()) allEpisodes else it.allEpisodes,
                 currentEpisodeIndex = if (allEpisodes.isNotEmpty()) index else it.currentEpisodeIndex,
                 resumePositionMs = 0L,
@@ -382,14 +384,6 @@ class PlayerViewModel @Inject constructor(
             positionMs in it.startMs..it.endMs
         }
         if (_activeSkip.value != active) _activeSkip.value = active
-    }
-
-    fun onPcmFormat(sampleRateHz: Int, channelCount: Int, encoding: Int) {
-        localSkipDetector.onPcmFormat(sampleRateHz, channelCount, encoding)
-    }
-
-    fun onPcmBuffer(buffer: ByteBuffer) {
-        localSkipDetector.onPcmBuffer(buffer)
     }
 
     private fun loadSkipTimesForEpisode(animeId: Int, epName: String) {
