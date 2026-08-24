@@ -1,4 +1,4 @@
-package com.animevost.app.feature.detail
+package com.animevost.app.core.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable

@@ -14,4 +14,15 @@ data class Comment(
     val canReply: Boolean = false,
     val canReport: Boolean = false,
     val canDelete: Boolean = false,
+    val scope: CommentScope = CommentScope.Anime,
 )
+
+sealed interface CommentScope {
+    data object Anime : CommentScope
+
+    data class Episode(val number: Int) : CommentScope {
+        init {
+            require(number > 0) { "Episode number must be greater than zero" }
+        }
+    }
+}

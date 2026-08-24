@@ -5,10 +5,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.BetaFeature
+import com.animevost.app.core.domain.model.CommentScope
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.model.SkipInterval
 import com.animevost.app.core.domain.usecase.AddToHistoryUseCase
 import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
+import com.animevost.app.core.domain.usecase.GetCommentsUseCase
 import com.animevost.app.core.domain.usecase.GetVideoUrlUseCase
 import com.animevost.app.core.domain.model.WatchProgress
 import com.animevost.app.core.domain.repository.FeatureFlagsRepository
@@ -20,6 +22,7 @@ import com.animevost.app.core.domain.repository.UserPreferencesRepository
 import com.animevost.app.core.domain.repository.WatchProgressRepository
 import com.animevost.app.core.domain.util.onError
 import com.animevost.app.core.domain.util.onSuccess
+import com.animevost.app.core.domain.util.Result
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
@@ -39,6 +42,7 @@ class PlayerViewModel @Inject constructor(
     savedStateHandle: SavedStateHandle,
     private val getVideoUrlUseCase: GetVideoUrlUseCase,
     private val getAnimeDetailUseCase: GetAnimeDetailUseCase,
+    private val getCommentsUseCase: GetCommentsUseCase,
     private val addToHistoryUseCase: AddToHistoryUseCase,
     private val userPreferencesRepository: UserPreferencesRepository,
     private val watchProgressRepository: WatchProgressRepository,
@@ -73,6 +77,9 @@ class PlayerViewModel @Inject constructor(
     private var skipTimesJob: Job? = null
     private var videoLoadJob: Job? = null
     private var resumeLoadJob: Job? = null
+    private var episodeCommentsJob: Job? = null
+    private var episodeCommentsScannedPage = 0
+    private var episodeCommentsTotalPages = 1
 
     init {
         val episode = Episode(name = episodeName, videoId = videoId, thumbnailUrl = "")
@@ -110,6 +117,10 @@ class PlayerViewModel @Inject constructor(
                 navigateEpisode(-1)
             }
             is PlayerEvent.UpdateProgress -> saveCurrentProgress(event.positionMs, event.durationMs)
+            PlayerEvent.ShowEpisodeComments -> showEpisodeComments()
+            PlayerEvent.HideEpisodeComments -> hideEpisodeComments()
+            PlayerEvent.LoadMoreEpisodeComments -> loadEpisodeComments()
+            PlayerEvent.RetryEpisodeComments -> loadEpisodeComments()
             is PlayerEvent.ResumeConsumed -> _uiState.update { it.copy(resumePositionMs = 0L) }
         }
     }
@@ -152,10 +163,12 @@ class PlayerViewModel @Inject constructor(
                     episodeInfo = detail.episodeCount,
                     url = animeUrl,
                 )
+                val resolvedCurrentEpisode = episodes.getOrNull(currentIdx)
                 _uiState.update {
                     it.copy(
                         allEpisodes = episodes,
                         currentEpisodeIndex = if (currentIdx >= 0) currentIdx else 0,
+                        currentEpisode = resolvedCurrentEpisode ?: it.currentEpisode,
                     )
                 }
                 val currentEp = _uiState.value.currentEpisode
@@ -166,6 +179,10 @@ class PlayerViewModel @Inject constructor(
                 _uiState.value.currentEpisode?.let { currentEpisode ->
                     loadSkipTimesForEpisode(detail.id, currentEpisode.name)
                     loadResumePosition(detail.id, currentEpisode.videoId)
+                }
+                if (_uiState.value.isCommentsPanelVisible) {
+                    resetEpisodeComments(currentEpisodeNumber())
+                    loadEpisodeComments()
                 }
             }
         }
@@ -223,11 +240,128 @@ class PlayerViewModel @Inject constructor(
         val episode = state.allEpisodes[newIndex]
         resetSkipState()
         loadVideo(episode, state.allEpisodes, newIndex)
+        resetEpisodeComments(currentEpisodeNumber(episode, newIndex))
+        if (_uiState.value.isCommentsPanelVisible) loadEpisodeComments()
         animePreview?.let { preview ->
             loadSkipTimesForEpisode(preview.id, episode.name)
             loadResumePosition(preview.id, episode.videoId)
         }
     }
+
+    private fun showEpisodeComments() {
+        val episodeNumber = currentEpisodeNumber()
+        if (_uiState.value.commentsEpisodeNumber != episodeNumber) {
+            resetEpisodeComments(episodeNumber)
+        }
+        _uiState.update { it.copy(isCommentsPanelVisible = true) }
+        if (animePreview == null) {
+            _uiState.update { it.copy(isLoadingEpisodeComments = true) }
+            return
+        }
+        if (episodeCommentsScannedPage == 0 && !_uiState.value.isLoadingEpisodeComments) {
+            loadEpisodeComments()
+        }
+    }
+
+    private fun hideEpisodeComments() {
+        episodeCommentsJob?.cancel()
+        episodeCommentsJob = null
+        _uiState.update {
+            it.copy(
+                isCommentsPanelVisible = false,
+                isLoadingEpisodeComments = false,
+            )
+        }
+    }
+
+    private fun resetEpisodeComments(episodeNumber: Int) {
+        episodeCommentsJob?.cancel()
+        episodeCommentsJob = null
+        episodeCommentsScannedPage = 0
+        episodeCommentsTotalPages = 1
+        _uiState.update {
+            it.copy(
+                commentsEpisodeNumber = episodeNumber,
+                episodeComments = emptyList(),
+                isLoadingEpisodeComments = false,
+                hasMoreEpisodeComments = false,
+                episodeCommentsError = null,
+            )
+        }
+    }
+
+    private fun loadEpisodeComments() {
+        val preview = animePreview ?: return
+        val state = _uiState.value
+        val episode = state.currentEpisode ?: return
+        if (state.isLoadingEpisodeComments) return
+        val episodeNumber = state.commentsEpisodeNumber ?: currentEpisodeNumber()
+        val episodeVideoId = episode.videoId
+
+        episodeCommentsJob?.cancel()
+        episodeCommentsJob = viewModelScope.launch {
+            _uiState.update {
+                it.copy(
+                    isLoadingEpisodeComments = true,
+                    episodeCommentsError = null,
+                )
+            }
+            var comments = _uiState.value.episodeComments
+            val initialSize = comments.size
+            var scannedInBatch = 0
+            var scannedPage = episodeCommentsScannedPage
+            var totalPages = episodeCommentsTotalPages
+            var errorMessage: String? = null
+
+            while (
+                scannedPage < totalPages &&
+                scannedInBatch < EPISODE_COMMENT_SCAN_PAGE_LIMIT &&
+                comments.size == initialSize
+            ) {
+                val nextPage = scannedPage + 1
+                when (val result = getCommentsUseCase(preview.id, nextPage, animeUrl)) {
+                    is Result.Success -> {
+                        val page = result.data
+                        totalPages = page.totalPages.coerceAtLeast(1)
+                        comments = (comments + page.comments.filter {
+                            it.scope == CommentScope.Episode(episodeNumber)
+                        }).distinctBy { it.id }
+                        scannedPage = nextPage
+                        scannedInBatch++
+                    }
+                    is Result.Error -> {
+                        errorMessage = result.message ?: "Не удалось загрузить комментарии"
+                        break
+                    }
+                }
+            }
+
+            val currentState = _uiState.value
+            if (
+                currentState.currentEpisode?.videoId != episodeVideoId ||
+                currentState.commentsEpisodeNumber != episodeNumber
+            ) {
+                return@launch
+            }
+            episodeCommentsScannedPage = scannedPage
+            episodeCommentsTotalPages = totalPages
+            _uiState.update {
+                it.copy(
+                    episodeComments = comments,
+                    isLoadingEpisodeComments = false,
+                    hasMoreEpisodeComments = scannedPage < totalPages,
+                    episodeCommentsError = errorMessage,
+                )
+            }
+        }
+    }
+
+    private fun currentEpisodeNumber(
+        episode: Episode? = _uiState.value.currentEpisode,
+        episodeIndex: Int = _uiState.value.currentEpisodeIndex,
+    ): Int = episode?.number
+        ?: Regex("\\d+").find(episode?.name.orEmpty())?.value?.toIntOrNull()
+        ?: episodeIndex + 1
 
     private fun loadResumePosition(animeId: Int, episodeVideoId: String) {
         resumeLoadJob?.cancel()
@@ -260,7 +394,11 @@ class PlayerViewModel @Inject constructor(
 
     private fun loadSkipTimesForEpisode(animeId: Int, epName: String) {
         skipTimesJob?.cancel()
-        val episodeNum = Regex("\\d+").find(epName)?.value?.toIntOrNull() ?: 1
+        val episodeNum = _uiState.value.currentEpisode
+            ?.takeIf { it.name == epName }
+            ?.number
+            ?: Regex("\\d+").find(epName)?.value?.toIntOrNull()
+            ?: 1
         activeSkipAnimeId = animeId
         activeSkipEpisodeNumber = episodeNum
         localSkipIntervals = emptyList()
@@ -365,5 +503,9 @@ class PlayerViewModel @Inject constructor(
     override fun onCleared() {
         localSkipDetector.stop()
         super.onCleared()
+    }
+
+    private companion object {
+        const val EPISODE_COMMENT_SCAN_PAGE_LIMIT = 4
     }
 }

@@ -1,5 +1,7 @@
 package com.animevost.app.feature.detail
 
+import com.animevost.app.core.ui.components.CommentSegment
+import com.animevost.app.core.ui.components.parseCommentHtml
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs

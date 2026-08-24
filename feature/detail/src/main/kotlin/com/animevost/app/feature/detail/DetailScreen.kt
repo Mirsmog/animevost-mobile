@@ -33,6 +33,8 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -45,6 +47,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Bookmarks
@@ -88,6 +91,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
@@ -105,9 +109,11 @@ import coil.compose.AsyncImage
 import com.animevost.app.core.domain.model.AnimeDetail
 import com.animevost.app.core.domain.model.AnimeStatus
 import com.animevost.app.core.domain.model.Comment
+import com.animevost.app.core.domain.model.CommentScope
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.model.VideoSource
 import com.animevost.app.core.ui.components.AnimeCard
+import com.animevost.app.core.ui.components.CommentHtmlRenderer
 import com.animevost.app.core.ui.components.ErrorState
 import com.animevost.app.core.ui.components.LoadingState
 import com.animevost.app.core.ui.theme.Bg0
@@ -121,6 +127,7 @@ import com.animevost.app.core.ui.theme.OrangePrimary
 import com.animevost.app.core.ui.theme.TextPrimary
 import com.animevost.app.core.ui.theme.TextSecondary
 import java.util.Locale
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -130,6 +137,8 @@ fun DetailScreen(
     onPlayEpisode: (Episode, List<Episode>, Int) -> Unit,
     onGenreClick: (String) -> Unit,
     onRelatedClick: (String) -> Unit,
+    requestedCommentEpisode: Int? = null,
+    onCommentEpisodeRequestConsumed: () -> Unit = {},
     viewModel: DetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -137,6 +146,18 @@ fun DetailScreen(
 
     LaunchedEffect(animeUrl) {
         viewModel.onEvent(DetailEvent.LoadAnime(animeUrl))
+    }
+
+    LaunchedEffect(requestedCommentEpisode, state.anime?.id) {
+        val episodeNumber = requestedCommentEpisode ?: return@LaunchedEffect
+        if (state.anime == null) return@LaunchedEffect
+        viewModel.onEvent(
+            DetailEvent.SelectCommentScope(
+                scope = CommentScope.Episode(episodeNumber),
+                focusComments = true,
+            ),
+        )
+        onCommentEpisodeRequestConsumed()
     }
 
     LaunchedEffect(Unit) {
@@ -197,6 +218,8 @@ fun DetailScreen(
                     watchStatus = state.watchStatus,
                     watchStatusEnabled = state.watchStatusEnabled,
                     comments = state.comments,
+                    commentScope = state.commentScope,
+                    commentsFocusRequest = state.commentsFocusRequest,
                     isLoadingComments = state.isLoadingComments,
                     commentTextValue = state.commentTextValue,
                     isAddingComment = state.isAddingComment,
@@ -223,6 +246,9 @@ fun DetailScreen(
                     onGenreClick = onGenreClick,
                     onRelatedClick = onRelatedClick,
                     onLoadMoreComments = { viewModel.onEvent(DetailEvent.LoadMoreComments) },
+                    onSelectCommentScope = { scope ->
+                        viewModel.onEvent(DetailEvent.SelectCommentScope(scope))
+                    },
                     onCommentTextValueChange = { viewModel.onEvent(DetailEvent.UpdateCommentTextValue(it)) },
                     onSubmitComment = { viewModel.onEvent(DetailEvent.SubmitComment) },
                     onReplyToComment = { comment -> viewModel.onEvent(DetailEvent.ReplyToComment(comment)) },
@@ -382,6 +408,8 @@ private fun DetailContent(
     watchStatus: AnimeStatus?,
     watchStatusEnabled: Boolean,
     comments: List<Comment>,
+    commentScope: CommentScope,
+    commentsFocusRequest: Int,
     isLoadingComments: Boolean,
     commentTextValue: TextFieldValue,
     isAddingComment: Boolean,
@@ -401,6 +429,7 @@ private fun DetailContent(
     onGenreClick: (String) -> Unit,
     onRelatedClick: (String) -> Unit,
     onLoadMoreComments: () -> Unit,
+    onSelectCommentScope: (CommentScope) -> Unit,
     onCommentTextValueChange: (TextFieldValue) -> Unit,
     onSubmitComment: () -> Unit,
     onReplyToComment: (Comment) -> Unit,
@@ -408,6 +437,15 @@ private fun DetailContent(
     onReportComment: (Comment) -> Unit,
     onDeleteComment: (Comment) -> Unit,
 ) {
+    val commentsBringIntoViewRequester = remember { BringIntoViewRequester() }
+    val configuration = LocalConfiguration.current
+
+    LaunchedEffect(commentsFocusRequest, configuration.orientation) {
+        if (commentsFocusRequest <= 0) return@LaunchedEffect
+        delay(180)
+        commentsBringIntoViewRequester.bringIntoView()
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -649,6 +687,8 @@ private fun DetailContent(
         CommentsSection(
             comments = comments,
             totalCommentCount = anime.commentCount,
+            scope = commentScope,
+            episodes = anime.episodes,
             isLoading = isLoadingComments,
             isLoggedIn = isLoggedIn,
             commentTextValue = commentTextValue,
@@ -657,7 +697,9 @@ private fun DetailContent(
             isPreparingReply = isPreparingReply,
             hasMore = hasMoreComments,
             deletingCommentId = deletingCommentId,
+            modifier = Modifier.bringIntoViewRequester(commentsBringIntoViewRequester),
             onLoadMore = onLoadMoreComments,
+            onSelectScope = onSelectCommentScope,
             onTextValueChange = onCommentTextValueChange,
             onSubmit = onSubmitComment,
             onReply = onReplyToComment,
@@ -1044,10 +1086,13 @@ private fun DownloadQualitySheet(
 
 // ── Comments Section ──────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CommentsSection(
     comments: List<Comment>,
     totalCommentCount: Int,
+    scope: CommentScope,
+    episodes: List<Episode>,
     isLoading: Boolean,
     isLoggedIn: Boolean,
     commentTextValue: TextFieldValue,
@@ -1056,7 +1101,9 @@ private fun CommentsSection(
     isPreparingReply: Boolean,
     hasMore: Boolean,
     deletingCommentId: Int?,
+    modifier: Modifier = Modifier,
     onLoadMore: () -> Unit,
+    onSelectScope: (CommentScope) -> Unit,
     onTextValueChange: (TextFieldValue) -> Unit,
     onSubmit: () -> Unit,
     onReply: (Comment) -> Unit,
@@ -1064,47 +1111,167 @@ private fun CommentsSection(
     onReport: (Comment) -> Unit,
     onDelete: (Comment) -> Unit,
 ) {
-    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-        Row(verticalAlignment = Alignment.Bottom) {
+    var showEpisodePicker by remember { mutableStateOf(false) }
+    val episodeNumbers = remember(episodes) {
+        episodes.mapIndexed { index, episode -> episode.number ?: index + 1 }
+            .filter { it > 0 }
+            .distinct()
+            .sorted()
+    }
+    val selectedEpisode = (scope as? CommentScope.Episode)?.number
+
+    if (showEpisodePicker) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showEpisodePicker = false },
+            sheetState = sheetState,
+            containerColor = Bg2,
+        ) {
             Text(
-                text = "Комментарии",
+                text = "Выбери серию",
                 style = MaterialTheme.typography.titleLarge,
                 color = TextPrimary,
+                modifier = Modifier.padding(horizontal = 20.dp),
             )
-            Spacer(Modifier.width(8.dp))
-            val counterText = if (totalCommentCount > comments.size) {
-                "${comments.size} из $totalCommentCount"
-            } else {
-                comments.size.toString()
+            Spacer(Modifier.height(12.dp))
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(64.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                gridItems(episodeNumbers, key = { it }) { number ->
+                    val selected = number == selectedEpisode
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (selected) OrangePrimary else Bg3)
+                            .clickable {
+                                onSelectScope(CommentScope.Episode(number))
+                                showEpisodePicker = false
+                            }
+                            .padding(vertical = 12.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = number.toString(),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (selected) Color.Black else TextPrimary,
+                        )
+                    }
+                }
             }
-            Text(
-                text = counterText,
-                style = MaterialTheme.typography.labelLarge,
-                color = TextSecondary,
-                modifier = Modifier.padding(bottom = 2.dp),
-            )
+            Spacer(Modifier.height(16.dp).navigationBarsPadding())
         }
+    }
+
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        Column(modifier = modifier.fillMaxWidth()) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = "Комментарии",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = TextPrimary,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = formatStatCount(totalCommentCount),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(bottom = 2.dp),
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(
+                    selected = scope == CommentScope.Anime,
+                    onClick = { onSelectScope(CommentScope.Anime) },
+                    label = { Text("Об аниме") },
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = Bg3,
+                        labelColor = TextSecondary,
+                        selectedContainerColor = OrangePrimary,
+                        selectedLabelColor = Color.Black,
+                    ),
+                    border = FilterChipDefaults.filterChipBorder(
+                        enabled = true,
+                        selected = scope == CommentScope.Anime,
+                        borderColor = Color.Transparent,
+                        selectedBorderColor = Color.Transparent,
+                    ),
+                )
+                if (episodeNumbers.isNotEmpty()) {
+                    FilterChip(
+                        selected = selectedEpisode != null,
+                        onClick = { showEpisodePicker = true },
+                        label = {
+                            Text(selectedEpisode?.let { "Серия $it" } ?: "По сериям")
+                        },
+                        trailingIcon = {
+                            Icon(
+                                Icons.Filled.KeyboardArrowDown,
+                                contentDescription = "Выбрать серию",
+                                modifier = Modifier.size(18.dp),
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            containerColor = Bg3,
+                            labelColor = TextSecondary,
+                            iconColor = TextSecondary,
+                            selectedContainerColor = OrangePrimary,
+                            selectedLabelColor = Color.Black,
+                            selectedTrailingIconColor = Color.Black,
+                        ),
+                        border = FilterChipDefaults.filterChipBorder(
+                            enabled = true,
+                            selected = selectedEpisode != null,
+                            borderColor = Color.Transparent,
+                            selectedBorderColor = Color.Transparent,
+                        ),
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+
+            if (isLoggedIn && replyTarget == null) {
+                CommentEditor(
+                    commentTextValue = commentTextValue,
+                    isAddingComment = isAddingComment,
+                    title = null,
+                    placeholder = selectedEpisode?.let { "Обсудить $it серию..." }
+                        ?: "Написать комментарий...",
+                    onTextValueChange = onTextValueChange,
+                    onSubmit = onSubmit,
+                    onCancel = null,
+                )
+            } else if (!isLoggedIn) {
+                Text(
+                    text = "Войдите в аккаунт, чтобы оставить комментарий",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                )
+            }
+        }
+
         Spacer(Modifier.height(12.dp))
 
-        if (isLoggedIn && replyTarget == null) {
-            CommentEditor(
-                commentTextValue = commentTextValue,
-                isAddingComment = isAddingComment,
-                title = null,
-                placeholder = "Написать комментарий...",
-                onTextValueChange = onTextValueChange,
-                onSubmit = onSubmit,
-                onCancel = null,
-            )
-        } else if (!isLoggedIn) {
+        if (!isLoading && comments.isEmpty()) {
             Text(
-                text = "Войдите в аккаунт, чтобы оставить комментарий",
+                text = if (selectedEpisode != null) {
+                    "К $selectedEpisode серии пока нет комментариев"
+                } else {
+                    "Комментариев пока нет"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = TextSecondary,
+                modifier = Modifier.padding(vertical = 12.dp),
             )
         }
-
-        Spacer(Modifier.height(12.dp))
 
         comments.forEachIndexed { index, comment ->
             CommentItem(
@@ -1151,7 +1318,14 @@ private fun CommentsSection(
 
         if (hasMore && !isLoading) {
             TextButton(onClick = onLoadMore, modifier = Modifier.fillMaxWidth()) {
-                Text(text = "Показать ещё", color = OrangePrimary)
+                Text(
+                    text = if (selectedEpisode != null && comments.isEmpty()) {
+                        "Искать дальше"
+                    } else {
+                        "Показать ещё"
+                    },
+                    color = OrangePrimary,
+                )
             }
         }
 

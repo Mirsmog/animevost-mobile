@@ -7,6 +7,8 @@ import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.AnimeDetail
 import com.animevost.app.core.domain.model.AnimeStatus
 import com.animevost.app.core.domain.model.Comment
+import com.animevost.app.core.domain.model.CommentPage
+import com.animevost.app.core.domain.model.CommentScope
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.model.VideoSource
 import com.animevost.app.core.domain.usecase.AddCommentUseCase
@@ -30,6 +32,7 @@ import com.animevost.app.core.domain.usecase.GetCommentReplyTemplateUseCase
 import com.animevost.app.core.domain.usecase.ReportCommentUseCase
 import com.animevost.app.core.domain.util.onSuccess
 import com.animevost.app.core.domain.util.onError
+import com.animevost.app.core.domain.util.Result
 import androidx.compose.ui.text.input.TextFieldValue
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,7 +46,7 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
-import kotlin.math.max
+import kotlinx.coroutines.Job
 import javax.inject.Inject
 
 @HiltViewModel
@@ -69,6 +72,10 @@ class DetailViewModel @Inject constructor(
 
     private var favoriteNotificationsEnabled = true
     private var mutedFavoriteIds = emptySet<Int>()
+    private val commentPageCache = mutableMapOf<Int, CommentPage>()
+    private val commentFeeds = mutableMapOf<CommentScope, CommentFeed>()
+    private var commentSourceTotalPages = 1
+    private var commentLoadJob: Job? = null
 
     private val _uiState = MutableStateFlow(DetailUiState())
     val uiState: StateFlow<DetailUiState> = _uiState.asStateFlow()
@@ -117,6 +124,10 @@ class DetailViewModel @Inject constructor(
             is DetailEvent.ToggleFavoriteNotification -> toggleFavoriteNotification()
             is DetailEvent.ToggleDescription -> toggleDescription()
             is DetailEvent.LoadMoreComments -> loadMoreComments()
+            is DetailEvent.SelectCommentScope -> selectCommentScope(
+                scope = event.scope,
+                focusComments = event.focusComments,
+            )
             is DetailEvent.UpdateCommentTextValue -> _uiState.update { it.copy(commentTextValue = event.value) }
             is DetailEvent.ReplyToComment -> replyToComment(event.comment)
             DetailEvent.CancelReply -> cancelReply()
@@ -137,7 +148,12 @@ class DetailViewModel @Inject constructor(
     }
 
     private fun loadAnime(url: String) {
-        if (_uiState.value.isLoading) return
+        val currentState = _uiState.value
+        if (currentState.isLoading) return
+        if (currentState.animeUrl == url && currentState.anime != null && currentState.error == null) {
+            return
+        }
+        resetCommentCaches()
         observeWatchStatus(url)
         viewModelScope.launch {
             _uiState.update {
@@ -147,6 +163,7 @@ class DetailViewModel @Inject constructor(
                     animeUrl = url,
                     userRating = 0,
                     comments = emptyList(),
+                    commentScope = CommentScope.Anime,
                     commentsPage = 1,
                     commentsTotalPages = 1,
                     hasMoreComments = false,
@@ -344,52 +361,110 @@ class DetailViewModel @Inject constructor(
         _uiState.update { it.copy(isDescriptionExpanded = !it.isDescriptionExpanded) }
     }
 
-    private fun loadComments() {
-        val anime = _uiState.value.anime ?: return
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoadingComments = true) }
-            getCommentsUseCase(anime.id, 1, anime.url)
-                .onSuccess { page ->
-                    _uiState.update {
-                        it.copy(
-                            comments = page.comments,
-                            isLoadingComments = false,
-                            commentsPage = page.currentPage,
-                            commentsTotalPages = page.totalPages,
-                            hasMoreComments = page.currentPage < page.totalPages,
-                        )
-                    }
-                }
-                .onError { _, _ ->
-                    _uiState.update { it.copy(isLoadingComments = false) }
-                }
-        }
+    private fun loadComments(reset: Boolean = false) {
+        if (reset) resetCommentCaches()
+        loadCommentBatch(_uiState.value.commentScope)
     }
 
     private fun loadMoreComments() {
-        val anime = _uiState.value.anime ?: return
         val state = _uiState.value
-        val nextPage = state.commentsPage + 1
         if (state.isLoadingComments || !state.hasMoreComments) return
-        viewModelScope.launch {
+        loadCommentBatch(state.commentScope)
+    }
+
+    private fun selectCommentScope(scope: CommentScope, focusComments: Boolean) {
+        if (_uiState.value.commentScope == scope && !focusComments) return
+        commentLoadJob?.cancel()
+        val cachedFeed = commentFeeds[scope]
+        _uiState.update {
+            it.copy(
+                commentScope = scope,
+                comments = cachedFeed?.comments.orEmpty(),
+                commentsPage = cachedFeed?.scannedPage?.coerceAtLeast(1) ?: 1,
+                commentsTotalPages = commentSourceTotalPages,
+                hasMoreComments = cachedFeed?.exhausted == false,
+                isLoadingComments = false,
+                commentTextValue = TextFieldValue(),
+                replyTarget = null,
+                replyMarkup = "",
+                isPreparingReply = false,
+                commentsFocusRequest = if (focusComments) {
+                    it.commentsFocusRequest + 1
+                } else {
+                    it.commentsFocusRequest
+                },
+            )
+        }
+        if (cachedFeed == null) loadCommentBatch(scope)
+    }
+
+    private fun loadCommentBatch(scope: CommentScope) {
+        val anime = _uiState.value.anime ?: return
+        if (_uiState.value.isLoadingComments) return
+        commentLoadJob?.cancel()
+        commentLoadJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoadingComments = true) }
-            getCommentsUseCase(anime.id, nextPage, anime.url)
-                .onSuccess { page ->
-                    val totalPages = max(state.commentsTotalPages, page.totalPages)
-                    _uiState.update {
-                        it.copy(
-                            comments = it.comments + page.comments,
-                            isLoadingComments = false,
-                            commentsPage = page.currentPage,
-                            commentsTotalPages = totalPages,
-                            hasMoreComments = page.currentPage < totalPages,
-                        )
+            var feed = commentFeeds[scope] ?: CommentFeed()
+            val initialSize = feed.comments.size
+            var scannedInBatch = 0
+            var failed = false
+
+            while (
+                !feed.exhausted &&
+                scannedInBatch < COMMENT_SCAN_PAGE_LIMIT &&
+                feed.comments.size == initialSize
+            ) {
+                val nextPage = feed.scannedPage + 1
+                val page = commentPageCache[nextPage] ?: when (
+                    val result = getCommentsUseCase(anime.id, nextPage, anime.url)
+                ) {
+                    is Result.Success -> result.data.also { loaded ->
+                        commentPageCache[nextPage] = loaded
+                    }
+                    is Result.Error -> {
+                        failed = true
+                        break
                     }
                 }
-                .onError { _, _ ->
-                    _uiState.update { it.copy(isLoadingComments = false) }
+
+                if (nextPage == 1) {
+                    commentSourceTotalPages = page.totalPages.coerceAtLeast(1)
                 }
+                val matching = page.comments.filter { it.scope == scope }
+                feed = feed.copy(
+                    comments = (feed.comments + matching).distinctBy { it.id },
+                    scannedPage = nextPage,
+                    exhausted = nextPage >= commentSourceTotalPages,
+                )
+                commentFeeds[scope] = feed
+                scannedInBatch++
+            }
+
+            commentFeeds[scope] = feed
+            if (_uiState.value.commentScope == scope) {
+                _uiState.update {
+                    it.copy(
+                        comments = feed.comments,
+                        isLoadingComments = false,
+                        commentsPage = feed.scannedPage.coerceAtLeast(1),
+                        commentsTotalPages = commentSourceTotalPages,
+                        hasMoreComments = !feed.exhausted,
+                    )
+                }
+                if (failed && feed.comments.isEmpty()) {
+                    _effect.emit(DetailEffect.ShowSnackbar("Не удалось загрузить комментарии"))
+                }
+            }
         }
+    }
+
+    private fun resetCommentCaches() {
+        commentLoadJob?.cancel()
+        commentLoadJob = null
+        commentPageCache.clear()
+        commentFeeds.clear()
+        commentSourceTotalPages = 1
+        _uiState.update { it.copy(isLoadingComments = false) }
     }
 
     private fun replyToComment(comment: Comment) {
@@ -459,7 +534,7 @@ class DetailViewModel @Inject constructor(
         }.trim()
         viewModelScope.launch {
             _uiState.update { it.copy(isAddingComment = true) }
-            addCommentUseCase(anime.id, text)
+            addCommentUseCase(anime.id, text, state.commentScope)
                 .onSuccess {
                     _uiState.update {
                         val updatedAnime = it.anime?.let { anime ->
@@ -473,7 +548,7 @@ class DetailViewModel @Inject constructor(
                             anime = updatedAnime,
                         )
                     }
-                    loadComments()
+                    loadComments(reset = true)
                     _effect.emit(DetailEffect.ShowSnackbar("Комментарий добавлен"))
                 }
                 .onError { _, msg ->
@@ -535,6 +610,12 @@ class DetailViewModel @Inject constructor(
             _uiState.update { it.copy(deletingCommentId = target.id) }
             deleteCommentUseCase(target.id)
                 .onSuccess {
+                    commentPageCache.replaceAll { _, page ->
+                        page.copy(comments = page.comments.filterNot { it.id == target.id })
+                    }
+                    commentFeeds.replaceAll { _, feed ->
+                        feed.copy(comments = feed.comments.filterNot { it.id == target.id })
+                    }
                     _uiState.update {
                         val updatedAnime = it.anime?.let { anime ->
                             anime.copy(commentCount = (anime.commentCount - 1).coerceAtLeast(0))
@@ -578,6 +659,16 @@ class DetailViewModel @Inject constructor(
                 _effect.emit(DetailEffect.ShowSnackbar("Ошибка сохранения статуса"))
             }
         }
+    }
+
+    private data class CommentFeed(
+        val comments: List<Comment> = emptyList(),
+        val scannedPage: Int = 0,
+        val exhausted: Boolean = false,
+    )
+
+    private companion object {
+        const val COMMENT_SCAN_PAGE_LIMIT = 4
     }
 }
 

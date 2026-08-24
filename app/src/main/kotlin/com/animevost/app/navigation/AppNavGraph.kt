@@ -193,6 +193,9 @@ fun AppNavGraph(
                 ),
             ) { backStackEntry ->
                 val url = Uri.decode(backStackEntry.arguments?.getString("url") ?: "")
+                val requestedCommentEpisode by backStackEntry.savedStateHandle
+                    .getStateFlow<Int?>(EPISODE_COMMENTS_REQUEST_KEY, null)
+                    .collectAsStateWithLifecycle()
                 DetailScreen(
                     animeUrl = url,
                     onBack = { navController.popBackStack() },
@@ -205,6 +208,10 @@ fun AppNavGraph(
                     onRelatedClick = { relatedUrl ->
                         navController.navigate(NavRoutes.animeDetail(relatedUrl))
                     },
+                    requestedCommentEpisode = requestedCommentEpisode,
+                    onCommentEpisodeRequestConsumed = {
+                        backStackEntry.savedStateHandle[EPISODE_COMMENTS_REQUEST_KEY] = null
+                    },
                 )
             }
             composable(
@@ -215,7 +222,15 @@ fun AppNavGraph(
                     navArgument("animeUrl") { type = NavType.StringType },
                 ),
             ) {
-                PlayerScreen(onBack = { navController.popBackStack() })
+                PlayerScreen(
+                    onBack = { navController.popBackStack() },
+                    onWriteEpisodeComment = { episodeNumber ->
+                        navController.previousBackStackEntry
+                            ?.savedStateHandle
+                            ?.set(EPISODE_COMMENTS_REQUEST_KEY, episodeNumber)
+                        navController.popBackStack()
+                    },
+                )
             }
             composable(NavRoutes.LOGIN) {
                 LoginScreen(
@@ -246,3 +261,5 @@ fun AppNavGraph(
         )
     }
 }
+
+private const val EPISODE_COMMENTS_REQUEST_KEY = "episode_comments_request"

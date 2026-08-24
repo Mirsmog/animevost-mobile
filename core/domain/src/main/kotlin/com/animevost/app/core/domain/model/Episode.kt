@@ -6,4 +6,5 @@ data class Episode(
     /** Opaque identifier passed to [VideoRepository] to resolve playback URLs. */
     val videoId: String,
     val thumbnailUrl: String,
+    val number: Int? = null,
 )

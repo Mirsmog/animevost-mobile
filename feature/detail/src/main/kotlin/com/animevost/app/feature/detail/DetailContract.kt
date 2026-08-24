@@ -4,6 +4,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import com.animevost.app.core.domain.model.AnimeDetail
 import com.animevost.app.core.domain.model.AnimeStatus
 import com.animevost.app.core.domain.model.Comment
+import com.animevost.app.core.domain.model.CommentScope
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.model.VideoSource
 
@@ -20,12 +21,14 @@ data class DetailUiState(
     val isRatingSubmitting: Boolean = false,
     val isDescriptionExpanded: Boolean = false,
     val comments: List<Comment> = emptyList(),
+    val commentScope: CommentScope = CommentScope.Anime,
     val isLoadingComments: Boolean = false,
     val commentTextValue: TextFieldValue = TextFieldValue(),
     val isAddingComment: Boolean = false,
     val commentsPage: Int = 1,
     val commentsTotalPages: Int = 1,
     val hasMoreComments: Boolean = false,
+    val commentsFocusRequest: Int = 0,
     val replyTarget: Comment? = null,
     val replyMarkup: String = "",
     val isPreparingReply: Boolean = false,
@@ -52,6 +55,10 @@ sealed interface DetailEvent {
     data object ToggleFavoriteNotification : DetailEvent
     data object ToggleDescription : DetailEvent
     data object LoadMoreComments : DetailEvent
+    data class SelectCommentScope(
+        val scope: CommentScope,
+        val focusComments: Boolean = false,
+    ) : DetailEvent
     data class UpdateCommentTextValue(val value: TextFieldValue) : DetailEvent
     data class ReplyToComment(val comment: Comment) : DetailEvent
     data object CancelReply : DetailEvent

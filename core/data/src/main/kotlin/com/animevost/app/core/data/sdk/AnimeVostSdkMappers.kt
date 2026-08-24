@@ -6,6 +6,7 @@ import com.animevost.app.core.domain.model.AnimeReleaseStatus
 import com.animevost.app.core.domain.model.AnimeType
 import com.animevost.app.core.domain.model.CatalogFilter
 import com.animevost.app.core.domain.model.Comment
+import com.animevost.app.core.domain.model.CommentScope
 import com.animevost.app.core.domain.model.CommentPage
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.model.Genre
@@ -123,6 +124,7 @@ internal fun AnimeComment.toDomain(): Comment {
         canReply = CommentAction.REPLY in actions,
         canReport = CommentAction.REPORT in actions,
         canDelete = CommentAction.DELETE in actions,
+        scope = episodeNumber?.let { CommentScope.Episode(it) } ?: CommentScope.Anime,
     )
 }
 
@@ -169,6 +171,7 @@ private fun AnimeEpisode.toDomain(): Episode =
         name = name,
         videoId = videoId,
         thumbnailUrl = thumbnailUrl.orEmpty(),
+        number = number,
     )
 
 private fun SdkRelatedSeries.toDomain(): RelatedSeries =

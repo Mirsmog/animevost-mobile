@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Comment
 import androidx.compose.material.icons.filled.Forward10
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.Pause
@@ -65,6 +66,7 @@ internal fun PlayerControls(
     hasPrevious: Boolean,
     hasNext: Boolean,
     onBack: () -> Unit,
+    onOpenComments: () -> Unit,
     onPlayPause: () -> Unit,
     onPrevious: () -> Unit,
     onNext: () -> Unit,
@@ -107,6 +109,14 @@ internal fun PlayerControls(
                     .weight(1f)
                     .padding(horizontal = 6.dp),
             )
+            IconButton(onClick = onOpenComments) {
+                Icon(
+                    Icons.AutoMirrored.Filled.Comment,
+                    contentDescription = "Комментарии к серии",
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
             Box {
                 Row(
                     modifier = Modifier

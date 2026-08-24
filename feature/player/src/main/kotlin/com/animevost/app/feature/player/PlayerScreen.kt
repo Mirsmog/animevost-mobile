@@ -6,13 +6,16 @@ import android.app.Activity
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.annotation.OptIn
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -86,6 +89,7 @@ import kotlin.math.abs
 @Composable
 fun PlayerScreen(
     onBack: () -> Unit,
+    onWriteEpisodeComment: (Int) -> Unit,
     viewModel: PlayerViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
@@ -107,6 +111,13 @@ fun PlayerScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var showSeekPreview by remember { mutableStateOf(false) }
     var seekPreviewMs by remember { mutableLongStateOf(0L) }
+    var forcePortraitOnExit by remember { mutableStateOf(false) }
+    val forcePortraitOnExitState = rememberUpdatedState(forcePortraitOnExit)
+
+    BackHandler(enabled = state.isCommentsPanelVisible) {
+        viewModel.onEvent(PlayerEvent.HideEpisodeComments)
+        controlsVisible = true
+    }
 
     // ── YouTube-style accumulated seek ───────────────────────────
     val seekScope = rememberCoroutineScope()
@@ -135,9 +146,12 @@ fun PlayerScreen(
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose {
-            activity.requestedOrientation =
+            activity.requestedOrientation = if (forcePortraitOnExitState.value) {
+                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            } else {
                 origOrientation.takeIf { it != ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
                     ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
             insetsCtrl.show(WindowInsetsCompat.Type.systemBars())
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
@@ -556,6 +570,10 @@ fun PlayerScreen(
                 hasPrevious = state.hasPrevious,
                 hasNext = state.hasNext,
                 onBack = onBack,
+                onOpenComments = {
+                    controlsVisible = false
+                    viewModel.onEvent(PlayerEvent.ShowEpisodeComments)
+                },
                 onPlayPause = {
                     if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
                 },
@@ -645,6 +663,45 @@ fun PlayerScreen(
                     showSpeedPopup = false
                 },
                 onDismiss = { showSpeedPopup = false },
+            )
+        }
+
+        AnimatedVisibility(
+            visible = state.isCommentsPanelVisible,
+            enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(tween(180)),
+            exit = slideOutHorizontally(targetOffsetX = { it }) + fadeOut(tween(140)),
+            modifier = Modifier.align(Alignment.CenterEnd),
+        ) {
+            EpisodeCommentsPanel(
+                episodeNumber = state.commentsEpisodeNumber ?: state.currentEpisodeIndex + 1,
+                comments = state.episodeComments,
+                isLoading = state.isLoadingEpisodeComments,
+                hasMore = state.hasMoreEpisodeComments,
+                error = state.episodeCommentsError,
+                onClose = {
+                    viewModel.onEvent(PlayerEvent.HideEpisodeComments)
+                    controlsVisible = true
+                },
+                onLoadMore = {
+                    viewModel.onEvent(PlayerEvent.LoadMoreEpisodeComments)
+                },
+                onRetry = {
+                    viewModel.onEvent(PlayerEvent.RetryEpisodeComments)
+                },
+                onWriteComment = {
+                    forcePortraitOnExit = true
+                    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+                    viewModel.onEvent(
+                        PlayerEvent.UpdateProgress(
+                            exoPlayer.currentPosition,
+                            exoPlayer.duration,
+                        ),
+                    )
+                    val episodeNumber = state.commentsEpisodeNumber
+                        ?: state.currentEpisode?.number
+                        ?: state.currentEpisodeIndex + 1
+                    onWriteEpisodeComment(episodeNumber)
+                },
             )
         }
     }

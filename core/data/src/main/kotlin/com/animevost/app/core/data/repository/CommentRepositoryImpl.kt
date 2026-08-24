@@ -2,6 +2,7 @@ package com.animevost.app.core.data.repository
 
 import com.animevost.app.core.domain.model.Comment
 import com.animevost.app.core.domain.model.CommentPage
+import com.animevost.app.core.domain.model.CommentScope
 import com.animevost.app.core.domain.repository.AuthRepository
 import com.animevost.app.core.domain.repository.CommentRepository
 import com.animevost.app.core.domain.util.Result
@@ -32,7 +33,11 @@ class CommentRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun addComment(newsId: Int, text: String): Result<Comment> {
+    override suspend fun addComment(
+        newsId: Int,
+        text: String,
+        scope: CommentScope,
+    ): Result<Comment> {
         return try {
             val user = authRepository.getCurrentUser()
                 ?: return Result.Error(Exception("Не авторизован"), "Войдите в аккаунт")
@@ -40,10 +45,18 @@ class CommentRepositoryImpl @Inject constructor(
                 newsId = newsId,
                 text = text,
                 authorName = user.name,
+                episodeNumber = (scope as? CommentScope.Episode)?.number,
             )
             val comment = result.comments.firstOrNull()?.toDomain()
-                ?: Comment(id = 0, author = user.name, date = "", text = text, avatar = "")
-            Result.Success(comment)
+                ?: Comment(
+                    id = 0,
+                    author = user.name,
+                    date = "",
+                    text = text,
+                    avatar = "",
+                    scope = scope,
+                )
+            Result.Success(comment.copy(scope = scope))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
