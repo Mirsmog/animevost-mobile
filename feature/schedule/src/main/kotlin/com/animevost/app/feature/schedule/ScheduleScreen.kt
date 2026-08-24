@@ -33,8 +33,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.animevost.app.core.domain.model.ScheduleItem
 import com.animevost.app.core.ui.components.ErrorState
@@ -204,6 +206,8 @@ private fun ScheduleItemRow(
     item: ScheduleItem,
     onClick: () -> Unit,
 ) {
+    val isAllDay = item.time.trim().equals("В течение дня", ignoreCase = true)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -213,9 +217,17 @@ private fun ScheduleItemRow(
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text(
-            text = item.time.ifBlank { "—" },
-            style = MaterialTheme.typography.labelLarge,
+            text = if (isAllDay) "В\nтечение\nдня" else item.time.ifBlank { "—" },
+            style = if (isAllDay) {
+                MaterialTheme.typography.labelLarge.copy(
+                    fontSize = 11.5.sp,
+                    lineHeight = 15.5.sp,
+                )
+            } else {
+                MaterialTheme.typography.labelLarge
+            },
             fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Start,
             color = if (item.time.isNotBlank()) {
                 MaterialTheme.colorScheme.primary
             } else {
