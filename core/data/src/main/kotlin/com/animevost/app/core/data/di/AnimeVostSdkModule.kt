@@ -1,6 +1,7 @@
 package com.animevost.app.core.data.di
 
 import com.animevost.app.core.data.sdk.EncryptedAnimeVostCookieStore
+import com.animevost.app.core.domain.util.AnimeVostUrls
 import com.animevost.sdk.AnimeVostClient
 import com.animevost.sdk.config.AnimeVostConfig
 import com.animevost.sdk.http.AnimeVostCookieStore
@@ -31,7 +32,7 @@ object AnimeVostSdkProvidesModule {
     @Singleton
     fun provideAnimeVostClient(cookieStore: AnimeVostCookieStore): AnimeVostClient =
         AnimeVostClient(
-            config = AnimeVostConfig(baseUrl = "https://v13.vost.pw/"),
+            config = AnimeVostConfig(baseUrl = AnimeVostUrls.BASE_URL),
             httpClient = OkHttpAnimeVostHttpClient(cookieStore = cookieStore),
         )
 }

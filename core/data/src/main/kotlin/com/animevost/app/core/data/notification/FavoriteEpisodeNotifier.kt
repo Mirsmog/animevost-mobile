@@ -13,6 +13,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.animevost.app.core.data.R
+import com.animevost.app.core.domain.util.AnimeVostUrls
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -120,7 +121,7 @@ class FavoriteEpisodeNotifier @Inject constructor(
 
     private suspend fun loadPoster(rawUrl: String): Bitmap? {
         if (rawUrl.isBlank()) return null
-        val url = runCatching { URI(RSS_BASE_URL).resolve(rawUrl).toString() }.getOrNull()
+        val url = runCatching { URI(AnimeVostUrls.BASE_URL).resolve(rawUrl).toString() }.getOrNull()
             ?: return null
         return withContext(Dispatchers.IO) {
             runCatching {
@@ -169,7 +170,6 @@ class FavoriteEpisodeNotifier @Inject constructor(
     private companion object {
         const val CHANNEL_ID = "anime_updates"
         const val GROUP_KEY = "favorite_episode_updates"
-        const val RSS_BASE_URL = "https://v13.vost.pw/"
         const val SUMMARY_NOTIFICATION_ID = 9_999
         const val FAVORITE_NOTIFICATION_BASE_ID = 100_000
         const val LEGACY_NOTIFICATION_BASE_ID = 1_000

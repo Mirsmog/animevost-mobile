@@ -8,6 +8,21 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class UserListPayloadCodecTest {
+    @Test
+    fun `compact format matches the shared desktop compatibility fixture`() {
+        val statuses = mapOf(1 to "w", 2 to "p", 3970 to "d", 65535 to "x")
+        val marker = "[animevost-list:v2:BAUIgZsB8+QSdUU5kQ]"
+        assertEquals(marker, UserListPayloadCodec.merge("", statuses))
+        assertEquals(statuses, UserListPayloadCodec.decode(marker).statuses)
+    }
+
+    @Test
+    fun `incomplete marker is rejected before overwriting remote lists`() {
+        assertFailsWith<UserListPayloadException> {
+            UserListPayloadCodec.merge("Bio [animevost-list:v2:BAUI", mapOf(1 to "w"))
+        }
+    }
+
 
     @Test
     fun `merge preserves profile text and round trips compact statuses`() {

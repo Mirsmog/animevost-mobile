@@ -15,6 +15,7 @@ import com.animevost.app.core.data.notification.FavoriteEpisodeStateStore
 import com.animevost.app.core.data.notification.FavoriteEpisodeUpdateDetector
 import com.animevost.app.core.domain.repository.NotificationPreferencesRepository
 import com.animevost.app.core.domain.model.AnimeReleaseStatus
+import com.animevost.app.core.domain.util.AnimeVostUrls
 import com.animevost.app.core.network.parser.RssItem
 import com.animevost.app.core.network.parser.RssParser
 import dagger.assisted.Assisted
@@ -93,7 +94,7 @@ class NotificationWorker @AssistedInject constructor(
     }
 
     private suspend fun fetchRss(): String = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(RSS_URL).build()
+        val request = Request.Builder().url(AnimeVostUrls.RSS_URL).build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) error("RSS request failed: HTTP ${response.code}")
             response.body?.string().orEmpty()
@@ -121,7 +122,6 @@ class NotificationWorker @AssistedInject constructor(
     }
 
     companion object {
-        private const val RSS_URL = "https://v13.vost.pw/rss.xml"
         private const val MAX_NOTIFICATIONS_PER_RUN = 10
         private const val WORK_NAME = "anime_notifications"
 

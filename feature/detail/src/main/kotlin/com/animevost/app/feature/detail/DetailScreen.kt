@@ -115,6 +115,7 @@ import com.animevost.app.core.domain.model.CommentScope
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.model.UpcomingEpisode
 import com.animevost.app.core.domain.model.VideoSource
+import com.animevost.app.core.domain.util.AnimeVostUrls
 import com.animevost.app.core.ui.components.AnimeCard
 import com.animevost.app.core.ui.components.CommentHtmlRenderer
 import com.animevost.app.core.ui.components.ErrorState
@@ -1590,7 +1591,7 @@ private fun CommentEditor(
                 ) {
                     gridItems(emojiIds) { id ->
                         AsyncImage(
-                            model = "https://animevost.org/engine/data/emoticons/$id.gif",
+                            model = "${AnimeVostUrls.EMOTICONS_URL}$id.gif",
                             contentDescription = "emoji $id",
                             modifier = Modifier
                                 .size(36.dp)

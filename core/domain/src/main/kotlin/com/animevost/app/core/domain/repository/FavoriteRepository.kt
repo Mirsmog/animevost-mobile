@@ -31,8 +31,8 @@ interface FavoriteRepository {
     suspend fun updateMetadata(preview: AnimePreview)
 
     /**
-     * One-time merge performed on login: pushes local-only items to the remote server,
-     * clears the local Room DB, and loads all remote favorites into in-memory state.
+     * Imports guest favorites on login, then refreshes the Room cache from the server.
+     * Existing account caches are never uploaded, preserving removals from other devices.
      */
     suspend fun syncOnLogin(): com.animevost.app.core.domain.util.Result<Unit>
 

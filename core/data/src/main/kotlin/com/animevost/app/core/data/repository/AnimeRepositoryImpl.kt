@@ -44,7 +44,7 @@ class AnimeRepositoryImpl @Inject constructor(
 
     override suspend fun getAnimeDetail(url: String): Result<AnimeDetail> {
         return try {
-            val details = client.getAnimeDetails(url)
+            val details = client.getAnimeDetails(normalizeAnimePath(url))
             Result.Success(details.toDomain(totalCommentPages = 1))
         } catch (e: CancellationException) {
             throw e

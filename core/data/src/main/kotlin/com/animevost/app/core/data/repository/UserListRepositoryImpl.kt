@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.animevost.app.core.data.db.UserListDao
 import com.animevost.app.core.data.db.UserListEntity
 import com.animevost.app.core.domain.model.AnimePreview
@@ -38,8 +39,8 @@ import javax.inject.Singleton
  * `info` field. Legacy JSON payloads containing full URLs are decoded and migrated automatically.
  *
  * **Write strategy**: Every [setStatus] call updates Room immediately (optimistic), marks
- * the state as dirty, and launches a background flush. The flush re-reads the profile page
- * before writing to prevent stale `fullname`/`land`/`email` from overwriting user profile edits.
+ * individual changes as pending, and launches a background flush. The flush merges these
+ * changes into a fresh profile snapshot, preserving edits from other devices and profile fields.
  *
  * **Sync strategy**: [syncFromRemote] re-reads the server. If there are unsent local changes
  * (persisted pending upload marker), it uploads them first before accepting
@@ -113,14 +114,11 @@ class UserListRepositoryImpl @Inject constructor(
             val relativeUrl = normalizeAnimePath(animeUrl)
             val newsId = preview?.id?.takeIf { it > 0 }
                 ?: extractAnimeNewsId(relativeUrl)
+                ?: throw UserListPayloadException("Anime newsId is required for sync")
             if (status == null) {
-                if (newsId == null) {
-                    dao.deleteByUrl(relativeUrl)
-                } else {
-                    dao.deleteByNewsId(newsId)
-                }
+                dao.deleteByNewsId(newsId)
             } else {
-                val existing = newsId?.let { dao.getByNewsId(it) }
+                val existing = dao.getByNewsId(newsId)
                 val storedUrl = if (
                     relativeUrl.startsWith(NEWS_ID_RESOLVER_PREFIX) && existing != null
                 ) {
@@ -130,19 +128,28 @@ class UserListRepositoryImpl @Inject constructor(
                 }
                 val entity = UserListEntity(
                     animeUrl = storedUrl,
-                    animeId = newsId ?: 0,
+                    animeId = newsId,
                     title = preview?.title?.takeIf { it.isNotBlank() } ?: existing?.title.orEmpty(),
                     posterUrl = preview?.posterUrl?.takeIf { it.isNotBlank() }
                         ?: existing?.posterUrl.orEmpty(),
                     status = status.code,
                 )
-                if (newsId == null) {
-                    dao.upsert(entity)
-                } else {
-                    dao.upsertByNewsId(entity)
-                }
+                dao.upsertByNewsId(entity)
             }
-            setPendingUpload(true)
+            dataStore.edit { preferences ->
+                val changes: MutableMap<Int, String?> = preferences[KEY_PENDING_CHANGES]
+                    ?.let(::decodePendingUserListChanges)
+                    ?.toMutableMap()
+                    ?: if (preferences[KEY_PENDING_UPLOAD] == true) {
+                        // Preserve edits queued by a previous version during the migration.
+                        dao.getAll().toRemoteStatuses().toMutableMap()
+                    } else {
+                        mutableMapOf()
+                    }
+                changes[newsId] = status?.code
+                preferences[KEY_PENDING_CHANGES] = encodePendingUserListChanges(changes)
+                preferences[KEY_PENDING_UPLOAD] = true
+            }
         }
         scope.launch {
             try {
@@ -186,7 +193,7 @@ class UserListRepositoryImpl @Inject constructor(
 
     /**
      * Reads fresh profile form data when it was not already fetched by the current sync, then
-     * writes local Room state back to the server without overwriting unrelated profile fields.
+     * merges queued changes without overwriting other devices' lists or unrelated profile fields.
      * Must be called within [mutex].
      */
     private suspend fun uploadNow(
@@ -197,8 +204,17 @@ class UserListRepositoryImpl @Inject constructor(
         if (!profile.canEdit) {
             throw UserListSyncException("Profile is not editable")
         }
-        val entries = dao.getAll()
-        val localStatuses = entries.toRemoteStatuses()
+        val remote = UserListPayloadCodec.decode(profile.info.orEmpty())
+        val pending = dataStore.data.first()[KEY_PENDING_CHANGES]
+            ?.let(::decodePendingUserListChanges)
+        val localStatuses = if (pending != null) {
+            applyUserListChanges(remote.statuses, pending)
+        } else if (hasPendingUpload()) {
+            // Legacy pending uploads did not record individual changes.
+            dao.getAll().toRemoteStatuses()
+        } else {
+            remote.statuses
+        }
         val updatedInfo = UserListPayloadCodec.merge(
             profileInfo = profile.info.orEmpty(),
             statuses = localStatuses,
@@ -217,7 +233,8 @@ class UserListRepositoryImpl @Inject constructor(
             throw UserListSyncException("Server did not persist the user-list payload")
         }
         setPendingUpload(false)
-        Timber.d("UserList uploaded ${entries.size} entries")
+        overwriteLocalWithRemote(confirmed.statuses)
+        Timber.d("UserList uploaded ${localStatuses.size} entries")
         return confirmedProfile
     }
 
@@ -234,6 +251,7 @@ class UserListRepositoryImpl @Inject constructor(
     private suspend fun setPendingUpload(value: Boolean) {
         dataStore.edit { preferences ->
             preferences[KEY_PENDING_UPLOAD] = value
+            if (!value) preferences.remove(KEY_PENDING_CHANGES)
         }
     }
 
@@ -315,6 +333,7 @@ class UserListRepositoryImpl @Inject constructor(
 
     private companion object {
         val KEY_PENDING_UPLOAD = booleanPreferencesKey("user_list_pending_upload")
+        val KEY_PENDING_CHANGES = stringPreferencesKey("user_list_pending_changes")
         const val NEWS_ID_RESOLVER_PREFIX = "index.php?newsid="
 
         fun List<UserListEntity>.toRemoteStatuses(): Map<Int, String> {

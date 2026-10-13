@@ -106,9 +106,10 @@ class FavoriteRepositoryImpl @Inject constructor(
                 val remoteItems = fetchAllRemotePages()
                 val remoteIds = remoteItems.map { it.id }.toSet()
 
-                // 2. Only anonymous or same-account local items may be merged.
+                // 2. Only guest favorites are new local data. An account cache may be stale
+                // after a removal on desktop and must never resurrect remote deletions.
                 val ownerAccountId = ownerAccountId()
-                val localIds = if (canMergeLocalFavorites(ownerAccountId, accountId)) {
+                val localIds = if (canImportGuestFavorites(ownerAccountId)) {
                     favoriteDao.getAllIds()
                 } else {
                     emptyList()
@@ -222,5 +223,4 @@ class FavoriteRepositoryImpl @Inject constructor(
     }
 }
 
-internal fun canMergeLocalFavorites(ownerAccountId: Int?, currentAccountId: Int): Boolean =
-    ownerAccountId == null || ownerAccountId == currentAccountId
+internal fun canImportGuestFavorites(ownerAccountId: Int?): Boolean = ownerAccountId == null

@@ -34,8 +34,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import com.animevost.app.core.domain.util.AnimeVostUrls
 
-private const val EMOJI_BASE = "https://animevost.org/engine/data/emoticons/"
 private const val EMOJI_PLACEHOLDER_START = '\uE000'
 private const val EMOJI_PLACEHOLDER_END = '\uE001'
 private val RAW_EMOJI_TOKEN_REGEX = Regex("""(?<!\d):(\d{1,3}):""")
@@ -372,7 +372,7 @@ private fun RenderCommentLine(lineItems: List<CommentSegment>, style: TextStyle)
                             textAcc = buildAnnotatedString {}
                         }
                         AsyncImage(
-                            model = "$EMOJI_BASE${item.id}.gif",
+                            model = "${AnimeVostUrls.EMOTICONS_URL}${item.id}.gif",
                             contentDescription = "emoji ${item.id}",
                             modifier = Modifier.size(22.dp),
                         )

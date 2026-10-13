@@ -73,6 +73,9 @@ internal object UserListPayloadCodec {
             }
         }
 
+        if (profileInfo.contains("[animevost-list:")) {
+            throw UserListPayloadException("User-list payload marker is incomplete")
+        }
         val legacy = decodeLegacyOrNull(profileInfo.trim())
         return if (legacy == null) {
             DecodedPayload(emptyMap(), Source.NONE)

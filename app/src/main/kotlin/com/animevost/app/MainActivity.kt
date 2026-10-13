@@ -18,9 +18,25 @@ import com.animevost.app.core.ui.theme.AnimeVostTheme
 import com.animevost.app.navigation.AppNavGraph
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
+import com.animevost.app.core.domain.repository.AuthRepository
+import com.animevost.app.core.domain.repository.FavoriteRepository
+import com.animevost.app.core.domain.repository.UserListRepository
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import timber.log.Timber
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    @Inject lateinit var authRepository: AuthRepository
+    @Inject lateinit var favoriteRepository: FavoriteRepository
+    @Inject lateinit var userListRepository: UserListRepository
 
     private val notificationAnimeUrl = MutableStateFlow<String?>(null)
 
@@ -30,6 +46,24 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                authRepository.isLoggedInFlow.collectLatest { loggedIn ->
+                    if (!loggedIn) return@collectLatest
+                    while (isActive) {
+                        try {
+                            userListRepository.syncFromRemote()
+                        } catch (error: CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            Timber.w(error, "Watch-list sync failed; will retry")
+                        }
+                        favoriteRepository.loadRemoteFavorites()
+                        delay(60_000)
+                    }
+                }
+            }
+        }
         requestNotificationPermissionIfNeeded()
         handleNotificationIntent(intent)
         enableEdgeToEdge()

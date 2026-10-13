@@ -8,16 +8,11 @@ class FavoriteAccountIsolationTest {
 
     @Test
     fun `anonymous favorites may merge into first account`() {
-        assertTrue(canMergeLocalFavorites(ownerAccountId = null, currentAccountId = 10))
+        assertTrue(canImportGuestFavorites(ownerAccountId = null))
     }
 
     @Test
-    fun `same account favorites may merge`() {
-        assertTrue(canMergeLocalFavorites(ownerAccountId = 10, currentAccountId = 10))
-    }
-
-    @Test
-    fun `different account favorites must not merge`() {
-        assertFalse(canMergeLocalFavorites(ownerAccountId = 10, currentAccountId = 20))
+    fun `account cache must not resurrect favorites removed on another device`() {
+        assertFalse(canImportGuestFavorites(ownerAccountId = 10))
     }
 }

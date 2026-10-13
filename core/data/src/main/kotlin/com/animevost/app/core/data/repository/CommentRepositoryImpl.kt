@@ -21,7 +21,7 @@ class CommentRepositoryImpl @Inject constructor(
     override suspend fun getComments(newsId: Int, page: Int, url: String): Result<CommentPage> {
         return try {
             val commentPage = if (page <= 1) {
-                client.getComments(url)
+                client.getComments(normalizeAnimePath(url))
             } else {
                 client.getComments(newsId = newsId, page = page)
             }
