@@ -4,15 +4,12 @@ import com.animevost.app.core.domain.model.ScheduleItem
 import java.time.DayOfWeek
 
 data class ScheduleUiState(
-    val selectedDay: DayTab = DayTab.fromToday(),
-    val scheduleItems: List<ScheduleItem> = emptyList(),
     val allSchedule: Map<String, List<ScheduleItem>> = emptyMap(),
     val isLoading: Boolean = false,
     val error: String? = null,
 )
 
 sealed interface ScheduleEvent {
-    data class SelectDay(val day: DayTab) : ScheduleEvent
     data object Refresh : ScheduleEvent
     data object ClearError : ScheduleEvent
 }

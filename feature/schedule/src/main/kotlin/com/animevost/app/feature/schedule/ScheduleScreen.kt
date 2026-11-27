@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -25,9 +27,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,9 +40,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.animevost.app.core.domain.model.ScheduleItem
 import com.animevost.app.core.ui.components.ErrorState
 import com.animevost.app.core.ui.components.LoadingState
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,6 +53,9 @@ fun ScheduleScreen(
     viewModel: ScheduleViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    val pager = rememberPagerState(initialPage = DayTab.fromToday().ordinal) { DayTab.entries.size }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -73,8 +80,8 @@ fun ScheduleScreen(
                 .padding(innerPadding),
         ) {
             DaySelector(
-                selectedDay = state.selectedDay,
-                onDaySelected = { viewModel.onEvent(ScheduleEvent.SelectDay(it)) },
+                selectedDay = DayTab.entries[pager.currentPage],
+                onDaySelected = { day -> scope.launch { pager.animateScrollToPage(day.ordinal) } },
             )
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
@@ -85,31 +92,39 @@ fun ScheduleScreen(
                     message = state.error!!,
                     onRetry = { viewModel.onEvent(ScheduleEvent.Refresh) },
                 )
-                state.scheduleItems.isEmpty() -> EmptyScheduleState(state.selectedDay.fullName)
-                else -> {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = state.selectedDay.fullName,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            text = "${state.scheduleItems.size} аниме",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                else -> HorizontalPager(
+                    state = pager,
+                    key = { DayTab.entries[it].name },
+                    modifier = Modifier.fillMaxSize(),
+                    verticalAlignment = Alignment.Top,
+                ) { page ->
+                    val day = DayTab.entries[page]
+                    val items = state.allSchedule[day.fullName].orEmpty()
+                    if (items.isEmpty()) {
+                        EmptyScheduleState(day.fullName)
+                    } else {
+                        Column(Modifier.fillMaxSize()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = day.fullName,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Text(
+                                    text = "${items.size} аниме",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            ScheduleList(items = items, onItemClick = onAnimeClick)
+                        }
                     }
-                    ScheduleList(
-                        items = state.scheduleItems,
-                        onItemClick = onAnimeClick,
-                    )
                 }
             }
         }

@@ -27,18 +27,8 @@ class ScheduleViewModel @Inject constructor(
 
     fun onEvent(event: ScheduleEvent) {
         when (event) {
-            is ScheduleEvent.SelectDay -> selectDay(event.day)
             ScheduleEvent.Refresh -> loadSchedule()
             ScheduleEvent.ClearError -> _uiState.update { it.copy(error = null) }
-        }
-    }
-
-    private fun selectDay(day: DayTab) {
-        _uiState.update {
-            it.copy(
-                selectedDay = day,
-                scheduleItems = it.allSchedule[day.fullName].orEmpty(),
-            )
         }
     }
 
@@ -48,11 +38,9 @@ class ScheduleViewModel @Inject constructor(
             getScheduleUseCase()
                 .onSuccess { schedules ->
                     val scheduleMap = schedules.associate { it.dayOfWeek to it.items }
-                    val selectedDay = _uiState.value.selectedDay
                     _uiState.update {
                         it.copy(
                             allSchedule = scheduleMap,
-                            scheduleItems = scheduleMap[selectedDay.fullName].orEmpty(),
                             isLoading = false,
                         )
                     }
