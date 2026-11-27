@@ -28,7 +28,6 @@ data class DetailUiState(
     val commentsPage: Int = 1,
     val commentsTotalPages: Int = 1,
     val hasMoreComments: Boolean = false,
-    val commentsFocusRequest: Int = 0,
     val replyTarget: Comment? = null,
     val replyMarkup: String = "",
     val isPreparingReply: Boolean = false,
@@ -57,7 +56,6 @@ sealed interface DetailEvent {
     data object LoadMoreComments : DetailEvent
     data class SelectCommentScope(
         val scope: CommentScope,
-        val focusComments: Boolean = false,
     ) : DetailEvent
     data class UpdateCommentTextValue(val value: TextFieldValue) : DetailEvent
     data class ReplyToComment(val comment: Comment) : DetailEvent

@@ -82,7 +82,6 @@ import kotlin.math.abs
 @Composable
 fun PlayerScreen(
     onBack: () -> Unit,
-    onWriteEpisodeComment: (Int) -> Unit,
     viewModel: PlayerViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
@@ -128,8 +127,6 @@ fun PlayerScreen(
     var controlsVisible by remember { mutableStateOf(true) }
     var showSeekPreview by remember { mutableStateOf(false) }
     var seekPreviewMs by remember { mutableLongStateOf(0L) }
-    var forcePortraitOnExit by remember { mutableStateOf(false) }
-    val forcePortraitOnExitState = rememberUpdatedState(forcePortraitOnExit)
 
     // ── YouTube-style accumulated seek ───────────────────────────
     val seekScope = rememberCoroutineScope()
@@ -183,12 +180,7 @@ fun PlayerScreen(
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose {
-            activity.requestedOrientation = if (forcePortraitOnExitState.value) {
-                ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-            } else {
-                origOrientation.takeIf { it != ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED }
-                    ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            }
+            activity.requestedOrientation = origOrientation
             insetsCtrl.show(WindowInsetsCompat.Type.systemBars())
             window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
@@ -750,15 +742,6 @@ fun PlayerScreen(
                 },
                 onRetry = {
                     viewModel.onEvent(PlayerEvent.RetryEpisodeComments)
-                },
-                onWriteComment = {
-                    forcePortraitOnExit = true
-                    activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
-                    val episodeNumber = state.commentsEpisodeNumber
-                        ?: state.currentEpisode?.number
-                        ?: state.currentEpisodeIndex + 1
-                    stopPlayback()
-                    onWriteEpisodeComment(episodeNumber)
                 },
             )
         }

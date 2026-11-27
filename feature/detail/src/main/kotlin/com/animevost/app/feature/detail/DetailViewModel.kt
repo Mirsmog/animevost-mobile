@@ -126,7 +126,6 @@ class DetailViewModel @Inject constructor(
             is DetailEvent.LoadMoreComments -> loadMoreComments()
             is DetailEvent.SelectCommentScope -> selectCommentScope(
                 scope = event.scope,
-                focusComments = event.focusComments,
             )
             is DetailEvent.UpdateCommentTextValue -> _uiState.update { it.copy(commentTextValue = event.value) }
             is DetailEvent.ReplyToComment -> replyToComment(event.comment)
@@ -372,8 +371,8 @@ class DetailViewModel @Inject constructor(
         loadCommentBatch(state.commentScope)
     }
 
-    private fun selectCommentScope(scope: CommentScope, focusComments: Boolean) {
-        if (_uiState.value.commentScope == scope && !focusComments) return
+    private fun selectCommentScope(scope: CommentScope) {
+        if (_uiState.value.commentScope == scope) return
         commentLoadJob?.cancel()
         val cachedFeed = commentFeeds[scope]
         _uiState.update {
@@ -388,11 +387,6 @@ class DetailViewModel @Inject constructor(
                 replyTarget = null,
                 replyMarkup = "",
                 isPreparingReply = false,
-                commentsFocusRequest = if (focusComments) {
-                    it.commentsFocusRequest + 1
-                } else {
-                    it.commentsFocusRequest
-                },
             )
         }
         if (cachedFeed == null) loadCommentBatch(scope)

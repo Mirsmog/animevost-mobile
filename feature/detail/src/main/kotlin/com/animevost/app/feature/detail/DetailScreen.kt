@@ -33,8 +33,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -92,7 +90,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
@@ -144,8 +141,6 @@ fun DetailScreen(
     onPlayEpisode: (Episode, List<Episode>, Int) -> Unit,
     onGenreClick: (String) -> Unit,
     onRelatedClick: (String) -> Unit,
-    requestedCommentEpisode: Int? = null,
-    onCommentEpisodeRequestConsumed: () -> Unit = {},
     viewModel: DetailViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -153,18 +148,6 @@ fun DetailScreen(
 
     LaunchedEffect(animeUrl) {
         viewModel.onEvent(DetailEvent.LoadAnime(animeUrl))
-    }
-
-    LaunchedEffect(requestedCommentEpisode, state.anime?.id) {
-        val episodeNumber = requestedCommentEpisode ?: return@LaunchedEffect
-        if (state.anime == null) return@LaunchedEffect
-        viewModel.onEvent(
-            DetailEvent.SelectCommentScope(
-                scope = CommentScope.Episode(episodeNumber),
-                focusComments = true,
-            ),
-        )
-        onCommentEpisodeRequestConsumed()
     }
 
     LaunchedEffect(Unit) {
@@ -227,7 +210,6 @@ fun DetailScreen(
                     watchStatusEnabled = state.watchStatusEnabled,
                     comments = state.comments,
                     commentScope = state.commentScope,
-                    commentsFocusRequest = state.commentsFocusRequest,
                     isLoadingComments = state.isLoadingComments,
                     commentTextValue = state.commentTextValue,
                     isAddingComment = state.isAddingComment,
@@ -422,7 +404,6 @@ private fun DetailContent(
     watchStatusEnabled: Boolean,
     comments: List<Comment>,
     commentScope: CommentScope,
-    commentsFocusRequest: Int,
     isLoadingComments: Boolean,
     commentTextValue: TextFieldValue,
     isAddingComment: Boolean,
@@ -450,15 +431,6 @@ private fun DetailContent(
     onReportComment: (Comment) -> Unit,
     onDeleteComment: (Comment) -> Unit,
 ) {
-    val commentsBringIntoViewRequester = remember { BringIntoViewRequester() }
-    val configuration = LocalConfiguration.current
-
-    LaunchedEffect(commentsFocusRequest, configuration.orientation) {
-        if (commentsFocusRequest <= 0) return@LaunchedEffect
-        delay(180)
-        commentsBringIntoViewRequester.bringIntoView()
-    }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -711,7 +683,6 @@ private fun DetailContent(
             isPreparingReply = isPreparingReply,
             hasMore = hasMoreComments,
             deletingCommentId = deletingCommentId,
-            modifier = Modifier.bringIntoViewRequester(commentsBringIntoViewRequester),
             onLoadMore = onLoadMoreComments,
             onSelectScope = onSelectCommentScope,
             onTextValueChange = onCommentTextValueChange,

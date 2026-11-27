@@ -24,8 +24,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -63,7 +61,6 @@ internal fun EpisodeCommentsPanel(
     onClose: () -> Unit,
     onLoadMore: () -> Unit,
     onRetry: () -> Unit,
-    onWriteComment: () -> Unit,
 ) {
     Surface(
         modifier = Modifier
@@ -195,25 +192,6 @@ internal fun EpisodeCommentsPanel(
                         }
                     }
                 }
-            }
-
-            HorizontalDivider(color = Bg4)
-            Button(
-                onClick = onWriteComment,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = OrangePrimary,
-                    contentColor = Bg0,
-                ),
-                shape = RoundedCornerShape(12.dp),
-            ) {
-                Text(
-                    text = "Оставить комментарий",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.Bold,
-                )
             }
         }
     }
