@@ -18,6 +18,9 @@ interface WatchProgressDao {
     @Query("SELECT * FROM watch_progress WHERE animeId = :animeId ORDER BY updatedAt DESC")
     suspend fun getAllForAnime(animeId: Int): List<WatchProgressEntity>
 
+    @Query("SELECT * FROM watch_progress WHERE animeId = :animeId ORDER BY updatedAt DESC")
+    fun observeForAnime(animeId: Int): Flow<List<WatchProgressEntity>>
+
     @Query("SELECT * FROM watch_progress WHERE animeId = :animeId ORDER BY updatedAt DESC LIMIT 1")
     suspend fun getLastForAnime(animeId: Int): WatchProgressEntity?
 

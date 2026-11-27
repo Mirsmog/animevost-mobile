@@ -2,15 +2,16 @@ package com.animevost.app.navigation
 
 import android.net.Uri
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Bookmarks
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Bookmarks
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.ui.graphics.vector.ImageVector
+import com.animevost.app.feature.player.START_FROM_BEGINNING
 
 sealed class Screen(
     val route: String,
@@ -31,7 +32,7 @@ sealed class Screen(
 object NavRoutes {
     const val FILTERED_LIST = "filtered_list/{filterType}/{filterValue}/{filterLabel}"
     const val ANIME_DETAIL = "anime_detail/{url}"
-    const val PLAYER = "player/{videoId}/{episodeName}/{animeUrl}"
+    const val PLAYER = "player/{videoId}/{episodeName}/{animeUrl}?$START_FROM_BEGINNING={$START_FROM_BEGINNING}"
     const val LOGIN = "login"
     const val REGISTER = "register"
     const val SETTINGS = "settings"
@@ -42,6 +43,8 @@ object NavRoutes {
     fun animeDetail(url: String): String =
         "anime_detail/${Uri.encode(url)}"
 
-    fun player(videoId: String, episodeName: String, animeUrl: String): String =
-        "player/${Uri.encode(videoId)}/${Uri.encode(episodeName)}/${Uri.encode(animeUrl)}"
+    fun player(videoId: String, episodeName: String, animeUrl: String, startFromBeginning: Boolean = false): String {
+        val path = "player/${Uri.encode(videoId)}/${Uri.encode(episodeName)}/${Uri.encode(animeUrl)}"
+        return if (startFromBeginning) "$path?$START_FROM_BEGINNING=true" else path
+    }
 }

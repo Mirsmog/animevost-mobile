@@ -25,6 +25,9 @@ class WatchProgressRepositoryImpl @Inject constructor(
     override suspend fun getAllProgress(animeId: Int): List<WatchProgress> =
         dao.getAllForAnime(animeId).map { it.toDomain() }
 
+    override fun observeForAnime(animeId: Int): Flow<List<WatchProgress>> =
+        dao.observeForAnime(animeId).map { entries -> entries.map { it.toDomain() } }
+
     override suspend fun getLastProgress(animeId: Int): WatchProgress? =
         dao.getLastForAnime(animeId)?.toDomain()
 

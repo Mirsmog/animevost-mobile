@@ -20,6 +20,8 @@ interface WatchProgressRepository {
     /** Returns all episode progress records for the given anime. */
     suspend fun getAllProgress(animeId: Int): List<WatchProgress>
 
+    fun observeForAnime(animeId: Int): Flow<List<WatchProgress>>
+
     /** Returns the most recently updated progress entry for the anime, or null. */
     suspend fun getLastProgress(animeId: Int): WatchProgress?
 

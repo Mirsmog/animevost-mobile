@@ -35,6 +35,7 @@ import com.animevost.app.feature.catalog.FilteredListScreen
 import com.animevost.app.feature.detail.DetailScreen
 import com.animevost.app.feature.home.HomeScreen
 import com.animevost.app.feature.player.PlayerScreen
+import com.animevost.app.feature.player.START_FROM_BEGINNING
 import com.animevost.app.feature.profile.CollectionsScreen
 import com.animevost.app.feature.profile.ProfileScreen
 import com.animevost.app.feature.profile.SettingsScreen
@@ -206,8 +207,8 @@ fun AppNavGraph(
                     enableNotifications = enableNotifications,
                     animeUrl = url,
                     onBack = { navController.popBackStack() },
-                    onPlayEpisode = { episode, _, _ ->
-                        navController.navigate(NavRoutes.player(episode.videoId, episode.name, url))
+                    onPlayEpisode = { episode, startFromBeginning ->
+                        navController.navigate(NavRoutes.player(episode.videoId, episode.name, url, startFromBeginning))
                     },
                     onGenreClick = { genre ->
                         navController.navigate(NavRoutes.filteredList("genre", genre, genre))
@@ -223,6 +224,10 @@ fun AppNavGraph(
                     navArgument("videoId") { type = NavType.StringType },
                     navArgument("episodeName") { type = NavType.StringType },
                     navArgument("animeUrl") { type = NavType.StringType },
+                    navArgument(START_FROM_BEGINNING) {
+                        type = NavType.BoolType
+                        defaultValue = false
+                    },
                 ),
             ) {
                 PlayerScreen(onBack = { navController.popBackStack() })

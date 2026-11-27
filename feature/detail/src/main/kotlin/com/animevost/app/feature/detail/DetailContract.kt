@@ -7,6 +7,12 @@ import com.animevost.app.core.domain.model.Comment
 import com.animevost.app.core.domain.model.CommentScope
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.model.VideoSource
+import com.animevost.app.core.domain.model.WatchAction
+
+internal const val EPISODES_PER_RANGE = 50
+
+internal fun lastEpisodeRangeStart(episodeCount: Int): Int =
+    (episodeCount - 1).coerceAtLeast(0) / EPISODES_PER_RANGE * EPISODES_PER_RANGE
 
 data class DetailUiState(
     val anime: AnimeDetail? = null,
@@ -40,8 +46,7 @@ data class DetailUiState(
     val downloadSources: List<VideoSource> = emptyList(),
     val isLoadingDownloadSources: Boolean = false,
     val watchedEpisodeIds: Set<String> = emptySet(),
-    val continueEpisode: Episode? = null,
-    val continuePositionMs: Long = 0L,
+    val watchAction: WatchAction? = null,
     val watchStatus: AnimeStatus? = null,
     val watchStatusEnabled: Boolean = false,
     val episodeRangeStart: Int = 0,

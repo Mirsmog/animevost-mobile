@@ -1,52 +1,52 @@
 package com.animevost.app.feature.detail
 
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import dagger.hilt.android.lifecycle.HiltViewModel
-import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.AnimeDetail
+import com.animevost.app.core.domain.model.AnimePreview
 import com.animevost.app.core.domain.model.AnimeStatus
+import com.animevost.app.core.domain.model.BetaFeature
 import com.animevost.app.core.domain.model.Comment
 import com.animevost.app.core.domain.model.CommentPage
 import com.animevost.app.core.domain.model.CommentScope
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.model.VideoSource
-import com.animevost.app.core.domain.usecase.AddCommentUseCase
-import com.animevost.app.core.domain.usecase.GetEpisodeDownloadSourcesUseCase
-import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
-import com.animevost.app.core.domain.usecase.GetCommentsUseCase
-import com.animevost.app.core.domain.usecase.RateAnimeUseCase
-import com.animevost.app.core.domain.usecase.ToggleFavoriteUseCase
-import com.animevost.app.core.domain.model.BetaFeature
-import com.animevost.app.core.domain.repository.FeatureFlagsRepository
-import com.animevost.app.core.domain.repository.EpisodeDownloadManager
+import com.animevost.app.core.domain.model.nextWatchAction
 import com.animevost.app.core.domain.repository.AuthRepository
+import com.animevost.app.core.domain.repository.EpisodeDownloadManager
 import com.animevost.app.core.domain.repository.FavoriteRepository
+import com.animevost.app.core.domain.repository.FeatureFlagsRepository
 import com.animevost.app.core.domain.repository.NotificationPreferencesRepository
-import com.animevost.app.core.domain.repository.UserPreferencesRepository
-import com.animevost.app.core.domain.model.WatchProgress
-import com.animevost.app.core.domain.repository.WatchProgressRepository
 import com.animevost.app.core.domain.repository.UserListRepository
+import com.animevost.app.core.domain.repository.UserPreferencesRepository
+import com.animevost.app.core.domain.repository.WatchProgressRepository
+import com.animevost.app.core.domain.usecase.AddCommentUseCase
 import com.animevost.app.core.domain.usecase.DeleteCommentUseCase
+import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
 import com.animevost.app.core.domain.usecase.GetCommentReplyTemplateUseCase
+import com.animevost.app.core.domain.usecase.GetCommentsUseCase
+import com.animevost.app.core.domain.usecase.GetEpisodeDownloadSourcesUseCase
+import com.animevost.app.core.domain.usecase.RateAnimeUseCase
 import com.animevost.app.core.domain.usecase.ReportCommentUseCase
-import com.animevost.app.core.domain.util.onSuccess
-import com.animevost.app.core.domain.util.onError
+import com.animevost.app.core.domain.usecase.ToggleFavoriteUseCase
 import com.animevost.app.core.domain.util.Result
-import androidx.compose.ui.text.input.TextFieldValue
+import com.animevost.app.core.domain.util.onError
+import com.animevost.app.core.domain.util.onSuccess
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
 import javax.inject.Inject
 
 @HiltViewModel
@@ -107,7 +107,8 @@ class DetailViewModel @Inject constructor(
             .launchIn(viewModelScope)
     }
 
-    private var watchStatusJob: kotlinx.coroutines.Job? = null
+    private var progressJob: Job? = null
+    private var watchStatusJob: Job? = null
 
     private fun observeWatchStatus(url: String) {
         watchStatusJob?.cancel()
@@ -212,22 +213,17 @@ class DetailViewModel @Inject constructor(
             val anime = _uiState.value.anime ?: return@launch
             val savedRating = userPreferencesRepository.getUserRating(anime.id)
             _uiState.update { it.copy(userRating = savedRating) }
-            val allProgress = watchProgressRepository.getAllProgress(anime.id)
-            val watchedIds = allProgress
-                .filter { it.isCompleted }
-                .map { it.episodeVideoId }
-                .toSet()
-            val lastProgress = allProgress.maxByOrNull { it.updatedAt }
-            val continueEp = if (lastProgress != null && !lastProgress.isCompleted) {
-                anime.episodes.find { it.videoId == lastProgress.episodeVideoId }
-            } else null
-            _uiState.update {
-                it.copy(
-                    watchedEpisodeIds = watchedIds,
-                    continueEpisode = continueEp,
-                    continuePositionMs = if (continueEp != null) lastProgress?.positionMs ?: 0L else 0L,
-                )
-            }
+            progressJob?.cancel()
+            progressJob = watchProgressRepository.observeForAnime(anime.id)
+                .onEach { progress ->
+                    _uiState.update {
+                        it.copy(
+                            watchedEpisodeIds = progress.filter { entry -> entry.isCompleted }
+                                .mapTo(mutableSetOf()) { entry -> entry.episodeVideoId },
+                            watchAction = nextWatchAction(anime.episodes, progress, anime.upcomingEpisode),
+                        )
+                    }
+                }.launchIn(viewModelScope)
         }
     }
 

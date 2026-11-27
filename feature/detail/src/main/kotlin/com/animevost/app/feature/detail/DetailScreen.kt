@@ -28,10 +28,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -48,17 +47,15 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
-import androidx.compose.material.icons.filled.Bookmarks
 import androidx.compose.material.icons.filled.PlayCircle
-import androidx.compose.material.icons.outlined.Bookmarks
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.outlined.EmojiEmotions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -78,8 +75,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -90,20 +87,24 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.animevost.app.core.domain.model.AnimeDetail
 import com.animevost.app.core.domain.model.AnimeStatus
@@ -112,23 +113,26 @@ import com.animevost.app.core.domain.model.CommentScope
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.model.UpcomingEpisode
 import com.animevost.app.core.domain.model.VideoSource
+import com.animevost.app.core.domain.model.WatchAction
 import com.animevost.app.core.domain.util.AnimeVostUrls
 import com.animevost.app.core.ui.components.AnimeCard
 import com.animevost.app.core.ui.components.CommentHtmlRenderer
 import com.animevost.app.core.ui.components.ErrorState
 import com.animevost.app.core.ui.components.LoadingState
+import com.animevost.app.core.ui.components.label
 import com.animevost.app.core.ui.theme.Bg0
 import com.animevost.app.core.ui.theme.Bg1
 import com.animevost.app.core.ui.theme.Bg2
 import com.animevost.app.core.ui.theme.Bg3
 import com.animevost.app.core.ui.theme.Bg4
 import com.animevost.app.core.ui.theme.ErrorRed
-import com.animevost.app.core.ui.theme.OrangeMuted
 import com.animevost.app.core.ui.theme.OrangePrimary
 import com.animevost.app.core.ui.theme.TextPrimary
 import com.animevost.app.core.ui.theme.TextSecondary
-import java.util.Locale
 import kotlinx.coroutines.delay
+import java.util.Locale
+import kotlin.math.roundToInt
+import androidx.compose.foundation.lazy.grid.items as gridItems
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -138,7 +142,7 @@ fun DetailScreen(
     enableNotifications: (animeId: Int) -> Unit,
     animeUrl: String,
     onBack: () -> Unit,
-    onPlayEpisode: (Episode, List<Episode>, Int) -> Unit,
+    onPlayEpisode: (episode: Episode, startFromBeginning: Boolean) -> Unit,
     onGenreClick: (String) -> Unit,
     onRelatedClick: (String) -> Unit,
     viewModel: DetailViewModel = hiltViewModel(),
@@ -204,8 +208,7 @@ fun DetailScreen(
                     isDescriptionExpanded = state.isDescriptionExpanded,
                     episodeRangeStart = state.episodeRangeStart,
                     watchedEpisodeIds = state.watchedEpisodeIds,
-                    continueEpisode = state.continueEpisode,
-                    continuePositionMs = state.continuePositionMs,
+                    watchAction = state.watchAction,
                     watchStatus = state.watchStatus,
                     watchStatusEnabled = state.watchStatusEnabled,
                     comments = state.comments,
@@ -229,9 +232,8 @@ fun DetailScreen(
                     onRate = { viewModel.onEvent(DetailEvent.RateAnime(it)) },
                     onToggleDescription = { viewModel.onEvent(DetailEvent.ToggleDescription) },
                     onSetWatchStatus = { viewModel.onEvent(DetailEvent.SetWatchStatus(it)) },
-                    onPlayEpisode = { episode, index ->
-                        onPlayEpisode(episode, state.anime!!.episodes, index)
-                    },                    onShowDownloadSheet = { episode ->
+                    onPlayEpisode = onPlayEpisode,
+                    onShowDownloadSheet = { episode ->
                         viewModel.onEvent(DetailEvent.ShowDownloadSheet(episode))
                     },
                     onSelectEpisodeRange = { start ->
@@ -398,8 +400,7 @@ private fun DetailContent(
     isDescriptionExpanded: Boolean,
     episodeRangeStart: Int,
     watchedEpisodeIds: Set<String>,
-    continueEpisode: Episode?,
-    continuePositionMs: Long,
+    watchAction: WatchAction?,
     watchStatus: AnimeStatus?,
     watchStatusEnabled: Boolean,
     comments: List<Comment>,
@@ -417,7 +418,7 @@ private fun DetailContent(
     onRate: (Int) -> Unit,
     onToggleDescription: () -> Unit,
     onSetWatchStatus: (AnimeStatus?) -> Unit,
-    onPlayEpisode: (Episode, Int) -> Unit,
+    onPlayEpisode: (episode: Episode, startFromBeginning: Boolean) -> Unit,
     onShowDownloadSheet: (Episode) -> Unit,
     onSelectEpisodeRange: (Int) -> Unit,
     onGenreClick: (String) -> Unit,
@@ -431,11 +432,27 @@ private fun DetailContent(
     onReportComment: (Comment) -> Unit,
     onDeleteComment: (Comment) -> Unit,
 ) {
+    val scroll = rememberScrollState()
+    var revealUpcoming by remember(anime.id) { mutableStateOf(false) }
+    var viewportTop by remember { mutableIntStateOf(0) }
+    var upcomingScrollTarget by remember(anime.id, episodeRangeStart) { mutableStateOf<Int?>(null) }
+    val target = upcomingScrollTarget
+    if (revealUpcoming && target != null) {
+        LaunchedEffect(Unit) {
+            try {
+                scroll.animateScrollTo(target)
+            } finally {
+                revealUpcoming = false
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Bg1)
-            .verticalScroll(rememberScrollState()),
+            .onGloballyPositioned { viewportTop = it.positionInRoot().y.roundToInt() }
+            .verticalScroll(scroll),
     ) {
         // ── Immersive poster header ──────────────────────────────────
         PosterHeader(
@@ -464,8 +481,11 @@ private fun DetailContent(
 
             // CTA row: Watch / Continue + Watch-list button
             ActionButtonsRow(
-                episodes = anime.episodes,
-                continueEpisode = continueEpisode,
+                watchAction = watchAction,
+                onShowUpcoming = {
+                    onSelectEpisodeRange(lastEpisodeRangeStart(anime.episodes.size))
+                    revealUpcoming = true
+                },
                 watchStatus = watchStatus,
                 watchStatusEnabled = watchStatusEnabled,
                 onPlayEpisode = onPlayEpisode,
@@ -608,9 +628,13 @@ private fun DetailContent(
             EpisodesSection(
                 episodes = anime.episodes,
                 upcomingEpisode = anime.upcomingEpisode,
+                onUpcomingPositioned = { row ->
+                    val topInContent = scroll.value + row.positionInRoot().y.roundToInt() - viewportTop
+                    upcomingScrollTarget = (topInContent - (scroll.viewportSize - row.size.height) / 2).coerceAtLeast(0)
+                },
                 episodeRangeStart = episodeRangeStart,
                 watchedEpisodeIds = watchedEpisodeIds,
-                onPlayEpisode = onPlayEpisode,
+                onPlayEpisode = { episode -> onPlayEpisode(episode, false) },
                 onShowDownloadSheet = onShowDownloadSheet,
                 onSelectEpisodeRange = onSelectEpisodeRange,
             )
@@ -855,13 +879,15 @@ private fun HeaderActionButton(
 private fun EpisodesSection(
     episodes: List<Episode>,
     upcomingEpisode: UpcomingEpisode?,
+    onUpcomingPositioned: (LayoutCoordinates) -> Unit,
     episodeRangeStart: Int,
     watchedEpisodeIds: Set<String>,
-    onPlayEpisode: (Episode, Int) -> Unit,
+    onPlayEpisode: (Episode) -> Unit,
     onShowDownloadSheet: (Episode) -> Unit,
     onSelectEpisodeRange: (Int) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+    Column(modifier = modifier.padding(horizontal = 16.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -880,15 +906,15 @@ private fun EpisodesSection(
         }
 
         // Range chips — only when more than 50 episodes
-        if (episodes.size > 50) {
+        if (episodes.size > EPISODES_PER_RANGE) {
             Spacer(Modifier.height(8.dp))
-            val ranges = remember(episodes.size) { (0 until episodes.size step 50).toList() }
+            val ranges = remember(episodes.size) { (episodes.indices step EPISODES_PER_RANGE).toList() }
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(vertical = 4.dp),
             ) {
                 items(ranges) { start ->
-                    val end = minOf(start + 50, episodes.size)
+                    val end = minOf(start + EPISODES_PER_RANGE, episodes.size)
                     FilterChip(
                         selected = start == episodeRangeStart,
                         onClick = { onSelectEpisodeRange(start) },
@@ -917,25 +943,21 @@ private fun EpisodesSection(
 
         Spacer(Modifier.height(8.dp))
 
-        val displayEpisodes = if (episodes.size > 50) {
-            val end = minOf(episodeRangeStart + 50, episodes.size)
-            episodes.subList(episodeRangeStart, end)
-        } else {
-            episodes
-        }
+        val lastRange = lastEpisodeRangeStart(episodes.size)
+        val rangeStart = episodeRangeStart.coerceIn(0, lastRange)
+        val displayEpisodes = episodes.subList(rangeStart, minOf(rangeStart + EPISODES_PER_RANGE, episodes.size))
         val showUpcomingEpisode = upcomingEpisode != null &&
             episodes.none { it.number == upcomingEpisode.number } &&
-            (episodes.size <= 50 || episodeRangeStart + 50 >= episodes.size)
+            rangeStart == lastRange
 
         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
             displayEpisodes.forEachIndexed { localIndex, episode ->
-                val globalIndex = if (episodes.size > 50) episodeRangeStart + localIndex else localIndex
                 val isWatched = episode.videoId in watchedEpisodeIds
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(8.dp))
-                        .clickable { onPlayEpisode(episode, globalIndex) }
+                        .clickable { onPlayEpisode(episode) }
                         .padding(vertical = 10.dp, horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -955,7 +977,7 @@ private fun EpisodesSection(
                             )
                         } else {
                             Text(
-                                text = "${globalIndex + 1}",
+                                text = "${rangeStart + localIndex + 1}",
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = TextSecondary,
@@ -991,14 +1013,17 @@ private fun EpisodesSection(
                 }
             }
             if (showUpcomingEpisode) {
-                UpcomingEpisodeRow(upcomingEpisode)
+                UpcomingEpisodeRow(
+                    upcomingEpisode = upcomingEpisode,
+                    modifier = Modifier.onGloballyPositioned(onUpcomingPositioned),
+                )
             }
         }
     }
 }
 
 @Composable
-private fun UpcomingEpisodeRow(upcomingEpisode: UpcomingEpisode) {
+private fun UpcomingEpisodeRow(upcomingEpisode: UpcomingEpisode, modifier: Modifier = Modifier) {
     var currentEpochSeconds by remember(upcomingEpisode.scheduledAtEpochSeconds) {
         mutableStateOf(System.currentTimeMillis() / 1_000L)
     }
@@ -1014,7 +1039,7 @@ private fun UpcomingEpisodeRow(upcomingEpisode: UpcomingEpisode) {
     val countdown = formatEpisodeCountdown(remainingSeconds)
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .semantics {
@@ -2043,28 +2068,25 @@ private fun MatchResult.animeVostEmojiIdOrNull(): String? {
 
 @Composable
 private fun ActionButtonsRow(
-    episodes: List<Episode>,
-    continueEpisode: Episode?,
+    watchAction: WatchAction?,
+    onShowUpcoming: () -> Unit,
     watchStatus: AnimeStatus?,
     watchStatusEnabled: Boolean,
-    onPlayEpisode: (Episode, Int) -> Unit,
+    onPlayEpisode: (episode: Episode, startFromBeginning: Boolean) -> Unit,
     onSetWatchStatus: (AnimeStatus?) -> Unit,
 ) {
-    val hasEpisodes = episodes.isNotEmpty()
+    val hasAction = watchAction != null
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (hasEpisodes) {
-            val isContinue = continueEpisode != null
+        if (watchAction != null) {
             Button(
                 onClick = {
-                    if (isContinue) {
-                        val idx = episodes.indexOf(continueEpisode)
-                        onPlayEpisode(continueEpisode!!, if (idx >= 0) idx else 0)
-                    } else {
-                        onPlayEpisode(episodes.first(), 0)
+                    when (watchAction) {
+                        is WatchAction.Play -> onPlayEpisode(watchAction.episode, watchAction.startFromBeginning)
+                        is WatchAction.Upcoming -> onShowUpcoming()
                     }
                 },
                 modifier = Modifier
@@ -2077,13 +2099,13 @@ private fun ActionButtonsRow(
                 ),
             ) {
                 Icon(
-                    Icons.Filled.PlayCircle,
+                    if (watchAction is WatchAction.Upcoming) Icons.Filled.Schedule else Icons.Filled.PlayCircle,
                     contentDescription = null,
                     modifier = Modifier.size(20.dp),
                 )
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = if (isContinue) "Продолжить • ${continueEpisode!!.name}" else "Смотреть",
+                    text = watchAction.label(),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
@@ -2095,13 +2117,13 @@ private fun ActionButtonsRow(
             WatchStatusSquareButton(
                 currentStatus = watchStatus,
                 onStatusSelected = onSetWatchStatus,
-                modifier = if (hasEpisodes)
+                modifier = if (hasAction)
                     Modifier.size(52.dp)
                 else
                     Modifier
                         .fillMaxWidth()
                         .height(52.dp),
-                showLabel = !hasEpisodes,
+                showLabel = !hasAction,
             )
         }
     }
