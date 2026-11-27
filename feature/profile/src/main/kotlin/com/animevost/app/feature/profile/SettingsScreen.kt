@@ -24,13 +24,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,11 +38,15 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.animevost.app.core.domain.model.BetaFeature
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    supportsNotifications: Boolean,
+    notificationsAllowed: Boolean,
+    enableNotifications: () -> Unit,
     onBack: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
@@ -83,13 +86,21 @@ fun SettingsScreen(
                 bottom = 32.dp,
             ),
         ) {
-            item {
-                NotificationsSection(
-                    enabled = favoriteNotificationsEnabled,
-                    onEnabledChange = viewModel::setFavoriteNotificationsEnabled,
-                )
+            if (supportsNotifications) {
+                item {
+                    NotificationsSection(
+                        enabled = favoriteNotificationsEnabled && notificationsAllowed,
+                        onEnabledChange = { enabled ->
+                            if (enabled) {
+                                enableNotifications()
+                            } else {
+                                viewModel.setFavoriteNotificationsEnabled(false)
+                            }
+                        },
+                    )
+                }
+                item { Spacer(modifier = Modifier.height(24.dp)) }
             }
-            item { Spacer(modifier = Modifier.height(24.dp)) }
             item {
                 BetaFeaturesSection(betaFeatures = betaFeatures, onToggle = viewModel::toggle)
             }

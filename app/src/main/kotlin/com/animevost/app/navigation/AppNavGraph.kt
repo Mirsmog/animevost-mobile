@@ -12,11 +12,12 @@ import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -25,11 +26,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.hilt.navigation.compose.hiltViewModel
+import com.animevost.app.BuildConfig
 import com.animevost.app.MainViewModel
 import com.animevost.app.UpdateState
-import com.animevost.app.update.UpdateDialog
 import com.animevost.app.feature.auth.LoginScreen
 import com.animevost.app.feature.auth.RegisterScreen
 import com.animevost.app.feature.catalog.FilteredListScreen
@@ -40,13 +39,16 @@ import com.animevost.app.feature.profile.CollectionsScreen
 import com.animevost.app.feature.profile.ProfileScreen
 import com.animevost.app.feature.profile.SettingsScreen
 import com.animevost.app.feature.schedule.ScheduleScreen
+import com.animevost.app.update.UpdateDialog
 
 @Composable
 fun AppNavGraph(
+    mainViewModel: MainViewModel,
+    notificationsAllowed: Boolean,
+    enableNotifications: (animeId: Int?) -> Unit,
     notificationAnimeUrl: String? = null,
     onNotificationNavigationHandled: () -> Unit = {},
 ) {
-    val mainViewModel = hiltViewModel<MainViewModel>()
     val updateState by mainViewModel.updateState.collectAsStateWithLifecycle()
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -169,7 +171,12 @@ fun AppNavGraph(
                 )
             }
             composable(NavRoutes.SETTINGS) {
-                SettingsScreen(onBack = { navController.popBackStack() })
+                SettingsScreen(
+                    onBack = { navController.popBackStack() },
+                    supportsNotifications = BuildConfig.ENABLE_BACKGROUND_NOTIFICATIONS,
+                    notificationsAllowed = notificationsAllowed,
+                    enableNotifications = { enableNotifications(null) },
+                )
             }
             composable(
                 route = NavRoutes.FILTERED_LIST,
@@ -197,6 +204,9 @@ fun AppNavGraph(
                     .getStateFlow<Int?>(EPISODE_COMMENTS_REQUEST_KEY, null)
                     .collectAsStateWithLifecycle()
                 DetailScreen(
+                    supportsNotifications = BuildConfig.ENABLE_BACKGROUND_NOTIFICATIONS,
+                    notificationsAllowed = notificationsAllowed,
+                    enableNotifications = enableNotifications,
                     animeUrl = url,
                     onBack = { navController.popBackStack() },
                     onPlayEpisode = { episode, _, _ ->

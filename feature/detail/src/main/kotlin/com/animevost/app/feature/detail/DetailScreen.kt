@@ -136,6 +136,9 @@ import kotlinx.coroutines.delay
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DetailScreen(
+    supportsNotifications: Boolean,
+    notificationsAllowed: Boolean,
+    enableNotifications: (animeId: Int) -> Unit,
     animeUrl: String,
     onBack: () -> Unit,
     onPlayEpisode: (Episode, List<Episode>, Int) -> Unit,
@@ -209,7 +212,8 @@ fun DetailScreen(
                 state.anime != null -> DetailContent(
                     anime = state.anime!!,
                     isFavorite = state.isFavorite,
-                    areFavoriteNotificationsEnabled = state.areFavoriteNotificationsEnabled,
+                    supportsNotifications = supportsNotifications,
+                    areFavoriteNotificationsEnabled = state.areFavoriteNotificationsEnabled && notificationsAllowed,
                     isFavoriteNotificationMuted = state.isFavoriteNotificationMuted,
                     isLoggedIn = state.isLoggedIn,
                     userRating = state.userRating,
@@ -234,7 +238,11 @@ fun DetailScreen(
                     onBack = onBack,
                     onToggleFavorite = { viewModel.onEvent(DetailEvent.ToggleFavorite) },
                     onToggleFavoriteNotification = {
-                        viewModel.onEvent(DetailEvent.ToggleFavoriteNotification)
+                        if (state.areFavoriteNotificationsEnabled && !notificationsAllowed) {
+                            state.anime?.let { enableNotifications(it.id) }
+                        } else {
+                            viewModel.onEvent(DetailEvent.ToggleFavoriteNotification)
+                        }
                     },
                     onRate = { viewModel.onEvent(DetailEvent.RateAnime(it)) },
                     onToggleDescription = { viewModel.onEvent(DetailEvent.ToggleDescription) },
@@ -399,6 +407,7 @@ private fun DeleteCommentDialog(
 private fun DetailContent(
     anime: AnimeDetail,
     isFavorite: Boolean,
+    supportsNotifications: Boolean,
     areFavoriteNotificationsEnabled: Boolean,
     isFavoriteNotificationMuted: Boolean,
     isLoggedIn: Boolean,
@@ -460,7 +469,7 @@ private fun DetailContent(
         PosterHeader(
             anime = anime,
             isFavorite = isFavorite,
-            showFavoriteNotificationAction = anime.releaseStatus.supportsEpisodeNotifications,
+            showFavoriteNotificationAction = supportsNotifications && anime.releaseStatus.supportsEpisodeNotifications,
             isFavoriteNotificationEnabled =
                 areFavoriteNotificationsEnabled && !isFavoriteNotificationMuted,
             onBack = onBack,

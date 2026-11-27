@@ -167,12 +167,12 @@ class FavoriteEpisodeNotifier @Inject constructor(
     private fun notificationId(animeId: Int): Int =
         FAVORITE_NOTIFICATION_BASE_ID + animeId
 
-    private companion object {
+    companion object {
         const val CHANNEL_ID = "anime_updates"
-        const val GROUP_KEY = "favorite_episode_updates"
-        const val SUMMARY_NOTIFICATION_ID = 9_999
-        const val FAVORITE_NOTIFICATION_BASE_ID = 100_000
-        const val LEGACY_NOTIFICATION_BASE_ID = 1_000
-        const val LEGACY_NOTIFICATION_COUNT = 5
+        private const val GROUP_KEY = "favorite_episode_updates"
+        private const val SUMMARY_NOTIFICATION_ID = 9_999
+        private const val FAVORITE_NOTIFICATION_BASE_ID = 100_000
+        private const val LEGACY_NOTIFICATION_BASE_ID = 1_000
+        private const val LEGACY_NOTIFICATION_COUNT = 5
     }
 }
