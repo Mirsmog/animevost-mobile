@@ -8,10 +8,6 @@ import com.animevost.app.core.domain.model.BetaFeature
 import com.animevost.app.core.domain.model.CommentScope
 import com.animevost.app.core.domain.model.Episode
 import com.animevost.app.core.domain.model.SkipInterval
-import com.animevost.app.core.domain.usecase.AddToHistoryUseCase
-import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
-import com.animevost.app.core.domain.usecase.GetCommentsUseCase
-import com.animevost.app.core.domain.usecase.GetVideoUrlUseCase
 import com.animevost.app.core.domain.model.WatchProgress
 import com.animevost.app.core.domain.repository.FeatureFlagsRepository
 import com.animevost.app.core.domain.repository.LocalSkipDetector
@@ -20,17 +16,21 @@ import com.animevost.app.core.domain.repository.LocalSkipRequest
 import com.animevost.app.core.domain.repository.SkipTimesRepository
 import com.animevost.app.core.domain.repository.UserPreferencesRepository
 import com.animevost.app.core.domain.repository.WatchProgressRepository
+import com.animevost.app.core.domain.usecase.AddToHistoryUseCase
+import com.animevost.app.core.domain.usecase.GetAnimeDetailUseCase
+import com.animevost.app.core.domain.usecase.GetCommentsUseCase
+import com.animevost.app.core.domain.usecase.GetVideoUrlUseCase
+import com.animevost.app.core.domain.util.Result
 import com.animevost.app.core.domain.util.onError
 import com.animevost.app.core.domain.util.onSuccess
-import com.animevost.app.core.domain.util.Result
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -38,7 +38,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
-    savedStateHandle: SavedStateHandle,
+    private val savedStateHandle: SavedStateHandle,
     private val getVideoUrlUseCase: GetVideoUrlUseCase,
     private val getAnimeDetailUseCase: GetAnimeDetailUseCase,
     private val getCommentsUseCase: GetCommentsUseCase,
@@ -76,6 +76,7 @@ class PlayerViewModel @Inject constructor(
     private var skipTimesJob: Job? = null
     private var videoLoadJob: Job? = null
     private var resumeLoadJob: Job? = null
+    private var episodeListJob: Job? = null
     private var episodeCommentsJob: Job? = null
     private var episodeCommentsScannedPage = 0
     private var episodeCommentsTotalPages = 1
@@ -84,6 +85,10 @@ class PlayerViewModel @Inject constructor(
         val episode = Episode(name = episodeName, videoId = videoId, thumbnailUrl = "")
         loadVideo(episode, emptyList(), 0)
         loadEpisodeList()
+        viewModelScope.launch {
+            val seen = userPreferencesRepository.hasSeenSpeedHint()
+            _uiState.update { it.copy(speedHintAvailable = !seen) }
+        }
         viewModelScope.launch {
             localSkipDetector.events.collect { event ->
                 if (
@@ -107,28 +112,31 @@ class PlayerViewModel @Inject constructor(
     fun onEvent(event: PlayerEvent) {
         when (event) {
             is PlayerEvent.SelectQuality -> selectQuality(event.quality)
-            is PlayerEvent.NextEpisode -> {
-                saveCurrentProgress(event.currentPositionMs, event.currentDurationMs)
-                navigateEpisode(1)
+            PlayerEvent.SpeedHintShown -> {
+                _uiState.update { it.copy(speedHintAvailable = false) }
+                viewModelScope.launch { userPreferencesRepository.markSpeedHintSeen() }
             }
-            is PlayerEvent.PreviousEpisode -> {
-                saveCurrentProgress(event.currentPositionMs, event.currentDurationMs)
-                navigateEpisode(-1)
-            }
-            is PlayerEvent.UpdateProgress -> saveCurrentProgress(event.positionMs, event.durationMs)
+            PlayerEvent.NextEpisode -> navigateEpisode(1)
+            PlayerEvent.PreviousEpisode -> navigateEpisode(-1)
+            is PlayerEvent.UpdateProgress -> saveCurrentProgress(event)
             PlayerEvent.ShowEpisodeComments -> showEpisodeComments()
             PlayerEvent.HideEpisodeComments -> hideEpisodeComments()
             PlayerEvent.LoadMoreEpisodeComments -> loadEpisodeComments()
             PlayerEvent.RetryEpisodeComments -> loadEpisodeComments()
-            is PlayerEvent.ResumeConsumed -> _uiState.update { it.copy(resumePositionMs = 0L) }
+            is PlayerEvent.ResumeConsumed -> {
+                if (_uiState.value.currentEpisode?.videoId == event.videoId) {
+                    resumeLoadJob?.cancel()
+                    _uiState.update { it.copy(resumePosition = ResumePosition.Handled) }
+                }
+            }
         }
     }
 
-    private fun saveCurrentProgress(positionMs: Long, durationMs: Long) {
+    private fun saveCurrentProgress(progress: PlayerEvent.UpdateProgress) {
         val episode = _uiState.value.currentEpisode ?: return
         val animeId = animePreview?.id ?: return
         val episodeIndex = _uiState.value.currentEpisodeIndex
-        if (positionMs <= 0L) return
+        if (episode.videoId != progress.videoId || _uiState.value.resumePosition != ResumePosition.Handled) return
         viewModelScope.launch {
             watchProgressRepository.saveProgress(
                 WatchProgress(
@@ -136,16 +144,19 @@ class PlayerViewModel @Inject constructor(
                     episodeVideoId = episode.videoId,
                     episodeName = episode.name,
                     episodeIndex = episodeIndex,
-                    positionMs = positionMs,
-                    durationMs = durationMs,
+                    positionMs = progress.positionMs,
+                    durationMs = progress.durationMs,
                 ),
             )
+            if (episode.videoId == videoId && savedStateHandle.get<Boolean>(START_FROM_BEGINNING) == true) {
+                savedStateHandle[START_FROM_BEGINNING] = false
+            }
         }
     }
 
     private fun loadEpisodeList() {
-        if (animeUrl.isBlank()) return
-        viewModelScope.launch {
+        if (episodeListJob?.isActive == true || animeUrl.isBlank()) return
+        episodeListJob = viewModelScope.launch {
             val result = getAnimeDetailUseCase(animeUrl)
             result.onSuccess { detail ->
                 val episodes = detail.episodes
@@ -185,12 +196,22 @@ class PlayerViewModel @Inject constructor(
                     resetEpisodeComments(currentEpisodeNumber())
                     loadEpisodeComments()
                 }
+            }.onError { _, message ->
+                if (_uiState.value.isCommentsPanelVisible) {
+                    _uiState.update {
+                        it.copy(
+                            isLoadingEpisodeComments = false,
+                            episodeCommentsError = message ?: "Не удалось загрузить обсуждение",
+                        )
+                    }
+                }
             }
         }
     }
 
     private fun loadVideo(episode: Episode, allEpisodes: List<Episode>, index: Int) {
         videoLoadJob?.cancel()
+        val restart = episode.videoId == videoId && savedStateHandle.get<Boolean>(START_FROM_BEGINNING) == true
         _uiState.update {
             it.copy(
                 isLoading = true,
@@ -199,7 +220,7 @@ class PlayerViewModel @Inject constructor(
                 videoSources = emptyList(),
                 allEpisodes = if (allEpisodes.isNotEmpty()) allEpisodes else it.allEpisodes,
                 currentEpisodeIndex = if (allEpisodes.isNotEmpty()) index else it.currentEpisodeIndex,
-                resumePositionMs = 0L,
+                resumePosition = if (restart) ResumePosition.Pending(0L) else ResumePosition.Loading,
             )
         }
         videoLoadJob = viewModelScope.launch {
@@ -240,6 +261,7 @@ class PlayerViewModel @Inject constructor(
         val newIndex = state.currentEpisodeIndex + direction
         if (newIndex < 0 || newIndex > state.allEpisodes.lastIndex) return
         val episode = state.allEpisodes[newIndex]
+        savedStateHandle[START_FROM_BEGINNING] = false
         resetSkipState()
         loadVideo(episode, state.allEpisodes, newIndex)
         resetEpisodeComments(currentEpisodeNumber(episode, newIndex))
@@ -256,10 +278,6 @@ class PlayerViewModel @Inject constructor(
             resetEpisodeComments(episodeNumber)
         }
         _uiState.update { it.copy(isCommentsPanelVisible = true) }
-        if (animePreview == null) {
-            _uiState.update { it.copy(isLoadingEpisodeComments = true) }
-            return
-        }
         if (episodeCommentsScannedPage == 0 && !_uiState.value.isLoadingEpisodeComments) {
             loadEpisodeComments()
         }
@@ -293,7 +311,18 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun loadEpisodeComments() {
-        val preview = animePreview ?: return
+        val preview = animePreview
+        if (preview == null) {
+            val canLoad = animeUrl.isNotBlank()
+            _uiState.update {
+                it.copy(
+                    isLoadingEpisodeComments = canLoad,
+                    episodeCommentsError = if (canLoad) null else "Обсуждение недоступно",
+                )
+            }
+            if (canLoad) loadEpisodeList()
+            return
+        }
         val state = _uiState.value
         val episode = state.currentEpisode ?: return
         if (state.isLoadingEpisodeComments) return
@@ -367,14 +396,15 @@ class PlayerViewModel @Inject constructor(
 
     private fun loadResumePosition(animeId: Int, episodeVideoId: String) {
         resumeLoadJob?.cancel()
+        if (_uiState.value.resumePosition != ResumePosition.Loading) return
         resumeLoadJob = viewModelScope.launch {
             val savedProgress = watchProgressRepository.getProgress(animeId, episodeVideoId)
             if (_uiState.value.currentEpisode?.videoId != episodeVideoId) return@launch
-            val position = savedProgress
+            val resume = savedProgress
                 ?.takeIf { it.positionMs > 0L && !it.isCompleted }
-                ?.positionMs
-                ?: 0L
-            _uiState.update { it.copy(resumePositionMs = position) }
+                ?.let { ResumePosition.Pending(it.positionMs) }
+                ?: ResumePosition.Handled
+            _uiState.update { it.copy(resumePosition = resume) }
         }
     }
 

@@ -9,6 +9,10 @@ interface UserPreferencesRepository {
 
     suspend fun setPreferredVideoQuality(quality: String)
 
+    suspend fun hasSeenSpeedHint(): Boolean
+
+    suspend fun markSpeedHintSeen()
+
     suspend fun getUserRating(animeId: Int): Int
 
     suspend fun setUserRating(animeId: Int, rating: Int)

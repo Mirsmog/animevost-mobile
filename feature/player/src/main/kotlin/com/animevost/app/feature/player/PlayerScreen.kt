@@ -5,34 +5,30 @@ package com.animevost.app.feature.player
 import android.app.Activity
 import android.content.pm.ActivityInfo
 import android.net.Uri
+import android.os.SystemClock
 import android.view.WindowManager
-import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FastForward
-import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -41,14 +37,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -68,16 +62,14 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
-import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
+import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import kotlin.math.abs
 
 @Composable
 fun PlayerScreen(
@@ -112,11 +104,17 @@ fun PlayerScreen(
 
     // ── Playback state ───────────────────────────────────────────
     var isPlaying by remember(player) { mutableStateOf(player.isPlaying) }
-    var isBuffering by remember(player) {
-        mutableStateOf(player.playbackState == Player.STATE_BUFFERING)
-    }
+    var playbackState by remember(player) { mutableIntStateOf(player.playbackState) }
+    var playWhenReady by remember(player) { mutableStateOf(player.playWhenReady) }
+    val playRequested = playWhenReady && playbackState != Player.STATE_ENDED
     var currentPosition by rememberSaveable { mutableLongStateOf(player.currentPosition) }
     var duration by remember { mutableLongStateOf(player.duration.coerceAtLeast(0L)) }
+    var bufferedPosition by remember(player) { mutableLongStateOf(player.bufferedPosition.coerceAtLeast(0L)) }
+    var playingEpisodeId by remember(player) { mutableStateOf(player.currentMediaItem?.episodeVideoId()) }
+    var mediaItemSeekable by remember(player) { mutableStateOf(player.isCurrentMediaItemSeekable) }
+    val episodeId = state.currentEpisode?.videoId
+    val currentEpisodeLoaded = episodeId != null && episodeId == playingEpisodeId
+    val canSeek = currentEpisodeLoaded && mediaItemSeekable && duration > 0
     var videoWidth by remember { mutableIntStateOf(16) }
     var videoHeight by remember { mutableIntStateOf(9) }
     var isInPictureInPictureMode by remember {
@@ -125,48 +123,129 @@ fun PlayerScreen(
 
     // ── UI state ─────────────────────────────────────────────────
     var controlsVisible by remember { mutableStateOf(true) }
+    var timelinePreviewMs by remember(episodeId, state.selectedQuality) { mutableStateOf<Long?>(null) }
+    // Null for the whole gesture, including time spent holding still.
+    var lastTouchEnd by remember { mutableStateOf<Long?>(0L) }
     var showSeekPreview by remember { mutableStateOf(false) }
     var seekPreviewMs by remember { mutableLongStateOf(0L) }
+    var seekStartMs by remember { mutableLongStateOf(0L) }
+    var zoomToFill by rememberSaveable { mutableStateOf(false) }
+    var zoomNotice by remember { mutableStateOf<String?>(null) }
+    var qualityMenuOpen by remember { mutableStateOf(false) }
+    var resumeAfterComments by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(zoomNotice) {
+        if (zoomNotice != null) {
+            delay(1000)
+            zoomNotice = null
+        }
+    }
 
     // ── YouTube-style accumulated seek ───────────────────────────
-    val seekScope = rememberCoroutineScope()
-    var seekAccum by remember { mutableLongStateOf(0L) }
-    var seekJob by remember { mutableStateOf<Job?>(null) }
+    var seekAccum by remember(episodeId, state.selectedQuality) { mutableLongStateOf(0L) }
 
     // ── Auto-next ────────────────────────────────────────────────
-    var showAutoNext by remember { mutableStateOf(false) }
-    var autoNextCountdown by remember { mutableIntStateOf(5) }
+    val episodeEnded = currentEpisodeLoaded && playbackState == Player.STATE_ENDED
+    var autoNextDismissed by remember(episodeId, episodeEnded) { mutableStateOf(false) }
+    var autoNextCountdown by remember(episodeId, episodeEnded) { mutableIntStateOf(5) }
 
     // ── Speed boost (tap + hold) ────────────────────────────────
     var isSpeedBoosting by remember { mutableStateOf(false) }
 
     // ── Speed lock (persistent speed without holding) ─────────
-    var isSpeedLocked by remember { mutableStateOf(false) }
-    var lockedSpeed by remember { mutableFloatStateOf(2.0f) }
+    var isSpeedLocked by rememberSaveable { mutableStateOf(false) }
+    var lockedSpeed by rememberSaveable { mutableFloatStateOf(2.0f) }
     var showSpeedPopup by remember { mutableStateOf(false) }
+    var hintEpisodeId by rememberSaveable { mutableStateOf<String?>(null) }
+    val showSpeedHint = hintEpisodeId != null && hintEpisodeId == episodeId
+    val baseSpeed = if (isSpeedLocked) lockedSpeed else 1f
+    val boostSpeed = (baseSpeed * 2f).coerceAtMost(5f)
+    val playbackSpeed = if (isSpeedBoosting) boostSpeed else baseSpeed
+    DisposableEffect(player, baseSpeed, playbackSpeed) {
+        if (player.playbackParameters.speed != playbackSpeed) player.setPlaybackSpeed(playbackSpeed)
+        onDispose {
+            if (playbackSpeed != baseSpeed) player.setPlaybackSpeed(baseSpeed)
+        }
+    }
 
-    val stopPlayback = {
+    val showAutoNext = episodeEnded && state.hasNext && playWhenReady && !autoNextDismissed &&
+        !qualityMenuOpen && !showSpeedPopup && !showSpeedHint && !state.isCommentsPanelVisible &&
+        timelinePreviewMs == null && !showSeekPreview && seekAccum == 0L
+
+    fun dismissSpeedHint() {
+        val pausedEpisode = hintEpisodeId ?: return
+        hintEpisodeId = null
+        if (player.currentMediaItem?.episodeVideoId() == pausedEpisode && player.playbackState != Player.STATE_ENDED) {
+            player.play()
+        }
+    }
+
+    fun seekToPosition(position: Long) {
+        seekAccum = 0L
+        val end = player.duration
+        if (
+            end <= 0 || !player.isCurrentMediaItemSeekable ||
+            episodeId == null || player.currentMediaItem?.episodeVideoId() != episodeId
+        ) {
+            return
+        }
+        if (episodeEnded) autoNextDismissed = true
+        if (state.resumePosition != ResumePosition.Handled) viewModel.onEvent(PlayerEvent.ResumeConsumed(episodeId))
+        currentPosition = position.coerceIn(0L, end)
+        player.seekTo(currentPosition)
+    }
+
+    LaunchedEffect(player, episodeId, state.selectedQuality, seekAccum) {
+        val delta = seekAccum
+        if (delta != 0L) {
+            delay(600)
+            if (seekAccum == delta) seekToPosition(player.currentPosition + delta)
+        }
+    }
+
+    fun saveProgress() {
+        val videoId = player.currentMediaItem?.episodeVideoId() ?: return
         val position = player.currentPosition
         val playbackDuration = player.duration
-        if (position > 0L) {
-            viewModel.onEvent(PlayerEvent.UpdateProgress(position, playbackDuration))
+        if (position > 0 && playbackDuration > 0) {
+            viewModel.onEvent(PlayerEvent.UpdateProgress(videoId, position, playbackDuration))
         }
+    }
+
+    fun changeEpisode(event: PlayerEvent) {
+        seekAccum = 0L
+        autoNextDismissed = true
+        saveProgress()
+        viewModel.onEvent(event)
+    }
+
+    val stopPlayback = {
+        saveProgress()
         PlayerPictureInPicture.clear(activity)
         player.stop()
         player.clearMediaItems()
         PlaybackService.stop(context.applicationContext)
     }
     val closePlayer = {
+        seekAccum = 0L
+        autoNextDismissed = true
         stopPlayback()
         onBack()
     }
 
+    val closeComments = {
+        viewModel.onEvent(PlayerEvent.HideEpisodeComments)
+        controlsVisible = true
+        if (resumeAfterComments) player.play()
+        resumeAfterComments = false
+    }
+
     BackHandler {
-        if (state.isCommentsPanelVisible) {
-            viewModel.onEvent(PlayerEvent.HideEpisodeComments)
-            controlsVisible = true
-        } else {
-            closePlayer()
+        when {
+            state.isCommentsPanelVisible -> closeComments()
+            showSpeedHint -> dismissSpeedHint()
+            showSpeedPopup -> showSpeedPopup = false
+            showAutoNext -> autoNextDismissed = true
+            else -> closePlayer()
         }
     }
 
@@ -219,7 +298,6 @@ fun PlayerScreen(
         state.currentVideoUrl,
         state.currentEpisode?.videoId,
         state.selectedQuality,
-        state.resumePositionMs,
         state.animeTitle,
         state.posterUrl,
     ) {
@@ -250,41 +328,48 @@ fun PlayerScreen(
             if (currentItem.mediaMetadata != mediaMetadata) {
                 player.replaceMediaItem(player.currentMediaItemIndex, mediaItem)
             }
-            if (state.resumePositionMs > 0L) {
-                player.seekTo(state.resumePositionMs)
-                viewModel.onEvent(PlayerEvent.ResumeConsumed)
-            }
             return@LaunchedEffect
         }
 
-        val startPosition = when {
-            sameEpisode -> player.currentPosition
-            state.resumePositionMs > 0L -> state.resumePositionMs
-            else -> 0L
+        val shouldPlay = !state.isCommentsPanelVisible && (currentItem == null || player.playWhenReady)
+        if (sameEpisode) {
+            player.setMediaItem(mediaItem, player.currentPosition)
+        } else {
+            player.setMediaItem(mediaItem)
         }
-        val shouldPlay = currentItem == null || player.playWhenReady
-        player.setMediaItem(mediaItem, startPosition)
         player.prepare()
         player.playWhenReady = shouldPlay
         if (!sameEpisode) {
             currentPosition = 0L
             duration = 0L
         }
-        if (state.resumePositionMs > 0L) {
-            viewModel.onEvent(PlayerEvent.ResumeConsumed)
+    }
+
+    LaunchedEffect(player, playbackState, playingEpisodeId, episodeId, state.resumePosition) {
+        if (episodeId == null || player.currentMediaItem?.episodeVideoId() != episodeId) return@LaunchedEffect
+        val ready = player.playbackState == Player.STATE_READY ||
+            (player.playbackState == Player.STATE_ENDED && !player.isCurrentMediaItemSeekable)
+        val consumed = state.resumePosition.consumeWhenReady(
+            isReady = ready,
+            canSeek = player.isCurrentMediaItemSeekable,
+            seekTo = player::seekTo,
+        )
+        if (consumed) {
+            viewModel.onEvent(PlayerEvent.ResumeConsumed(episodeId))
         }
-        showAutoNext = false
     }
 
     // ── Player listener ──────────────────────────────────────────
-    DisposableEffect(player, state.hasNext) {
+    DisposableEffect(player) {
+        fun updatePlayerState() {
+            playbackState = player.playbackState
+            playWhenReady = player.playWhenReady
+            playingEpisodeId = player.currentMediaItem?.episodeVideoId()
+            mediaItemSeekable = player.isCurrentMediaItemSeekable
+        }
         val listener = object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                isBuffering = playbackState == Player.STATE_BUFFERING
-                if (playbackState == Player.STATE_ENDED && state.hasNext) {
-                    showAutoNext = true
-                    autoNextCountdown = 5
-                }
+            override fun onEvents(player: Player, events: Player.Events) {
+                updatePlayerState()
             }
             override fun onIsPlayingChanged(playing: Boolean) {
                 isPlaying = playing
@@ -302,18 +387,22 @@ fun PlayerScreen(
                 newPosition: Player.PositionInfo,
                 reason: Int,
             ) {
+                currentPosition = newPosition.positionMs.coerceAtLeast(0L)
                 viewModel.checkSkipPosition(newPosition.positionMs, player.duration)
             }
         }
         isPlaying = player.isPlaying
-        isBuffering = player.playbackState == Player.STATE_BUFFERING
         player.addListener(listener)
+        updatePlayerState()
         onDispose {
-            val pos = player.currentPosition
-            val dur = player.duration
-            if (pos > 0L) viewModel.onEvent(PlayerEvent.UpdateProgress(pos, dur))
+            saveProgress()
             player.removeListener(listener)
         }
+    }
+
+    // A headset or notification play action also dismisses the frozen frame.
+    LaunchedEffect(playWhenReady, episodeId) {
+        if (hintEpisodeId != null && (playWhenReady || hintEpisodeId != episodeId)) hintEpisodeId = null
     }
 
     // ── Position ticker (every 500 ms) + progress save every 5 s ─
@@ -323,38 +412,42 @@ fun PlayerScreen(
             delay(500)
             val position = player.currentPosition
             currentPosition = position
+            bufferedPosition = player.bufferedPosition.coerceAtLeast(0L)
             val dur = player.duration
             if (dur > 0) duration = dur
             viewModel.checkSkipPosition(position, dur)
             saveCounter++
             if (saveCounter >= 10) {
                 saveCounter = 0
-                val pos = player.currentPosition
-                if (pos > 0L && dur > 0L) {
-                    viewModel.onEvent(PlayerEvent.UpdateProgress(pos, dur))
-                }
+                saveProgress()
             }
         }
     }
 
     // ── Auto-hide controls (3.5 s) ──────────────────────────────
-    LaunchedEffect(controlsVisible, isPlaying) {
-        if (controlsVisible && isPlaying) {
+    val canAutoHide = controlsVisible && isPlaying && !qualityMenuOpen && !showSpeedPopup && !showSpeedHint &&
+        !state.isCommentsPanelVisible && !isInPictureInPictureMode && timelinePreviewMs == null && !showAutoNext
+    LaunchedEffect(canAutoHide, lastTouchEnd) {
+        val releasedAt = lastTouchEnd
+        if (canAutoHide && releasedAt != null) {
             delay(3_500)
-            controlsVisible = false
+            if (releasedAt == lastTouchEnd) controlsVisible = false
         }
     }
 
     // ── Auto-next countdown ──────────────────────────────────────
-    LaunchedEffect(showAutoNext) {
-        if (!showAutoNext) return@LaunchedEffect
-        for (i in 4 downTo 0) {
+    val touchHeld = lastTouchEnd == null
+    LaunchedEffect(episodeId, showAutoNext, touchHeld) {
+        if (!showAutoNext || touchHeld) return@LaunchedEffect
+        while (autoNextCountdown > 0) {
             delay(1_000)
-            autoNextCountdown = i
+            autoNextCountdown--
         }
-        if (showAutoNext) {
-            viewModel.onEvent(PlayerEvent.NextEpisode(player.currentPosition, player.duration))
-            showAutoNext = false
+        if (
+            !autoNextDismissed && lastTouchEnd != null && player.playWhenReady &&
+            player.playbackState == Player.STATE_ENDED && player.currentMediaItem?.episodeVideoId() == episodeId
+        ) {
+            changeEpisode(PlayerEvent.NextEpisode)
         }
     }
 
@@ -362,7 +455,11 @@ fun PlayerScreen(
     // UI
     // ═══════════════════════════════════════════════════════════════
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black).pointerInput(player) {
+            observePlayerTouches { held -> lastTouchEnd = if (held) null else SystemClock.uptimeMillis() }
+        },
+    ) {
 
         // Video surface
         if (state.currentVideoUrl != null || player.mediaItemCount > 0) {
@@ -371,7 +468,14 @@ fun PlayerScreen(
                     PlayerView(ctx).apply { this.player = player; useController = false }
                 },
                 modifier = Modifier.fillMaxSize(),
-                update = { view -> view.player = player },
+                update = { view ->
+                    view.player = player
+                    view.resizeMode = if (zoomToFill && !isInPictureInPictureMode) {
+                        AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    } else {
+                        AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    }
+                },
             )
         }
 
@@ -381,92 +485,77 @@ fun PlayerScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(isSpeedLocked, lockedSpeed) {
-                    kotlinx.coroutines.coroutineScope {
-                        launch {
-                            var suppressNextTap = false
-                            detectTapGestures(
-                                onPress = {
-                                    suppressNextTap = false
-                                    val releasedBeforeBoost =
-                                        kotlinx.coroutines.withTimeoutOrNull(SPEED_BOOST_HOLD_DELAY_MS) {
-                                            tryAwaitRelease()
-                                        } != null
-                                    if (!releasedBeforeBoost) {
-                                        suppressNextTap = true
-                                        val boostSpeed = if (isSpeedLocked) {
-                                            (lockedSpeed * 2f).coerceAtMost(5f)
-                                        } else {
-                                            2.0f
-                                        }
-                                        try {
-                                            isSpeedBoosting = true
-                                            player.setPlaybackParameters(PlaybackParameters(boostSpeed))
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            tryAwaitRelease()
-                                        } finally {
-                                            isSpeedBoosting = false
-                                            player.setPlaybackParameters(
-                                                PlaybackParameters(if (isSpeedLocked) lockedSpeed else 1.0f),
-                                            )
-                                        }
-                                    }
-                                },
-                                onTap = {
-                                    if (suppressNextTap) {
-                                        suppressNextTap = false
-                                    } else {
-                                        controlsVisible = !controlsVisible
-                                    }
-                                },
-                                onDoubleTap = { offset ->
-                                    if (isSpeedBoosting) return@detectTapGestures
-                                    suppressNextTap = false
+                .pointerInput(player, episodeId, state.selectedQuality, canSeek) {
+                    detectPlayerMotion(
+                        onPinch = { zoomIn ->
+                            seekAccum = 0L
+                            if (zoomToFill != zoomIn) {
+                                zoomToFill = zoomIn
+                                zoomNotice = if (zoomIn) "На весь экран" else "Весь кадр"
+                            }
+                        },
+                        onScrubStart = {
+                            if (canSeek) {
+                                seekAccum = 0L
+                                seekStartMs = player.currentPosition
+                                controlsVisible = false
+                            }
+                        },
+                        onScrub = { fraction ->
+                            if (canSeek) {
+                                seekPreviewMs = (seekStartMs + (fraction * 120_000).toLong()).coerceIn(0L, duration)
+                                showSeekPreview = true
+                            }
+                        },
+                        onScrubEnd = { commit ->
+                            if (commit && showSeekPreview) seekToPosition(seekPreviewMs)
+                            showSeekPreview = false
+                        },
+                    )
+                }
+                .pointerInput(player, isSpeedLocked, lockedSpeed, episodeId, state.selectedQuality, canSeek) {
+                    var suppressNextTap = false
+                    detectTapGestures(
+                        onPress = {
+                            suppressNextTap = false
+                            val releasedBeforeBoost =
+                                kotlinx.coroutines.withTimeoutOrNull(SPEED_BOOST_HOLD_DELAY_MS) {
+                                    tryAwaitRelease()
+                                } != null
+                            if (!releasedBeforeBoost) {
+                                suppressNextTap = true
+                                try {
+                                    isSpeedBoosting = true
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    if (offset.x < size.width / 2) seekAccum -= 10_000L
-                                    else seekAccum += 10_000L
-                                    seekJob?.cancel()
-                                    seekJob = seekScope.launch {
-                                        delay(600)
-                                        val accum = seekAccum
-                                        player.seekTo(
-                                            (player.currentPosition + accum).coerceIn(0L, duration),
-                                        )
+                                    if (state.speedHintAvailable && episodeId != null && player.isPlaying &&
+                                        player.currentMediaItem?.episodeVideoId() == episodeId
+                                    ) {
+                                        hintEpisodeId = episodeId
+                                        player.pause()
                                         seekAccum = 0L
+                                        viewModel.onEvent(PlayerEvent.SpeedHintShown)
                                     }
-                                },
-                            )
-                        }
-                        // Horizontal drag → seek preview
-                        launch {
-                            var startMs = 0L
-                            var totalX = 0f
-                            var totalY = 0f
-                            var isHorizontal: Boolean? = null
-                            detectDragGestures(
-                                onDragStart = {
-                                    startMs = player.currentPosition
-                                    totalX = 0f; totalY = 0f; isHorizontal = null
-                                },
-                                onDrag = { change, drag ->
-                                    totalX += drag.x; totalY += drag.y
-                                    if (isHorizontal == null && (abs(totalX) > 25 || abs(totalY) > 25)) {
-                                        isHorizontal = abs(totalX) > abs(totalY)
-                                        if (isHorizontal == true) controlsVisible = false
-                                    }
-                                    if (isHorizontal == true) {
-                                        val delta = (totalX / size.width.toFloat() * 120_000L).toLong()
-                                        seekPreviewMs = (startMs + delta).coerceIn(0L, duration)
-                                        player.seekTo(seekPreviewMs)
-                                        showSeekPreview = true
-                                    }
-                                    change.consume()
-                                },
-                                onDragEnd = { showSeekPreview = false; isHorizontal = null },
-                                onDragCancel = { showSeekPreview = false; isHorizontal = null },
-                            )
-                        }
-                    }
+                                    tryAwaitRelease()
+                                } finally {
+                                    isSpeedBoosting = false
+                                }
+                            }
+                        },
+                        onTap = {
+                            if (suppressNextTap) {
+                                suppressNextTap = false
+                            } else {
+                                controlsVisible = !controlsVisible
+                            }
+                        },
+                        onDoubleTap = { offset ->
+                            if (isSpeedBoosting || !canSeek) return@detectTapGestures
+                            suppressNextTap = false
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            if (offset.x < size.width / 2) seekAccum -= 10_000L
+                            else seekAccum += 10_000L
+                        },
+                    )
                 },
         )
 
@@ -497,7 +586,7 @@ fun PlayerScreen(
                     .padding(horizontal = 20.dp, vertical = 10.dp),
             ) {
                 Text(
-                    text = formatTime(seekPreviewMs),
+                    text = formatTime(seekPreviewMs) + "   " + formatSeekDelta(seekPreviewMs - seekStartMs),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
@@ -505,19 +594,21 @@ fun PlayerScreen(
             }
         }
 
-        // ── Buffering spinner ────────────────────────────────────
-        if (isBuffering) {
-            CircularProgressIndicator(
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.align(Alignment.Center).size(52.dp),
+        zoomNotice?.let { notice ->
+            Text(
+                text = notice,
+                color = Color.White,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 24.dp)
+                    .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(20.dp))
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
             )
         }
-
-        // ── Initial loading ──────────────────────────────────────
-        if (state.isLoading) {
+        val loading = (state.isLoading || playbackState == Player.STATE_BUFFERING) && state.error == null
+        if (loading && !controlsVisible && !showSeekPreview && !state.isCommentsPanelVisible && !showSpeedPopup) {
             CircularProgressIndicator(
                 color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.align(Alignment.Center),
+                modifier = Modifier.align(Alignment.Center).size(46.dp),
                 strokeWidth = 3.dp,
             )
         }
@@ -532,30 +623,12 @@ fun PlayerScreen(
             )
         }
 
-        // ── Auto-next card ───────────────────────────────────────
-        AnimatedVisibility(
-            visible = showAutoNext,
-            enter = slideInVertically(initialOffsetY = { it / 2 }) + fadeIn(),
-            exit = slideOutVertically(targetOffsetY = { it / 2 }) + fadeOut(),
-            modifier = Modifier.align(Alignment.BottomEnd).padding(24.dp),
-        ) {
-            AutoNextCard(
-                countdown = autoNextCountdown,
-                nextName = state.allEpisodes.getOrNull(state.currentEpisodeIndex + 1)?.name ?: "",
-                onConfirm = {
-                    viewModel.onEvent(PlayerEvent.NextEpisode(player.currentPosition, player.duration))
-                    showAutoNext = false
-                },
-                onCancel = { showAutoNext = false },
-            )
-        }
-
         // ── Skip intro/outro button ─────────────────────────────
         run {
             val skip = activeSkip
             val isEd = skip?.type == com.animevost.app.core.domain.model.SkipType.ED
             val showAsNextEpisode = isEd && state.hasNext
-            val visible = skip != null && !(isEd && !state.hasNext)
+            val visible = skip != null && !(isEd && !state.hasNext) && !showAutoNext && timelinePreviewMs == null
             AnimatedVisibility(
                 visible = visible,
                 enter = fadeIn(tween(220)) + slideInVertically(initialOffsetY = { it / 2 }),
@@ -574,14 +647,9 @@ fun PlayerScreen(
                             .background(Color.White, RoundedCornerShape(6.dp))
                             .clickable {
                                 if (showAsNextEpisode) {
-                                    viewModel.onEvent(
-                                        PlayerEvent.NextEpisode(
-                                            player.currentPosition,
-                                            player.duration,
-                                        ),
-                                    )
+                                    changeEpisode(PlayerEvent.NextEpisode)
                                 } else {
-                                    player.seekTo(skip.endMs)
+                                    seekToPosition(skip.endMs)
                                 }
                             }
                             .padding(horizontal = 16.dp, vertical = 10.dp),
@@ -610,7 +678,7 @@ fun PlayerScreen(
 
         // ── Controls overlay (fade in/out) ───────────────────────
         AnimatedVisibility(
-            visible = controlsVisible,
+            visible = controlsVisible && !showSpeedHint,
             enter = fadeIn(tween(200)),
             exit = fadeOut(tween(200)),
             modifier = Modifier.fillMaxSize(),
@@ -619,83 +687,98 @@ fun PlayerScreen(
                 episodeName = state.currentEpisode?.name ?: "",
                 videoSources = state.videoSources.map { it.quality },
                 selectedQuality = state.selectedQuality,
-                isPlaying = isPlaying,
+                playRequested = playRequested,
+                loading = loading && controlsVisible && !showSpeedPopup && !state.isCommentsPanelVisible,
+                canSeek = canSeek,
+                bufferedPosition = bufferedPosition,
+                timelinePreview = timelinePreviewMs,
+                previewSource = state.currentVideoUrl,
                 currentPosition = currentPosition,
                 duration = duration,
                 hasPrevious = state.hasPrevious,
                 hasNext = state.hasNext,
                 onBack = closePlayer,
                 onOpenComments = {
+                    seekAccum = 0L
+                    resumeAfterComments = player.playWhenReady && player.playbackState != Player.STATE_ENDED
+                    player.pause()
                     controlsVisible = false
                     viewModel.onEvent(PlayerEvent.ShowEpisodeComments)
                 },
                 onPlayPause = {
-                    if (player.isPlaying) player.pause() else player.play()
+                    if (player.playWhenReady && player.playbackState != Player.STATE_ENDED) {
+                        player.pause()
+                    } else {
+                        if (player.playbackState == Player.STATE_ENDED) seekToPosition(0L)
+                        player.play()
+                    }
                 },
                 onPrevious = {
-                    viewModel.onEvent(PlayerEvent.PreviousEpisode(player.currentPosition, player.duration))
+                    changeEpisode(PlayerEvent.PreviousEpisode)
                 },
                 onNext = {
-                    viewModel.onEvent(PlayerEvent.NextEpisode(player.currentPosition, player.duration))
+                    changeEpisode(PlayerEvent.NextEpisode)
                 },
-                onSeekBack = {
-                    player.seekTo(maxOf(0L, player.currentPosition - 10_000L))
+                onSeekBack = { seekToPosition(player.currentPosition - 10_000L) },
+                onSeekForward = { seekToPosition(player.currentPosition + 10_000L) },
+                onSeek = ::seekToPosition,
+                onTimelinePreview = { preview ->
+                    if (preview != null && timelinePreviewMs == null) {
+                        seekAccum = 0L
+                    }
+                    timelinePreviewMs = preview
                 },
-                onSeekForward = {
-                    player.seekTo(minOf(duration, player.currentPosition + 10_000L))
-                },
-                onSeek = { fraction -> player.seekTo((fraction * duration).toLong()) },
                 onSelectQuality = { viewModel.onEvent(PlayerEvent.SelectQuality(it)) },
+                qualityMenuOpen = qualityMenuOpen,
+                onQualityMenuOpenChange = { open ->
+                    if (open) seekAccum = 0L
+                    qualityMenuOpen = open
+                },
                 skipIntervals = skipIntervals,
             )
         }
 
-        // ── Speed boost / lock badge (above controls overlay) ────
+        // ── Auto-next card ───────────────────────────────────────
         AnimatedVisibility(
-            visible = isSpeedBoosting || (isSpeedLocked && controlsVisible),
+            visible = showAutoNext,
+            enter = slideInVertically(initialOffsetY = { it / 2 }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it / 2 }) + fadeOut(),
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = if (controlsVisible) 90.dp else 24.dp),
+        ) {
+            AutoNextCard(
+                countdown = autoNextCountdown,
+                nextName = state.allEpisodes.getOrNull(state.currentEpisodeIndex + 1)?.name ?: "",
+                onConfirm = { changeEpisode(PlayerEvent.NextEpisode) },
+                onCancel = { autoNextDismissed = true },
+            )
+        }
+
+        if (showSpeedHint) {
+            Box(
+                Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.58f)).clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClickLabel = "Закрыть подсказку",
+                    onClick = ::dismissSpeedHint,
+                ),
+            )
+        }
+        AnimatedVisibility(
+            visible = showSpeedHint || isSpeedBoosting || (isSpeedLocked && controlsVisible),
             enter = fadeIn(tween(100)),
             exit = fadeOut(tween(200)),
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 32.dp),
         ) {
-            Box {
-                Row(
-                    modifier = Modifier
-                        .padding(top = 6.dp, end = 6.dp)
-                        .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                        ) { showSpeedPopup = true }
-                        .padding(horizontal = 14.dp, vertical = 7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = if (isSpeedBoosting) {
-                            val boostSpeed = if (isSpeedLocked) (lockedSpeed * 2f).coerceAtMost(5f) else 2.0f
-                            "▶▶ ${formatSpeed(boostSpeed)}"
-                        } else "▶▶ ${formatSpeed(lockedSpeed)}",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                    )
-                }
-                if (isSpeedLocked) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .size(13.dp)
-                            .background(MaterialTheme.colorScheme.primary, CircleShape),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Filled.Lock,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(8.dp),
-                        )
-                    }
-                }
-            }
+            SpeedBadge(
+                speed = if (isSpeedBoosting || showSpeedHint) boostSpeed else baseSpeed,
+                locked = isSpeedLocked,
+                showHint = showSpeedHint,
+                onClick = {
+                    dismissSpeedHint()
+                    seekAccum = 0L
+                    showSpeedPopup = true
+                },
+            )
         }
 
         // ── Speed picker popup (on top of everything) ────────────
@@ -703,24 +786,23 @@ fun PlayerScreen(
             SpeedPickerPopup(
                 selectedSpeed = lockedSpeed,
                 isLocked = isSpeedLocked,
-                onSpeedSelect = { speed ->
-                    lockedSpeed = speed
-                    if (isSpeedLocked) player.setPlaybackParameters(PlaybackParameters(speed))
-                },
+                onSpeedSelect = { speed -> lockedSpeed = speed },
                 onLockToggle = {
-                    if (isSpeedLocked) {
-                        isSpeedLocked = false
-                        player.setPlaybackParameters(PlaybackParameters(1.0f))
-                    } else {
-                        isSpeedLocked = true
-                        player.setPlaybackParameters(PlaybackParameters(lockedSpeed))
-                    }
+                    isSpeedLocked = !isSpeedLocked
                     showSpeedPopup = false
                 },
                 onDismiss = { showSpeedPopup = false },
             )
         }
 
+        if (state.isCommentsPanelVisible) {
+            Box(Modifier.fillMaxSize().clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClickLabel = "Закрыть комментарии",
+                onClick = closeComments,
+            ))
+        }
         AnimatedVisibility(
             visible = state.isCommentsPanelVisible,
             enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(tween(180)),
@@ -733,10 +815,7 @@ fun PlayerScreen(
                 isLoading = state.isLoadingEpisodeComments,
                 hasMore = state.hasMoreEpisodeComments,
                 error = state.episodeCommentsError,
-                onClose = {
-                    viewModel.onEvent(PlayerEvent.HideEpisodeComments)
-                    controlsVisible = true
-                },
+                onClose = closeComments,
                 onLoadMore = {
                     viewModel.onEvent(PlayerEvent.LoadMoreEpisodeComments)
                 },

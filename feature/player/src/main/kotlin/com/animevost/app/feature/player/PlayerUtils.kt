@@ -1,5 +1,7 @@
 package com.animevost.app.feature.player
 
+import kotlin.math.abs
+
 internal val speedOptions = listOf(0.25f, 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f, 4.0f, 5.0f)
 
 internal fun formatSpeed(speed: Float): String =
@@ -12,4 +14,13 @@ internal fun formatTime(ms: Long): String {
     val m = (totalSec % 3600) / 60
     val s = totalSec % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+}
+
+internal fun formatSeekDelta(ms: Long): String {
+    val sign = when {
+        ms >= 1000 -> "+"
+        ms <= -1000 -> "−"
+        else -> ""
+    }
+    return sign + formatTime(abs(ms))
 }

@@ -1,23 +1,15 @@
 package com.animevost.app.feature.player
 
-import com.animevost.app.core.domain.model.SkipInterval
-import com.animevost.app.core.domain.model.SkipType
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -34,6 +26,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -41,17 +34,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.animevost.app.core.domain.model.SkipInterval
 
 // ─── Full player controls overlay ─────────────────────────────────────────────
 
@@ -60,7 +49,12 @@ internal fun PlayerControls(
     episodeName: String,
     videoSources: List<String>,
     selectedQuality: String,
-    isPlaying: Boolean,
+    playRequested: Boolean,
+    loading: Boolean,
+    canSeek: Boolean,
+    bufferedPosition: Long,
+    timelinePreview: Long?,
+    previewSource: String?,
     currentPosition: Long,
     duration: Long,
     hasPrevious: Boolean,
@@ -72,12 +66,13 @@ internal fun PlayerControls(
     onNext: () -> Unit,
     onSeekBack: () -> Unit,
     onSeekForward: () -> Unit,
-    onSeek: (Float) -> Unit,
+    onSeek: (Long) -> Unit,
+    onTimelinePreview: (Long?) -> Unit,
     onSelectQuality: (String) -> Unit,
+    qualityMenuOpen: Boolean,
+    onQualityMenuOpenChange: (Boolean) -> Unit,
     skipIntervals: List<SkipInterval> = emptyList(),
 ) {
-    var showQualityMenu by remember { mutableStateOf(false) }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -123,7 +118,9 @@ internal fun PlayerControls(
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                        ) { showQualityMenu = true }
+                        ) {
+                            onQualityMenuOpenChange(true)
+                        }
                         .background(
                             MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
                             RoundedCornerShape(6.dp),
@@ -146,8 +143,8 @@ internal fun PlayerControls(
                     )
                 }
                 DropdownMenu(
-                    expanded = showQualityMenu,
-                    onDismissRequest = { showQualityMenu = false },
+                    expanded = qualityMenuOpen,
+                    onDismissRequest = { onQualityMenuOpenChange(false) },
                 ) {
                     videoSources.forEach { quality ->
                         DropdownMenuItem(
@@ -160,7 +157,7 @@ internal fun PlayerControls(
                             },
                             onClick = {
                                 onSelectQuality(quality)
-                                showQualityMenu = false
+                                onQualityMenuOpenChange(false)
                             },
                         )
                     }
@@ -170,7 +167,7 @@ internal fun PlayerControls(
         }
 
         // ── Center: |◁  ◁10  ▶⏸  10▷  ▷| ──────────────────────
-        Row(
+        if (timelinePreview == null) Row(
             modifier = Modifier.align(Alignment.Center),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -187,7 +184,7 @@ internal fun PlayerControls(
                     modifier = Modifier.size(34.dp),
                 )
             }
-            IconButton(onClick = onSeekBack, modifier = Modifier.size(48.dp)) {
+            IconButton(onClick = onSeekBack, enabled = canSeek, modifier = Modifier.size(48.dp)) {
                 Icon(
                     Icons.Filled.Replay10,
                     contentDescription = "−10 сек",
@@ -196,24 +193,35 @@ internal fun PlayerControls(
                 )
             }
             Box(
-                modifier = Modifier
-                    .size(66.dp)
-                    .background(MaterialTheme.colorScheme.primary, CircleShape)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onPlayPause,
-                    ),
+                modifier = Modifier.size(76.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(38.dp),
-                )
+                if (loading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.primary,
+                        strokeWidth = 3.dp,
+                    )
+                }
+                Box(
+                    modifier = Modifier.size(66.dp)
+                        .background(MaterialTheme.colorScheme.primary, CircleShape)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onPlayPause,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = if (playRequested) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = if (playRequested) "Пауза" else "Воспроизвести",
+                        tint = Color.White,
+                        modifier = Modifier.size(38.dp),
+                    )
+                }
             }
-            IconButton(onClick = onSeekForward, modifier = Modifier.size(48.dp)) {
+            IconButton(onClick = onSeekForward, enabled = canSeek, modifier = Modifier.size(48.dp)) {
                 Icon(
                     Icons.Filled.Forward10,
                     contentDescription = "+10 сек",
@@ -235,120 +243,18 @@ internal fun PlayerControls(
             }
         }
 
-        // ── Bottom: time + progress slider ──────────────────────
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 4.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Text(
-                    formatTime(currentPosition),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color.White,
-                )
-                Text(
-                    formatTime(duration),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = Color.White.copy(alpha = 0.6f),
-                )
-            }
-            ThinSeekBar(
-                fraction = if (duration > 0) currentPosition.toFloat() / duration.toFloat() else 0f,
-                onSeek = onSeek,
-                modifier = Modifier.fillMaxWidth(),
-                skipIntervals = skipIntervals,
-                duration = duration,
-            )
-        }
-    }
-}
-
-// ─── Thin seek bar with orange circle thumb ──────────────────────────────────
-
-@Composable
-internal fun ThinSeekBar(
-    fraction: Float,
-    onSeek: (Float) -> Unit,
-    modifier: Modifier = Modifier,
-    skipIntervals: List<SkipInterval> = emptyList(),
-    duration: Long = 0L,
-) {
-    val primary = MaterialTheme.colorScheme.primary
-    var dragging by remember { mutableStateOf(false) }
-    var dragFraction by remember { mutableFloatStateOf(0f) }
-    val displayFraction = if (dragging) dragFraction else fraction.coerceIn(0f, 1f)
-    val thumbDiameter = 14.dp
-    val trackShape = RoundedCornerShape(1.5.dp)
-
-    BoxWithConstraints(
-        modifier = modifier
-            .height(28.dp)
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures(
-                    onDragStart = { offset ->
-                        dragging = true
-                        dragFraction = (offset.x / size.width.toFloat()).coerceIn(0f, 1f)
-                        onSeek(dragFraction)
-                    },
-                    onDragEnd = { dragging = false },
-                    onDragCancel = { dragging = false },
-                    onHorizontalDrag = { change, _ ->
-                        dragFraction = (change.position.x / size.width.toFloat()).coerceIn(0f, 1f)
-                        onSeek(dragFraction)
-                    },
-                )
-            }
-            .pointerInput(Unit) {
-                detectTapGestures { offset ->
-                    onSeek((offset.x / size.width.toFloat()).coerceIn(0f, 1f))
-                }
-            },
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        val trackHeight = 3.dp
-        val thumbOffset = (maxWidth * displayFraction - thumbDiameter / 2).coerceAtLeast(0.dp)
-
-        // Inactive track
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(trackHeight)
-                .background(Color.White.copy(alpha = 0.2f), trackShape),
-        )
-        // Skip interval markers (OP = amber, ED = teal)
-        if (duration > 0L) {
-            skipIntervals.forEach { interval ->
-                val startFrac = (interval.startMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
-                val endFrac = (interval.endMs.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
-                val segColor = if (interval.type == SkipType.OP) Color(0xFFFFB300) else Color(0xFF26C6DA)
-                Box(
-                    modifier = Modifier
-                        .offset(x = maxWidth * startFrac)
-                        .width((maxWidth * (endFrac - startFrac)).coerceAtLeast(2.dp))
-                        .height(trackHeight)
-                        .background(segColor),
-                )
-            }
-        }
-        // Active track
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(displayFraction)
-                .height(trackHeight)
-                .background(primary, trackShape),
-        )
-        // Thumb circle
-        Box(
-            modifier = Modifier
-                .offset(x = thumbOffset)
-                .size(thumbDiameter)
-                .background(primary, CircleShape),
+        PlayerTimeline(
+            positionMs = currentPosition,
+            durationMs = duration,
+            bufferedMs = bufferedPosition,
+            previewMs = timelinePreview,
+            sourceUrl = previewSource,
+            enabled = canSeek,
+            skipIntervals = skipIntervals,
+            onPreview = onTimelinePreview,
+            onSeek = onSeek,
+            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding()
+                .fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp),
         )
     }
 }

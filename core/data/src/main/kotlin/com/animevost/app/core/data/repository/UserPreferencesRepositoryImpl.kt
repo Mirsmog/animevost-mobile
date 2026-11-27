@@ -2,6 +2,7 @@ package com.animevost.app.core.data.repository
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -20,6 +21,13 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 
     override suspend fun setPreferredVideoQuality(quality: String) {
         dataStore.edit { prefs -> prefs[KEY_PREFERRED_VIDEO_QUALITY] = quality }
+    }
+
+    override suspend fun hasSeenSpeedHint(): Boolean =
+        dataStore.data.first()[KEY_SPEED_HINT_SEEN] == true
+
+    override suspend fun markSpeedHintSeen() {
+        dataStore.edit { it[KEY_SPEED_HINT_SEEN] = true }
     }
 
     override suspend fun getUserRating(animeId: Int): Int {
@@ -44,5 +52,6 @@ class UserPreferencesRepositoryImpl @Inject constructor(
 
     private companion object {
         val KEY_PREFERRED_VIDEO_QUALITY = stringPreferencesKey("preferred_quality")
+        val KEY_SPEED_HINT_SEEN = booleanPreferencesKey("player_speed_hint_seen")
     }
 }
